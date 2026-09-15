@@ -25,7 +25,13 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -60,7 +66,15 @@
     "updates": {
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 0
-    }
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/64989d19-effb-4f41-82bf-b4d9d98f2c86"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "64989d19-effb-4f41-82bf-b4d9d98f2c86"
+      }
+    },
+    "owner": "diddlere123"
   }
 }
