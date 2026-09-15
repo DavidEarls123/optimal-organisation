@@ -96,6 +96,10 @@ export interface CountdownEvent {
 
 export interface AppState {
   habits: Habit[];
+  /** The week templates, seeded from the built-ins and editable from then on. */
+  templates: Record<string, WeekTemplate>;
+  /** Picker order. Ids not listed still work; they sort to the end. */
+  templateOrder: string[];
   sections: Section[];
   trackables: Trackable[];
   /** Keyed by ISO week id, e.g. "2026-W38". Weeks are created on demand. */

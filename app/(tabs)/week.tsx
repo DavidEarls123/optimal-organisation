@@ -22,7 +22,7 @@ export default function WeekScreen() {
   const habits = activeHabits(state, week);
   const current = isCurrentWeek(week, today);
   const ti = todayIndex(week, today);
-  const tpl = templateOf(week);
+  const tpl = templateOf(state, week);
 
   return (
     <Screen>
@@ -143,29 +143,57 @@ export default function WeekScreen() {
         </Section>
 
         <Section>
-          <SectionHead title="The week ahead" right="tasks by day" />
+          <SectionHead title="Training this week" right="tagged sessions" />
           <View>
             {DAY_NAMES.map((name, d) => {
-              const items = (week.tasks[d] ?? []).filter((x) => x.state !== 'dropped');
-              const done = items.filter((x) => x.state === 'done').length;
+              const sessions = (week.tasks[d] ?? [])
+                .filter((x) => x.track && x.state !== 'dropped');
+              const doneCount = sessions.filter((x) => x.state === 'done').length;
               const offDay = Boolean(week.untracked[d]);
               return (
-                <View key={d} style={{ flexDirection: 'row', gap: 10, paddingVertical: 8,
-                  borderBottomWidth: 1, borderBottomColor: t.rule2, opacity: offDay ? 0.5 : 1 }}>
-                  <Mono style={{ width: 34, color: t.accent, fontWeight: '600', fontSize: 12 }}>{name}</Mono>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14, color: t.ink }}>
-                      {items.length ? items.map((x) => x.text).join(' · ') : '—'}
-                    </Text>
-                    <Mono style={{ fontSize: 11, marginTop: 2 }}>
-                      {offDay ? 'untracked' : week.complete[d] ? 'day complete'
-                        : `${done} of ${items.length} done`}
-                    </Mono>
+                <View key={d} style={{ flexDirection: 'row', gap: 10, paddingVertical: 9,
+                  borderBottomWidth: 1, borderBottomColor: t.rule2, opacity: offDay ? 0.5 : 1,
+                  alignItems: 'flex-start' }}>
+                  <Mono style={{ width: 34, color: d === ti && current ? t.accent : t.ink3,
+                    fontWeight: '700', fontSize: 12, paddingTop: 2 }}>{name}</Mono>
+                  <View style={{ flex: 1, gap: 4 }}>
+                    {offDay ? (
+                      <Mono style={{ fontSize: 12 }}>untracked</Mono>
+                    ) : sessions.length === 0 ? (
+                      <Mono style={{ fontSize: 12 }}>rest</Mono>
+                    ) : sessions.map((x) => {
+                      const tr = state.trackables.find((y) => y.id === x.track);
+                      const [line, soft] = tr ? t.track[tr.ci % t.track.length] : [t.ink3, 'transparent'];
+                      return (
+                        <View key={x.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                          <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: line }} />
+                          <Text style={{ flex: 1, fontSize: 13.5,
+                            color: x.state === 'done' ? t.ink3 : t.ink,
+                            textDecorationLine: x.state === 'done' ? 'line-through' : 'none' }}>
+                            {x.text}
+                          </Text>
+                          <View style={{ borderRadius: radius.pill, borderWidth: 1, borderColor: line,
+                            backgroundColor: soft, paddingHorizontal: 6, paddingVertical: 1 }}>
+                            <Text style={{ fontSize: 9, letterSpacing: 0.8, textTransform: 'uppercase',
+                              color: line, fontWeight: '700' }}>{tr?.name ?? ''}</Text>
+                          </View>
+                        </View>
+                      );
+                    })}
                   </View>
+                  {sessions.length ? (
+                    <Mono style={{ fontSize: 11, paddingTop: 2 }}>
+                      {`${doneCount}/${sessions.length}`}
+                    </Mono>
+                  ) : null}
                 </View>
               );
             })}
           </View>
+          <Note>
+            Only tagged sessions appear here. Tag a task with Gym, Run, Recovery and the rest from
+            the box beside it on the Day tab; everything else stays on the day it belongs to.
+          </Note>
         </Section>
       </Body>
     </Screen>

@@ -1,11 +1,16 @@
 import type { AppState, Habit, Week } from './types';
 import { TEMPLATES } from './catalogue';
 import { DAY_NAMES, dayIndexIn } from './dates';
+import type { WeekTemplate } from './types';
 
 export const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
-export function templateOf(week: Week) {
-  return TEMPLATES[week.templateId] ?? TEMPLATES.general;
+/** The week's template, from the user's own set, falling back to the built-ins. */
+export function templateOf(state: AppState, week: Week): WeekTemplate {
+  return state.templates?.[week.templateId]
+    ?? state.templates?.general
+    ?? TEMPLATES[week.templateId]
+    ?? TEMPLATES.general;
 }
 
 export function activeHabits(state: AppState, week: Week): Habit[] {
@@ -75,7 +80,7 @@ export function dayScore(state: AppState, week: Week, day: number): number {
   const done = tasks.filter((t) => t.state === 'done').length;
   const live = tasks.filter((t) => t.state !== 'dropped').length;
   const tp = live ? done / live : 1;
-  const w = templateOf(week).weights;
+  const w = templateOf(state, week).weights;
   return hp * w.habits + tp * w.tasks;
 }
 
@@ -105,7 +110,7 @@ export interface WeekScore {
 }
 
 export function weekScore(state: AppState, week: Week, today: Date): WeekScore {
-  const t = templateOf(week);
+  const t = templateOf(state, week);
   const td = trackedDays(week);
   const el = elapsedDays(week, today);
   const ti = todayIndex(week, today);

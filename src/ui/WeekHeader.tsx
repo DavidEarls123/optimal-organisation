@@ -26,7 +26,7 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
   const week = state.weeks[weekId];
   if (!week) return null;
 
-  const tpl = templateOf(week);
+  const tpl = templateOf(state, week);
   const current = isCurrentWeek(week, today);
   const ti = todayIndex(week, today);
   const hasPrev = Boolean(state.weeks[

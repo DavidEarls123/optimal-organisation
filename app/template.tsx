@@ -6,7 +6,6 @@ import { Body, Chip, Note, Screen } from '../src/ui/primitives';
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
-import { TEMPLATES, TEMPLATE_ORDER } from '../src/domain/catalogue';
 import { planFromTemplate, planTasks } from '../src/domain/week';
 
 export default function TemplateScreen() {
@@ -35,8 +34,9 @@ export default function TemplateScreen() {
           Sets the habit plan, the training scaffold, and how the score is weighted. You can amend
           any of it afterwards for this week alone.
         </Note>
-        {TEMPLATE_ORDER.map((id) => {
-          const tpl = TEMPLATES[id];
+        {state.templateOrder.map((id) => {
+          const tpl = state.templates[id];
+          if (!tpl) return null;
           const on = id === current;
           return (
             <Pressable

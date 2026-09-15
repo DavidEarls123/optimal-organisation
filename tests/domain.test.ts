@@ -4,11 +4,11 @@ import assert from 'node:assert/strict';
 import { createInitialState, emptyState, migrate } from '../src/domain/state';
 import {
   countPlan, daysPlan, ensurePlanCoverage, ensureWeek, everyPlan,
-  moveTask, planFromTemplate, prevWeekIdOf, shopListFor,
+  moveTask, planFromTemplate, prevWeekIdOf, saveWeekAsTemplate, shopListFor,
 } from '../src/domain/week';
 import {
   activeHabits, dayAllDone, dayOutstanding, elapsedDays, habitDone, habitTarget,
-  planLabel, scheduledOn, streak, trackWeekCount, watchCount, weekScore,
+  planLabel, scheduledOn, streak, templateOf, trackWeekCount, watchCount, weekScore,
 } from '../src/domain/scoring';
 import { isoWeekId, mondayOf, isoOf, daysUntil, previousWeekId } from '../src/domain/dates';
 
@@ -295,4 +295,70 @@ test('date helpers hold at a year boundary', () => {
   assert.equal(daysUntil('2026-09-24', TUE), 9);
   assert.equal(daysUntil('2026-09-15', TUE), 0);
   assert.equal(daysUntil('2026-09-14', TUE), -1);
+});
+
+test('saving a week as its template captures the plan and the tagged sessions', () => {
+  const s = fresh('run');
+  const w = s.weeks[WEEK38];
+  w.habitPlan.guitar = countPlan(6);
+  w.habitPlan.recovery = everyPlan();
+  w.tasks[1] = [
+    { id: 'a', text: 'Intervals', state: 'done', plan: true, track: 'run', sec: 's3' },
+    { id: 'b', text: 'Typed in by hand', state: 'open', plan: false, track: null, sec: 's1' },
+    { id: 'c', text: 'Binned', state: 'dropped', plan: true, track: 'gym', sec: 's1' },
+  ];
+  assert.equal(saveWeekAsTemplate(s, WEEK38), true);
+
+  const tpl = s.templates.run;
+  assert.equal(tpl.targets.guitar, 6);
+  assert.equal(tpl.targets.recovery, 7, 'every day becomes a target of 7');
+  assert.deepEqual(tpl.plan[1], [['Intervals', 'run', 2]],
+    'only planned, undiscarded tasks are kept, with their tag and section');
+});
+
+test('a chosen-days plan survives being saved, rather than flattening to a count', () => {
+  const s = fresh('run');
+  s.weeks[WEEK38].habitPlan.meditate = daysPlan([0, 2, 4]);
+  saveWeekAsTemplate(s, WEEK38);
+  assert.equal(s.templates.run.targets.meditate, undefined,
+    'a weekly count cannot express Mon/Wed/Fri, so it is not stored as one');
+  const def = s.habits.find((h) => h.id === 'meditate')!.def!;
+  assert.equal(def.mode, 'days');
+  assert.deepEqual(def.days, [0, 2, 4]);
+
+  ensureWeek(s, '2026-09-21');
+  assert.equal(s.weeks['2026-W39'].habitPlan.meditate.mode, 'days',
+    'and a week made afterwards picks the chosen days up');
+});
+
+test('saving a template leaves weeks already built from it alone', () => {
+  const s = fresh('run');
+  ensureWeek(s, '2026-09-21');
+  const before = JSON.parse(JSON.stringify(s.weeks['2026-W39'].habitPlan));
+  s.weeks[WEEK38].habitPlan.guitar = countPlan(7);
+  saveWeekAsTemplate(s, WEEK38);
+  assert.deepEqual(s.weeks['2026-W39'].habitPlan, before);
+});
+
+test('a renamed template keeps working for the weeks that use it', () => {
+  const s = fresh('run');
+  s.templates.run.name = 'Marathon Block';
+  const w = s.weeks[WEEK38];
+  assert.equal(templateOf(s, w).name, 'Marathon Block');
+  assert.equal(templateOf(s, w).weights.habits, 0.65, 'and keeps its weighting');
+});
+
+test('migrate seeds templates for a state saved before they were editable', () => {
+  const s = migrate({
+    weeks: {
+      '2026-W38': {
+        monday: '2026-09-14', templateId: 'run', focus: '',
+        habitPlan: {}, habits: {}, tasks: {},
+      },
+    },
+  } as never)!;
+  assert.ok(s.templates.run, 'the built-ins are seeded in');
+  assert.ok(s.templateOrder.includes('run'));
+  assert.equal(s.templateOrder.every((id) => s.templates[id]), true,
+    'the order never names a template that is not there');
 });

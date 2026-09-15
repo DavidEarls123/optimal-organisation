@@ -41,7 +41,7 @@ function ThisWeek() {
   if (!week) return <Empty>Loading…</Empty>;
 
   const sc = weekScore(state, week, today);
-  const tpl = templateOf(week);
+  const tpl = templateOf(state, week);
   const habits = activeHabits(state, week);
   const daysDone = Object.values(week.complete).filter(Boolean).length;
   const offDays = Object.values(week.untracked).filter(Boolean).length;

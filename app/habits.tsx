@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Alert, Pressable, Text, View } from 'react-native';
 
 import { Body, Button, Field, Mono, Note, Screen, SectionHead } from '../src/ui/primitives';
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES } from '../src/domain/dates';
-import { countPlan, daysPlan, everyPlan, planFromTemplate, uid } from '../src/domain/week';
+import { countPlan, daysPlan, everyPlan, planFromTemplate, saveWeekAsTemplate, uid } from '../src/domain/week';
 import { habitTarget, templateOf } from '../src/domain/scoring';
 import { slug } from '../src/domain/catalogue';
 import type { HabitMode } from '../src/domain/types';
@@ -41,7 +41,7 @@ export default function HabitsScreen() {
   if (!week) return null;
 
   const active = state.habits.filter((h) => h.active);
-  const tpl = templateOf(week);
+  const tpl = templateOf(state, week);
 
   return (
     <Screen>
@@ -49,8 +49,36 @@ export default function HabitsScreen() {
         <Note>
           Set from {tpl.name}. Changes here apply to this week only — every other week keeps its own plan.
         </Note>
-        <Button tone="ghost" title={`Reset to the ${tpl.name} standard`}
-          onPress={() => update((d) => { d.weeks[weekId].habitPlan = planFromTemplate(d, d.weeks[weekId].templateId); })} />
+        <View style={{ gap: 8 }}>
+          <Field
+            value={tpl.name}
+            onChangeText={(v) => update((d) => {
+              const x = d.templates[d.weeks[weekId].templateId];
+              if (x) x.name = v;
+            })}
+            accessibilityLabel="Template name"
+            style={{ fontSize: 15, fontWeight: '700', color: t.ink }}
+          />
+          <Button tone="ghost" title={`Reset this week to the ${tpl.name} standard`}
+            onPress={() => update((d) => {
+              d.weeks[weekId].habitPlan = planFromTemplate(d, d.weeks[weekId].templateId);
+            })} />
+          <Button
+            title={`Save this week as the ${tpl.name} template`}
+            onPress={() => Alert.alert(
+              `Update ${tpl.name}?`,
+              'This week\u2019s habit plan and its planned tasks become what this template means. '
+              + 'Weeks already built from it keep what they have; only new ones follow the change.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Save', onPress: () => update((d) => { saveWeekAsTemplate(d, weekId); }) },
+              ],
+            )} />
+          <Note>
+            Set the week up the way you want it below, then save it. That is how a template
+            changes \u2014 there is no separate place to edit one.
+          </Note>
+        </View>
 
         {active.map((h) => {
           const plan = week.habitPlan[h.id] ?? countPlan(3);

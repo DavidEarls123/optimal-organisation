@@ -144,7 +144,7 @@ properly. `npm test` covers the rules that are easy to get wrong.
 
 | Concept | Where | Notes |
 | --- | --- | --- |
-| Week templates | `catalogue.ts` | Strength Block, Race Week, Deload & Reset, Run Block, General Week |
+| Week templates | `catalogue.ts` seeds them; they then live in state | Strength Block, Race Week, Deload & Reset, Run Block, General Week — all editable |
 | Habits | `catalogue.ts` | Identity is the id. Disabling keeps history; re-enabling is the *same* habit |
 | Habit plans | `week.ts` | Per week: every day / chosen days / N a week |
 | Scoring | `scoring.ts` | Pace, banked, targets, streaks, sessions |
@@ -165,6 +165,11 @@ Rules worth knowing, all of them covered by tests:
   After that the weeks are independent.
 - **A film is finished the night you watch it; a series is not.** Series stay selectable,
   count the nights, and are completed by hand from the list.
+- **Templates are edited by example.** Set a week up the way you want it, then
+  *Week → Edit this week → Save this week as the … template*. The habit plan and the
+  planned tasks become what that template means. Weeks already built from it keep what
+  they have; only new ones follow the change. A chosen-days plan (Mon/Wed/Fri) cannot be
+  expressed as a weekly count, so it is stored on the habit itself rather than flattened.
 
 ---
 

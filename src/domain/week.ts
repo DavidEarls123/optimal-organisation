@@ -24,7 +24,7 @@ export function clonePlan(p: HabitPlan): HabitPlan {
 /** A template's standard targets become this week's editable plan.
  *  A habit the template says nothing about falls back to its own default. */
 export function planFromTemplate(state: AppState, templateId: string): Record<string, HabitPlan> {
-  const t = TEMPLATES[templateId] ?? TEMPLATES.general;
+  const t = state.templates?.[templateId] ?? TEMPLATES[templateId] ?? TEMPLATES.general;
   const out: Record<string, HabitPlan> = {};
   for (const h of state.habits) {
     if (!h.active) continue;
@@ -38,7 +38,7 @@ export function planFromTemplate(state: AppState, templateId: string): Record<st
 }
 
 export function planTasks(state: AppState, templateId: string, dayIndex: number): Task[] {
-  const t = TEMPLATES[templateId] ?? TEMPLATES.general;
+  const t = state.templates?.[templateId] ?? TEMPLATES[templateId] ?? TEMPLATES.general;
   const secs = state.sections.length ? state.sections : [{ id: 's1', name: 'Morning' }];
   const entries: PlanEntry[] = t.plan[dayIndex] ?? [];
   return entries.map(([text, track, si]) => ({
@@ -160,6 +160,44 @@ export function moveTask(
   const dest = state.weeks[weekId];
   dest.tasks[dayIndex] = [...(dest.tasks[dayIndex] ?? []), task];
   return { weekId, dayIndex, sectionId: task.sec };
+}
+
+/** Make this week the definition of its template: the habit plan as it now stands,
+ *  and the plan tasks as they now stand. Other weeks already built from the old
+ *  version keep what they have — only weeks created afterwards follow the new one. */
+export function saveWeekAsTemplate(state: AppState, weekId: string): boolean {
+  const w = state.weeks[weekId];
+  if (!w) return false;
+  const tpl = state.templates?.[w.templateId];
+  if (!tpl) return false;
+
+  const targets: Record<string, number> = {};
+  for (const h of state.habits) {
+    if (!h.active) continue;
+    const plan = w.habitPlan[h.id];
+    if (!plan) continue;
+    targets[h.id] = plan.mode === 'every' ? 7
+      : plan.mode === 'days' ? plan.days.length
+      : plan.n;
+  }
+  tpl.targets = targets;
+
+  const secIndex = new Map(state.sections.map((s, i) => [s.id, i]));
+  tpl.plan = [0, 1, 2, 3, 4, 5, 6].map((d) =>
+    (w.tasks[d] ?? [])
+      .filter((x) => x.plan && x.state !== 'dropped')
+      .map((x) => [x.text, x.track ?? null, secIndex.get(x.sec) ?? 0] as PlanEntry));
+
+  // Chosen-days plans cannot be expressed as a weekly count, so keep them as the
+  // habit's own default instead of silently flattening them to "N times a week".
+  for (const h of state.habits) {
+    const plan = w.habitPlan[h.id];
+    if (plan?.mode === 'days') {
+      h.def = { mode: 'days', days: [...plan.days], n: plan.days.length };
+      delete tpl.targets[h.id];
+    }
+  }
+  return true;
 }
 
 export function nextWeekMonday(mondayIso: string, delta: number): string {
