@@ -185,7 +185,7 @@ export function saveWeekAsTemplate(state: AppState, weekId: string): boolean {
   const secIndex = new Map(state.sections.map((sec, i) => [sec.id, i]));
   tpl.plan = [0, 1, 2, 3, 4, 5, 6].map((d) =>
     (w.tasks[d] ?? [])
-      .filter((x) => x.plan && x.state !== 'dropped')
+      .filter((x) => x.plan)
       .map((x) => [x.text, x.track ?? null, secIndex.get(x.sec) ?? 0] as PlanEntry));
 
   return true;
@@ -245,6 +245,60 @@ export function templateTraining(
   return state.trackables
     .filter((k) => n[k.id])
     .map((k) => ({ id: k.id, name: k.name, n: n[k.id] }));
+}
+
+/** Nudges a task one place up or down through the day, crossing from one
+ *  section into the next when it reaches the end of its own. The day reads as
+ *  one list top to bottom, so that is how it reorders — moving a task out of
+ *  Morning and into Afternoon should not need the reschedule panel.
+ *
+ *  Returns the section it ended up in, or null if it could not move (already
+ *  at the very top or the very bottom of the day). */
+export function nudgeTask(
+  state: AppState, weekId: string, day: number, id: string, dir: -1 | 1,
+): string | null {
+  const w = state.weeks[weekId];
+  if (!w) return null;
+  const arr = w.tasks[day] ?? [];
+  const secIds = state.sections.map((x) => x.id);
+  if (!secIds.length) return null;
+
+  // Read the day the way it is drawn: section by section, in order.
+  const rank = (t: Task) => {
+    const i = secIds.indexOf(t.sec);
+    return i < 0 ? 0 : i;
+  };
+  const flat = [...arr].sort((a, b) => rank(a) - rank(b));
+
+  const task = flat.find((t) => t.id === id);
+  if (!task) return null;
+  const si = rank(task);
+  const inSec = flat.filter((t) => rank(t) === si);
+  const at = inSec.indexOf(task);
+
+  const neighbour = inSec[at + dir];
+  if (neighbour) {
+    const i = flat.indexOf(task);
+    const j = flat.indexOf(neighbour);
+    [flat[i], flat[j]] = [flat[j], flat[i]];
+    w.tasks[day] = flat;
+    return task.sec;
+  }
+
+  // At the edge of its section: step into the neighbouring one.
+  const target = si + dir;
+  if (target < 0 || target >= secIds.length) return null;
+  task.sec = secIds[target];
+
+  const rest = flat.filter((t) => t !== task);
+  // Going up lands at the bottom of the section above, going down at the top
+  // of the one below, so the task keeps moving one place at a time.
+  const idx = dir === -1
+    ? rest.findIndex((t) => rank(t) > target)
+    : rest.findIndex((t) => rank(t) >= target);
+  rest.splice(idx < 0 ? rest.length : idx, 0, task);
+  w.tasks[day] = rest;
+  return task.sec;
 }
 
 /** Edit a template directly, without going anywhere near a week. */

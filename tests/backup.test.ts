@@ -22,7 +22,7 @@ function lived() {
   w.habitPlan.meditate = { mode: 'days', days: [0, 2, 4, 6], n: 4 };
   w.tasks[1] = [
     { id: 't1', text: 'Intervals', state: 'done', plan: true, track: 'run', sec: 's3' },
-    { id: 't2', text: 'Binned', state: 'dropped', plan: false, track: null, sec: 's1' },
+    { id: 't2', text: 'Typed in', state: 'open', plan: false, track: null, sec: 's1' },
   ];
   w.shop = [{ id: 'g1', name: 'Breakfast', items: [{ id: 'i1', text: 'Oats', done: true }] }];
   s.watch = [
@@ -73,7 +73,7 @@ test('the envelope says what you are about to restore', () => {
   assert.equal(env.summary.trips, 1);
 });
 
-test('untracked days and discarded tasks survive the trip', () => {
+test('untracked days, ticks and watched entries survive the trip', () => {
   const res = parseBackup(serialise(lived()));
   assert.ok(res.ok);
   if (!res.ok) return;
@@ -81,7 +81,7 @@ test('untracked days and discarded tasks survive the trip', () => {
   assert.equal(w.untracked[4], true);
   assert.equal(w.complete[0], true);
   assert.deepEqual(w.watched[1], ['w1', 'w2']);
-  assert.equal(w.tasks[1].find((t) => t.id === 't2')?.state, 'dropped');
+  assert.equal(w.tasks[1].find((t) => t.id === 't2')?.state, 'open');
   assert.equal(w.shop?.[0].items[0].done, true);
 });
 

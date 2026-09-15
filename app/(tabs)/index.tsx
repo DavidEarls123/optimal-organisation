@@ -11,7 +11,7 @@ import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES, dayDateIso, isoOf, parseISO } from '../../src/domain/dates';
-import { moveTask, uid } from '../../src/domain/week';
+import { moveTask, nudgeTask, uid } from '../../src/domain/week';
 import {
   activeHabits, dayOutstanding, habitDayStatus, habitDone, habitTarget, planLabel,
 } from '../../src/domain/scoring';
@@ -30,6 +30,8 @@ export default function DayScreen() {
   const [access, setAccess] = useState<CalendarAccess | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [tagFor, setTagFor] = useState<Record<string, string>>({});
+  /** Which section has its composer open. Only ever one. */
+  const [adding, setAdding] = useState<string | null>(null);
 
   const dateIso = week ? dayDateIso(week.monday, day) : '';
 
@@ -60,11 +62,10 @@ export default function DayScreen() {
     }
   }, [access, dateIso]);
 
-  useEffect(() => { setMoveId(null); setShowPicker(false); }, [day, weekId]);
+  useEffect(() => { setMoveId(null); setShowPicker(false); setAdding(null); }, [day, weekId]);
 
   const tasks = useMemo(() => (week?.tasks[day] ?? []), [week, day]);
-  const live = tasks.filter((x) => x.state !== 'dropped');
-  const dropped = tasks.filter((x) => x.state === 'dropped');
+  const live = tasks;
 
   const setTaskState = useCallback((id: string, next: Task['state']) => {
     update((d) => {
@@ -75,17 +76,32 @@ export default function DayScreen() {
   }, [update, weekId, day]);
 
   const reorder = useCallback((id: string, dir: -1 | 1) => {
-    update((d) => {
-      const arr = d.weeks[weekId].tasks[day] ?? [];
-      const i = arr.findIndex((y) => y.id === id);
-      if (i < 0) return;
-      const sec = arr[i].sec;
-      // Swap with the nearest neighbour in the same section.
-      let j = i + dir;
-      while (j >= 0 && j < arr.length && arr[j].sec !== sec) j += dir;
-      if (j < 0 || j >= arr.length) return;
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    });
+    update((d) => { nudgeTask(d, weekId, day, id, dir); });
+  }, [update, weekId, day]);
+
+  const deleteTask = useCallback((id: string, text: string) => {
+    Alert.alert(
+      'Delete this task?',
+      `"${text}" is removed from this day.`,
+      [{ text: 'Cancel', style: 'cancel' },
+       {
+         text: 'Delete',
+         style: 'destructive',
+         onPress: () => Alert.alert(
+           'Delete for good?',
+           'This cannot be undone.',
+           [{ text: 'Keep it', style: 'cancel' },
+            {
+              text: 'Delete',
+              style: 'destructive',
+              onPress: () => update((d) => {
+                const arr = d.weeks[weekId].tasks[day] ?? [];
+                d.weeks[weekId].tasks[day] = arr.filter((y) => y.id !== id);
+              }),
+            }],
+         ),
+       }],
+    );
   }, [update, weekId, day]);
 
   const doMove = useCallback((id: string, targetIso: string) => {
@@ -226,35 +242,9 @@ export default function DayScreen() {
               <View key={sc.id}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 13,
                   paddingBottom: 3 }}>
-                  <Field
-                    value={sc.name}
-                    onChangeText={(v) => update((d) => {
-                      const s = d.sections.find((x) => x.id === sc.id);
-                      if (s) s.name = v;
-                    })}
-                    style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 0,
-                      paddingHorizontal: 0, paddingVertical: 2, fontSize: 12.5,
-                      letterSpacing: 1.1, textTransform: 'uppercase', fontWeight: '700', color: t.ink }}
-                    accessibilityLabel={`Rename ${sc.name}`}
-                  />
+                  <Text style={{ flex: 1, fontSize: 12.5, letterSpacing: 1.1,
+                    textTransform: 'uppercase', fontWeight: '700', color: t.ink }}>{sc.name}</Text>
                   <Mono>{`${done}/${items.length}`}</Mono>
-                  {state.sections.length > 1 ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Remove ${sc.name}`}
-                      onPress={() => update((d) => {
-                        d.sections = d.sections.filter((x) => x.id !== sc.id);
-                        const to = d.sections[0].id;
-                        for (const w of Object.values(d.weeks)) {
-                          for (const arr of Object.values(w.tasks)) {
-                            for (const x of arr) if (x.sec === sc.id) x.sec = to;
-                          }
-                        }
-                      })}
-                    >
-                      <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
-                    </Pressable>
-                  ) : null}
                 </View>
 
                 <View style={{ borderTopWidth: 1, borderTopColor: t.rule }}>
@@ -264,7 +254,7 @@ export default function DayScreen() {
                       task={x}
                       open={moveId === x.id}
                       onToggle={() => setTaskState(x.id, x.state === 'done' ? 'open' : 'done')}
-                      onDrop={() => setTaskState(x.id, 'dropped')}
+                      onDelete={() => deleteTask(x.id, x.text)}
                       onOpenMove={() => { setMoveId(moveId === x.id ? null : x.id); setShowPicker(false); }}
                       onReorder={(dir) => reorder(x.id, dir)}
                       onMoveToDay={(d) => doMove(x.id, dayDateIso(week.monday, d))}
@@ -274,51 +264,38 @@ export default function DayScreen() {
                   ))}
                 </View>
 
-                <View style={{ flexDirection: 'row', gap: 7, paddingTop: 7, alignItems: 'center' }}>
-                  <Field
-                    value={drafts[sc.id] ?? ''}
-                    onChangeText={(v) => setDrafts((p) => ({ ...p, [sc.id]: v }))}
-                    onSubmitEditing={() => addTask(sc.id)}
-                    placeholder={`Add to ${sc.name.toLowerCase()}…`}
-                    returnKeyType="done"
-                  />
-                  <TagPicker
-                    value={tagFor[sc.id] ?? ''}
-                    onChange={(v) => setTagFor((p) => ({ ...p, [sc.id]: v }))}
-                  />
-                  <Button title="Add" onPress={() => addTask(sc.id)} />
-                </View>
+                {adding === sc.id ? (
+                  <View style={{ flexDirection: 'row', gap: 7, paddingTop: 7, alignItems: 'center' }}>
+                    <Field
+                      value={drafts[sc.id] ?? ''}
+                      onChangeText={(v) => setDrafts((p) => ({ ...p, [sc.id]: v }))}
+                      onSubmitEditing={() => addTask(sc.id)}
+                      placeholder={`Add to ${sc.name.toLowerCase()}…`}
+                      returnKeyType="done"
+                      autoFocus
+                    />
+                    <TagPicker
+                      value={tagFor[sc.id] ?? ''}
+                      onChange={(v) => setTagFor((p) => ({ ...p, [sc.id]: v }))}
+                    />
+                    <Button title="Add" onPress={() => addTask(sc.id)} />
+                  </View>
+                ) : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Add to ${sc.name}`}
+                    onPress={() => setAdding(sc.id)}
+                    hitSlop={8}
+                    style={{ paddingTop: 7, paddingBottom: 2 }}
+                  >
+                    <Text style={{ fontSize: 15, color: t.ink3, lineHeight: 18 }}>+</Text>
+                  </Pressable>
+                )}
               </View>
             );
           })}
 
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => update((d) => { d.sections.push({ id: uid('s'), name: 'New section' }); })}
-            style={{ paddingTop: 14 }}
-          >
-            <Text style={{ fontSize: 11, letterSpacing: 1.3, textTransform: 'uppercase',
-              color: t.accent, fontWeight: '600' }}>+ Add section</Text>
-          </Pressable>
 
-          {dropped.length ? (
-            <View style={{ paddingTop: 10 }}>
-              <Mono style={{ letterSpacing: 1.2, textTransform: 'uppercase' }}>
-                {`Discarded · ${dropped.length} (not counted against you)`}
-              </Mono>
-              {dropped.map((x) => (
-                <View key={x.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 9,
-                  paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: t.rule2 }}>
-                  <Text style={{ flex: 1, fontSize: 13.5, color: t.ink3,
-                    textDecorationLine: 'line-through' }}>{x.text}</Text>
-                  <Pressable accessibilityRole="button" onPress={() => setTaskState(x.id, 'open')}>
-                    <Text style={{ fontSize: 10, letterSpacing: 0.8, textTransform: 'uppercase',
-                      color: t.accent, fontWeight: '600' }}>Put back</Text>
-                  </Pressable>
-                </View>
-              ))}
-            </View>
-          ) : null}
         </Section>
 
         <Section>
@@ -453,7 +430,7 @@ function HabitGroup({ label, hint, habits, week, ticked, tone, onToggle }: {
                 accessibilityLabel={`${h.name}, ${label.toLowerCase()}, ${n} of ${tg} this week`}
                 onPress={() => onToggle(h.id)}
                 style={{
-                  flexBasis: '48%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', gap: 9,
+                  flexBasis: '48%', flexGrow: 0, flexDirection: 'row', alignItems: 'center', gap: 9,
                   borderWidth: 1, borderRadius: radius.md, padding: 10,
                   borderStyle: dashed && !on ? 'dashed' : 'solid',
                   borderColor: on ? fill : t.rule,
@@ -513,10 +490,10 @@ function TagPicker({ value, onChange }: { value: string; onChange: (v: string) =
 }
 
 function TaskRow({
-  task, open, onToggle, onDrop, onOpenMove, onReorder, onMoveToDay, onPickDate, currentDay,
+  task, open, onToggle, onDelete, onOpenMove, onReorder, onMoveToDay, onPickDate, currentDay,
 }: {
   task: Task; open: boolean; currentDay: number;
-  onToggle: () => void; onDrop: () => void; onOpenMove: () => void;
+  onToggle: () => void; onDelete: () => void; onOpenMove: () => void;
   onReorder: (dir: -1 | 1) => void; onMoveToDay: (d: number) => void; onPickDate: () => void;
 }) {
   const t = useTheme();
@@ -538,8 +515,8 @@ function TaskRow({
           accessibilityLabel={`Reschedule ${task.text}`}>
           <Text style={{ color: open ? t.accent : t.ink3, fontSize: 15 }}>→</Text>
         </Pressable>
-        <Pressable onPress={onDrop} hitSlop={6} accessibilityRole="button"
-          accessibilityLabel={`Discard ${task.text}`}>
+        <Pressable onPress={onDelete} hitSlop={6} accessibilityRole="button"
+          accessibilityLabel={`Delete ${task.text}`}>
           <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
         </Pressable>
       </View>

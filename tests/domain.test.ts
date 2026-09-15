@@ -114,18 +114,31 @@ test('a fully untracked week scores without dividing by zero', () => {
   assert.ok(Number.isFinite(sc.banked));
 });
 
-test('discarded tasks are excluded, not counted as failures', () => {
+test('a task is either done or still open — there is no third state', () => {
   const s = fresh();
   const w = s.weeks[WEEK38];
   w.tasks[0] = [
     { id: 'a', text: 'done', state: 'done', plan: false, track: null, sec: 's1' },
-    { id: 'b', text: 'binned', state: 'dropped', plan: false, track: null, sec: 's1' },
+    { id: 'b', text: 'not yet', state: 'open', plan: false, track: null, sec: 's1' },
   ];
   for (let d = 1; d < 7; d += 1) w.tasks[d] = [];
   const sc = weekScore(s, w, TUE);
   assert.equal(sc.tasksDone, 1);
-  assert.equal(sc.tasksOpen, 0);
-  assert.equal(sc.tasksDropped, 1);
+  assert.equal(sc.tasksOpen, 1);
+});
+
+test('a deleted task leaves no trace in the score', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.tasks[0] = [
+    { id: 'a', text: 'done', state: 'done', plan: false, track: null, sec: 's1' },
+    { id: 'b', text: 'a mistake', state: 'open', plan: false, track: null, sec: 's1' },
+  ];
+  for (let d = 1; d < 7; d += 1) w.tasks[d] = [];
+  w.tasks[0] = w.tasks[0].filter((t) => t.id !== 'b');
+  const sc = weekScore(s, w, TUE);
+  assert.equal(sc.tasksDone, 1);
+  assert.equal(sc.tasksOpen, 0, 'deleting is not the same as failing');
 });
 
 test('a day is complete only when its scheduled habits and live tasks are done', () => {
@@ -133,12 +146,13 @@ test('a day is complete only when its scheduled habits and live tasks are done',
   const w = s.weeks[WEEK38];
   w.tasks[1] = [
     { id: 'a', text: 'run', state: 'open', plan: true, track: 'run', sec: 's1' },
-    { id: 'b', text: 'gone', state: 'dropped', plan: false, track: null, sec: 's1' },
+    { id: 'b', text: 'also open', state: 'open', plan: false, track: null, sec: 's1' },
   ];
   const ids = activeHabits(s, w).filter((h) => scheduledOn(w, h.id, 1)).map((h) => h.id);
   w.habits[1] = Object.fromEntries(ids.map((id) => [id, true]));
-  assert.equal(dayOutstanding(s, w, 1), 1);
+  assert.equal(dayOutstanding(s, w, 1), 2);
   assert.equal(dayAllDone(s, w, 1), false);
+  w.tasks[1][1].state = 'done';
   w.tasks[1][0].state = 'done';
   assert.equal(dayAllDone(s, w, 1), true);
 });
@@ -308,7 +322,6 @@ test('saving a week as its template captures the plan and the tagged sessions', 
   w.tasks[1] = [
     { id: 'a', text: 'Intervals', state: 'done', plan: true, track: 'run', sec: 's3' },
     { id: 'b', text: 'Typed in by hand', state: 'open', plan: false, track: null, sec: 's1' },
-    { id: 'c', text: 'Binned', state: 'dropped', plan: true, track: 'gym', sec: 's1' },
   ];
   assert.equal(saveWeekAsTemplate(s, WEEK38), true);
 
@@ -316,7 +329,7 @@ test('saving a week as its template captures the plan and the tagged sessions', 
   assert.equal(tpl.plans!.guitar.n, 6);
   assert.equal(tpl.plans!.recovery.mode, 'every');
   assert.deepEqual(tpl.plan[1], [['Intervals', 'run', 2]],
-    'only planned, undiscarded tasks are kept, with their tag and section');
+    'only planned tasks are kept, with their tag and section');
 });
 
 test('saving a template leaves weeks already built from it alone', () => {

@@ -30,10 +30,20 @@ test('a state that migrate refuses falls back to the safety copy', () => {
 
 test('a state that makes migrate throw falls back to the safety copy', () => {
   const broken = JSON.parse(good());
-  broken.weeks['2026-W38'].tasks = { 0: 'not an array' };
+  broken.weeks['2026-W38'] = null;
   const out = decideLoad(JSON.stringify(broken), good());
   assert.equal(out.kind, 'loaded');
   assert.equal(out.kind === 'loaded' && out.from, 'backup');
+});
+
+test('a week whose tasks are not arrays is repaired rather than thrown out', () => {
+  // This used to throw, which meant a wipe. It is now fixed in place, so the
+  // day comes back empty instead of the year coming back empty.
+  const broken = JSON.parse(good());
+  broken.weeks['2026-W38'].tasks = { 0: 'not an array' };
+  const out = decideLoad(JSON.stringify(broken), null);
+  assert.equal(out.kind, 'loaded');
+  assert.deepEqual(out.kind === 'loaded' && out.state.weeks['2026-W38'].tasks[0], []);
 });
 
 test('unreadable with no safety copy is never reported as a first run', () => {

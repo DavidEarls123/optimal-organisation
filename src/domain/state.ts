@@ -48,6 +48,13 @@ export function migrate(loaded: Partial<AppState> | null): AppState | null {
   };
 
   for (const h of s.habits) if (h.active === undefined) h.active = true;
+  // Renamed to TV. Only touched when it still holds the name it shipped with,
+  // so a habit renamed by hand keeps whatever it was called.
+  for (const h of s.habits) {
+    if (h.id !== 'tv') continue;
+    if (h.name === 'Watch something') h.name = 'TV';
+    if (h.short === 'Watch') h.short = 'TV';
+  }
   if (!s.templates || typeof s.templates !== 'object' || !Object.keys(s.templates).length) {
     s.templates = JSON.parse(JSON.stringify(TEMPLATES));
   }
@@ -66,11 +73,18 @@ export function migrate(loaded: Partial<AppState> | null): AppState | null {
     w.habits ??= {};
     w.tasks ??= {};
     w.habitPlan ??= {};
-    for (const arr of Object.values(w.tasks)) {
-      for (const t of arr) {
+    for (const [d, arr] of Object.entries(w.tasks)) {
+      if (!Array.isArray(arr)) { w.tasks[Number(d)] = []; continue; }
+      // 'dropped' is gone: a task is either live or deleted outright. Anything
+      // still carrying it was discarded by hand, so it goes rather than
+      // lingering invisibly now that nothing draws it.
+      const live = arr.filter((t) => t && (t as { state?: string }).state !== 'dropped');
+      for (const t of live) {
         if (!t.sec || !s.sections.some((x) => x.id === t.sec)) t.sec = firstSec;
         if (t.track === undefined) t.track = null;
+        if (t.state !== 'done') t.state = 'open';
       }
+      w.tasks[Number(d)] = live;
     }
   }
   return s;

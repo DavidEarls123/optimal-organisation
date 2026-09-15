@@ -100,8 +100,7 @@ export function dayScore(state: AppState, week: Week, day: number): number {
   const hp = ids.length ? ids.filter((id) => ticked[id]).length / ids.length : 1;
   const tasks = week.tasks[day] ?? [];
   const done = tasks.filter((t) => t.state === 'done').length;
-  const live = tasks.filter((t) => t.state !== 'dropped').length;
-  const tp = live ? done / live : 1;
+  const tp = tasks.length ? done / tasks.length : 1;
   const w = templateOf(state, week).weights;
   return hp * w.habits + tp * w.tasks;
 }
@@ -126,7 +125,6 @@ export interface WeekScore {
   habitsTarget: number;
   tasksDone: number;
   tasksOpen: number;
-  tasksDropped: number;
   trackedCount: number;
   elapsed: number;
 }
@@ -151,16 +149,14 @@ export function weekScore(state: AppState, week: Week, today: Date): WeekScore {
 
   let ticked = 0;
   let open = 0;
-  let dropped = 0;
   let tickedAll = 0;
   let openAll = 0;
   for (const d of td) {
     for (const x of week.tasks[d] ?? []) {
       if (x.state === 'done') tickedAll += 1;
-      else if (x.state !== 'dropped') openAll += 1;
+      else openAll += 1;
       if (current && d > ti) continue;
       if (x.state === 'done') ticked += 1;
-      else if (x.state === 'dropped') dropped += 1;
       else open += 1;
     }
   }
@@ -177,7 +173,6 @@ export function weekScore(state: AppState, week: Week, today: Date): WeekScore {
     habitsTarget: target,
     tasksDone: tickedAll,
     tasksOpen: openAll,
-    tasksDropped: dropped,
     trackedCount: td.length,
     elapsed: el,
   };

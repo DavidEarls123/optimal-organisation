@@ -19,7 +19,7 @@ export const DEFAULT_HABITS: Habit[] = [
   { id: 'meditate', name: 'Meditate',         short: 'Meditate',   active: true },
   { id: 'read',     name: 'Read book',        short: 'Read',       active: true,
     def: { mode: 'days', days: [0, 1, 2, 3, 4], n: 5 } },
-  { id: 'tv',       name: 'Watch something',  short: 'Watch',      active: true, picks: 'watch',
+  { id: 'tv',       name: 'TV',               short: 'TV',         active: true, picks: 'watch',
     def: { mode: 'count', days: [], n: 3 } },
 ];
 

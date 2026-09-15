@@ -147,7 +147,7 @@ export default function WeekScreen() {
           <View>
             {DAY_NAMES.map((name, d) => {
               const sessions = (week.tasks[d] ?? [])
-                .filter((x) => x.track && x.state !== 'dropped');
+                .filter((x) => x.track);
               const doneCount = sessions.filter((x) => x.state === 'done').length;
               const offDay = Boolean(week.untracked[d]);
               return (

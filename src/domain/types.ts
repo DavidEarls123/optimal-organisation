@@ -34,7 +34,7 @@ export interface Trackable {
   ci: number;
 }
 
-export type TaskState = 'open' | 'done' | 'dropped';
+export type TaskState = 'open' | 'done';
 
 export interface Task {
   id: string;

@@ -247,7 +247,7 @@ function Entertainment() {
       ) : null}
 
       <Note>
-        Tick Watch something on any day and pick from this list — more than one if it was that sort
+        Tick TV on any day and pick from this list — more than one if it was that sort
         of night. A film is done the night you watch it. A series stays on the list however many
         nights you pick it, counting them up; tick it here when you finish it.
       </Note>
