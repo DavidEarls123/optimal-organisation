@@ -140,4 +140,12 @@ export interface CalendarEvent {
   allDay: boolean;
   /** Set when the entry looks like a planned session (e.g. from Runna). */
   track?: string | null;
+  /** The entry's own location, where it has one. `where` falls back to the
+   *  calendar's name for display; this does not, so two entries can be told
+   *  apart by place without the calendar name getting in the way. */
+  place?: string | null;
+  /** The day it falls on, when a list spans more than one. */
+  date?: string;
+  /** How many identical copies were collapsed into this one. 1 when unique. */
+  copies?: number;
 }

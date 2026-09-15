@@ -184,7 +184,12 @@ export default function DayScreen() {
                       <Text style={{ fontSize: 14, color: t.ink }}>{e.title}</Text>
                       {e.track ? <TrackChip trackId={e.track} /> : null}
                     </View>
-                    {e.where ? <Mono style={{ fontSize: 11, marginTop: 2 }}>{e.where}</Mono> : null}
+                    {e.where || (e.copies ?? 1) > 1 ? (
+                      <Mono style={{ fontSize: 11, marginTop: 2 }}>
+                        {[e.where, (e.copies ?? 1) > 1 ? `${e.copies} copies in your calendar` : '']
+                          .filter(Boolean).join('  \u00b7  ')}
+                      </Mono>
+                    ) : null}
                   </View>
                   {e.track ? (
                     <Pressable

@@ -1,6 +1,7 @@
 import * as Calendar from 'expo-calendar';
 import type { CalendarEvent } from '../domain/types';
 import { parseISO, addDays } from '../domain/dates';
+import { dedupeEvents } from '../domain/calendar';
 
 /** Reading the phone's calendar is the whole integration story.
  *  Outlook synced to iOS shows up here, and so does a Runna plan — Runna
@@ -132,7 +133,7 @@ export async function eventsForDay(dateIso: string): Promise<CalendarEvent[]> {
   const start = parseISO(dateIso);
   const found = await eventsBetween(start, addDays(start, 1));
   if (!found) return [];
-  return found.raw
+  const mapped = found.raw
     .map((e) => {
       const calTitle = found.byId.get(e.calendarId) ?? '';
       return {
@@ -140,11 +141,13 @@ export async function eventsForDay(dateIso: string): Promise<CalendarEvent[]> {
         time: e.allDay ? '' : hhmm(asDate(e.startDate)),
         title: e.title || '(untitled)',
         where: e.location || calTitle,
+        place: e.location || null,
         allDay: Boolean(e.allDay),
         track: inferTrack(e.title ?? '', calTitle),
       } satisfies CalendarEvent;
     })
     .sort((a, b) => (a.allDay === b.allDay ? a.time.localeCompare(b.time) : a.allDay ? -1 : 1));
+  return dedupeEvents(mapped);
 }
 
 /** All-day entries in the next `days` days become countdowns. */
@@ -152,14 +155,16 @@ export async function allDayHorizon(fromIso: string, days = 180): Promise<(Calen
   const start = parseISO(fromIso);
   const found = await eventsBetween(start, addDays(start, days));
   if (!found) return [];
-  return found.raw
+  const mapped = found.raw
     .filter((e) => e.allDay)
     .map((e) => ({
       id: String(e.id),
       time: '',
       title: e.title || '(untitled)',
       where: '',
+      place: e.location || null,
       allDay: true,
       date: ymd(asDate(e.startDate)),
     }));
+  return dedupeEvents(mapped) as (CalendarEvent & { date: string })[];
 }
