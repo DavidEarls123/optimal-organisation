@@ -105,6 +105,27 @@ tests/                  domain tests
 
 ---
 
+## Where your data lives
+
+On the phone, and nowhere else. No server, no account, no sync. Everything is written to
+AsyncStorage under one key, which on iOS is plain JSON files in
+`Library/Application Support/<bundle-id>/RCTAsyncLocalStorage_V1/`.
+
+**It is included in your iPhone backup, but only because `app.json` says so.** AsyncStorage
+excludes its own directory from iCloud and iTunes backups by default — sensible for a cache,
+wrong for a year of training history — so `RCTAsyncStorageExcludeFromBackup: false` overrides
+it. Do not remove that line.
+
+Two things that follow from all this:
+
+- **In Expo Go, the data belongs to Expo Go.** Delete that app and it goes. It will also
+  *not* carry across when you move to a standalone build — that is a different app with a
+  different sandbox, starting empty.
+- **One device, one copy.** A restored iPhone backup brings it back. A lost phone with no
+  backup does not. There is no export yet; see below.
+
+---
+
 ## Not done yet
 
 Honest list, in rough priority order:
@@ -117,4 +138,7 @@ Honest list, in rough priority order:
    Rescheduling a task already uses the native picker; the other two should follow.
 4. **The Hub's year view needs history.** It only ever shows weeks actually recorded and
    says so when there are too few. Nothing in it is invented.
-5. **Sample data.** A fresh install starts genuinely empty, on the General Week template.
+5. **Export and restore.** There is no way to get your data out of the app yet. Worth doing
+   before it holds anything you would miss — a JSON export you can mail to yourself is an
+   afternoon; syncing across devices is a much bigger decision.
+6. **Sample data.** A fresh install starts genuinely empty, on the General Week template.
