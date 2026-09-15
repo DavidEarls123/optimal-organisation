@@ -104,8 +104,15 @@ repo under **Settings → Secrets and variables → Actions** as `EXPO_TOKEN`.
 
 **What travels this way and what does not:** JavaScript and assets go over the air, which
 is nearly everything — screens, logic, wording, layout. Native changes do not: a new Expo
-module, a new permission, anything touching `app.json` plugins. Those need
-`eas build` again. You will be told which when the time comes.
+module, a new permission, anything touching `app.json` plugins.
+
+Those need a rebuild, and that is also a button rather than a terminal:
+**Actions → Build app → Run workflow**, in `.github/workflows/build-app.yml`. Only the
+very first build has to run locally, because Apple sign-in and certificate creation are
+interactive. After that EAS holds the credentials and GitHub can do it.
+
+So the terminal is a one-off. From then on: changes land on `main`, the app updates itself,
+and a rebuild is two clicks when it is ever needed.
 
 ---
 
