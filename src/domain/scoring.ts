@@ -41,6 +41,28 @@ export function elapsedDays(week: Week, today: Date): number {
   return td.filter((d) => d <= ti).length;
 }
 
+/** What a habit asks of one particular day.
+ *  - `today`  pinned to this day: every day, or a chosen day that includes it
+ *  - `anyday` owed this week but not to any day in particular (N times a week)
+ *  - `off`    not this day: a chosen-days habit elsewhere, or an untracked day */
+export type DayStatus = 'today' | 'anyday' | 'off';
+
+export function habitDayStatus(week: Week, habitId: string, day: number): DayStatus {
+  const p = week.habitPlan[habitId];
+  if (!p || week.untracked[day]) return 'off';
+  if (p.mode === 'every') return 'today';
+  if (p.mode === 'days') return p.days.includes(day) ? 'today' : 'off';
+  return 'anyday';
+}
+
+/** Only what is pinned to the day. This is what decides whether a day is finished:
+ *  a "5 times a week, any day" habit is a weekly matter, and holding every single
+ *  day open until it is done would mean no day is ever complete. */
+export function plannedOn(week: Week, habitId: string, day: number): boolean {
+  return habitDayStatus(week, habitId, day) === 'today';
+}
+
+/** Whether the habit can be ticked on this day at all — used by the wall chart. */
 export function scheduledOn(week: Week, habitId: string, day: number): boolean {
   const p = week.habitPlan[habitId];
   if (!p) return false;
@@ -73,7 +95,7 @@ export function planLabel(week: Week, habitId: string): string {
 
 export function dayScore(state: AppState, week: Week, day: number): number {
   if (week.untracked[day]) return 0;
-  const ids = activeHabits(state, week).filter((h) => scheduledOn(week, h.id, day)).map((h) => h.id);
+  const ids = activeHabits(state, week).filter((h) => plannedOn(week, h.id, day)).map((h) => h.id);
   const ticked = week.habits[day] ?? {};
   const hp = ids.length ? ids.filter((id) => ticked[id]).length / ids.length : 1;
   const tasks = week.tasks[day] ?? [];
@@ -86,7 +108,7 @@ export function dayScore(state: AppState, week: Week, day: number): number {
 
 export function dayOutstanding(state: AppState, week: Week, day: number): number {
   const ticked = week.habits[day] ?? {};
-  const h = activeHabits(state, week).filter((x) => scheduledOn(week, x.id, day) && !ticked[x.id]).length;
+  const h = activeHabits(state, week).filter((x) => plannedOn(week, x.id, day) && !ticked[x.id]).length;
   const t = (week.tasks[day] ?? []).filter((x) => x.state === 'open').length;
   return h + t;
 }

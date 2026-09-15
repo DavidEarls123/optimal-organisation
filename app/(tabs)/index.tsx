@@ -13,9 +13,9 @@ import { radius } from '../../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES, dayDateIso, isoOf, parseISO } from '../../src/domain/dates';
 import { moveTask, uid } from '../../src/domain/week';
 import {
-  activeHabits, dayOutstanding, habitDone, habitTarget, scheduledOn, templateOf,
+  activeHabits, dayOutstanding, habitDayStatus, habitDone, habitTarget, planLabel,
 } from '../../src/domain/scoring';
-import type { CalendarEvent, Task } from '../../src/domain/types';
+import type { CalendarEvent, Habit, Task, Week } from '../../src/domain/types';
 import { askForCalendar, calendarAccess, eventsForDay, type CalendarAccess }
   from '../../src/services/calendar';
 
@@ -106,6 +106,15 @@ export default function DayScreen() {
     }
   }, [update, weekId, day, state.sections]);
 
+  const toggleHabit = useCallback((habitId: string) => {
+    const h = state.habits.find((x) => x.id === habitId);
+    if (h?.picks === 'watch') { router.push({ pathname: '/watch', params: { day: String(day) } }); return; }
+    update((d) => {
+      const map = (d.weeks[weekId].habits[day] ??= {});
+      if (map[habitId]) delete map[habitId]; else map[habitId] = true;
+    });
+  }, [state.habits, router, update, weekId, day]);
+
   const addTask = useCallback((sectionId: string) => {
     const text = (drafts[sectionId] ?? '').trim();
     if (!text) return;
@@ -124,8 +133,9 @@ export default function DayScreen() {
   const outstanding = dayOutstanding(state, week, day);
   const ticked = week.habits[day] ?? {};
   const acts = activeHabits(state, week);
-  const planned = acts.filter((h) => scheduledOn(week, h.id, day));
-  const extra = acts.filter((h) => !scheduledOn(week, h.id, day));
+  const planned = acts.filter((h) => habitDayStatus(week, h.id, day) === 'today');
+  const anyday = acts.filter((h) => habitDayStatus(week, h.id, day) === 'anyday');
+  const notToday = acts.filter((h) => habitDayStatus(week, h.id, day) === 'off');
   const watched = week.watched[day] ?? [];
 
   return (
@@ -307,48 +317,41 @@ export default function DayScreen() {
             title="Habits today"
             right={`${planned.filter((h) => ticked[h.id]).length}/${planned.length} planned`}
           />
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            {[...planned, ...extra].map((h) => {
-              const isPlanned = scheduledOn(week, h.id, day);
-              const on = Boolean(ticked[h.id]);
-              const n = habitDone(week, h.id);
-              const tg = habitTarget(week, h.id);
-              const fill = isPlanned ? t.hit : t.accent;
-              return (
-                <Pressable
-                  key={h.id}
-                  accessibilityRole="button"
-                  accessibilityState={{ checked: on }}
-                  onPress={() => {
-                    if (h.picks === 'watch') { router.push({ pathname: '/watch', params: { day: String(day) } }); return; }
-                    update((d) => {
-                      const map = (d.weeks[weekId].habits[day] ??= {});
-                      if (map[h.id]) delete map[h.id]; else map[h.id] = true;
-                    });
-                  }}
-                  style={{
-                    flexBasis: '48%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', gap: 9,
-                    borderWidth: 1, borderRadius: radius.md, padding: 10,
-                    borderStyle: isPlanned || on ? 'solid' : 'dashed',
-                    borderColor: on ? fill : t.rule,
-                    backgroundColor: on ? (isPlanned ? t.hitSoft : t.accentSoft) : 'transparent',
-                  }}
-                >
-                  <Tick on={on} tone={isPlanned ? 'hit' : 'accent'} size={18} />
-                  <Text style={{ flex: 1, fontSize: 13.5, fontWeight: '500',
-                    color: isPlanned ? t.ink : t.ink2 }}>{h.short || h.name}</Text>
-                  <Mono style={{ color: on ? fill : t.ink3 }}>{`${n}/${tg}`}</Mono>
-                </Pressable>
-              );
-            })}
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <View style={{ width: 11, height: 11, borderRadius: 3, backgroundColor: t.hit }} />
-            <Note>Planned today</Note>
-            <View style={{ width: 11, height: 11, borderRadius: 3, backgroundColor: t.accent,
-              marginLeft: 8 }} />
-            <Note>Not planned — still counts if you do it</Note>
-          </View>
+
+          <HabitGroup
+            label="Planned for today"
+            hint={planned.length ? undefined : 'Nothing is pinned to this day.'}
+            habits={planned}
+            week={week}
+            ticked={ticked}
+            tone="today"
+            onToggle={toggleHabit}
+          />
+
+          {anyday.length ? (
+            <HabitGroup
+              label="Any day this week"
+              hint="Owed this week, not to this day in particular. These do not hold the day open."
+              habits={anyday}
+              week={week}
+              ticked={ticked}
+              tone="anyday"
+              onToggle={toggleHabit}
+            />
+          ) : null}
+
+          {notToday.length ? (
+            <HabitGroup
+              label="Not planned today"
+              hint="Doing one anyway still counts towards the week."
+              habits={notToday}
+              week={week}
+              ticked={ticked}
+              tone="off"
+              onToggle={toggleHabit}
+            />
+          ) : null}
+
           {watched.length ? (
             <Text style={{ fontSize: 13, fontStyle: 'italic', color: t.ink2 }}>
               {`Watched: ${watched
@@ -402,6 +405,69 @@ export default function DayScreen() {
         />
       ) : null}
     </Screen>
+  );
+}
+
+/** One band of habits: what today asks, what the week asks, and what it does not. */
+function HabitGroup({ label, hint, habits, week, ticked, tone, onToggle }: {
+  label: string;
+  hint?: string;
+  habits: Habit[];
+  week: Week;
+  ticked: Record<string, boolean>;
+  tone: 'today' | 'anyday' | 'off';
+  onToggle: (habitId: string) => void;
+}) {
+  const t = useTheme();
+  const fill = tone === 'today' ? t.hit : tone === 'anyday' ? t.accent : t.ink3;
+  const dashed = tone === 'off';
+  return (
+    <View style={{ gap: 6, paddingTop: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+        <View style={{ width: 9, height: 9, borderRadius: 2, backgroundColor: fill }} />
+        <Text style={{ fontSize: 11, letterSpacing: 1.1, textTransform: 'uppercase',
+          fontWeight: '700', color: t.ink2 }}>{label}</Text>
+        <Mono style={{ fontSize: 10.5 }}>{`${habits.filter((h) => ticked[h.id]).length}/${habits.length}`}</Mono>
+      </View>
+      {hint ? <Note>{hint}</Note> : null}
+      {habits.length ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          {habits.map((h) => {
+            const on = Boolean(ticked[h.id]);
+            const n = habitDone(week, h.id);
+            const tg = habitTarget(week, h.id);
+            return (
+              <Pressable
+                key={h.id}
+                accessibilityRole="button"
+                accessibilityState={{ checked: on }}
+                accessibilityLabel={`${h.name}, ${label.toLowerCase()}, ${n} of ${tg} this week`}
+                onPress={() => onToggle(h.id)}
+                style={{
+                  flexBasis: '48%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', gap: 9,
+                  borderWidth: 1, borderRadius: radius.md, padding: 10,
+                  borderStyle: dashed && !on ? 'dashed' : 'solid',
+                  borderColor: on ? fill : t.rule,
+                  backgroundColor: on
+                    ? (tone === 'today' ? t.hitSoft : tone === 'anyday' ? t.accentSoft : t.sunk)
+                    : 'transparent',
+                }}
+              >
+                <Tick on={on} tone={tone === 'today' ? 'hit' : 'accent'} size={18} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13.5, fontWeight: '500',
+                    color: tone === 'off' ? t.ink2 : t.ink }}>{h.short || h.name}</Text>
+                  <Mono style={{ fontSize: 9, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+                    {planLabel(week, h.id)}
+                  </Mono>
+                </View>
+                <Mono style={{ color: on ? fill : t.ink3 }}>{`${n}/${tg}`}</Mono>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+    </View>
   );
 }
 

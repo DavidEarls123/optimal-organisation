@@ -9,7 +9,8 @@ import {
 } from '../src/domain/week';
 import {
   activeHabits, dayAllDone, dayOutstanding, elapsedDays, habitDone, habitTarget,
-  planLabel, scheduledOn, streak, templateOf, trackWeekCount, watchCount, weekScore,
+  habitDayStatus, planLabel, plannedOn, scheduledOn, streak, templateOf,
+  trackWeekCount, watchCount, weekScore,
 } from '../src/domain/scoring';
 import { isoWeekId, mondayOf, isoOf, daysUntil, previousWeekId } from '../src/domain/dates';
 
@@ -436,4 +437,52 @@ test('what the summary promises is what building a week delivers', () => {
     assert.equal(habitTarget(w, h.id), summary.counts[h.id],
       `${h.id}: the card and the built week agree`);
   }
+});
+
+test('a habit owed any day this week does not hold the day open', () => {
+  const s = fresh('run');
+  const w = s.weeks[WEEK38];
+  w.tasks = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+  // Everything pinned to Tuesday is done; only the flexible ones are outstanding.
+  const pinned = activeHabits(s, w).filter((h) => plannedOn(w, h.id, 1)).map((h) => h.id);
+  w.habits[1] = Object.fromEntries(pinned.map((id) => [id, true]));
+  const flexible = activeHabits(s, w).filter((h) => habitDayStatus(w, h.id, 1) === 'anyday');
+  assert.ok(flexible.length > 0, 'the run template has N-a-week habits');
+  assert.equal(dayOutstanding(s, w, 1), 0);
+  assert.equal(dayAllDone(s, w, 1), true);
+});
+
+test('a chosen-days habit only holds its own days open', () => {
+  const s = fresh('run');
+  const w = s.weeks[WEEK38];
+  w.tasks = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+  for (const h of s.habits) h.active = h.id === 'meditate';
+  w.habitPlan = { meditate: daysPlan([0, 2, 4]) };
+
+  assert.equal(habitDayStatus(w, 'meditate', 0), 'today');
+  assert.equal(habitDayStatus(w, 'meditate', 1), 'off');
+  assert.equal(dayOutstanding(s, w, 0), 1, 'Monday is one of its days');
+  assert.equal(dayOutstanding(s, w, 1), 0, 'Tuesday is not');
+  assert.equal(dayAllDone(s, w, 1), true);
+});
+
+test('an every-day habit holds every tracked day open', () => {
+  const s = fresh('run');
+  const w = s.weeks[WEEK38];
+  w.tasks = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+  for (const h of s.habits) h.active = h.id === 'tabs_am';
+  w.habitPlan = { tabs_am: everyPlan() };
+  for (let d = 0; d < 7; d += 1) assert.equal(dayOutstanding(s, w, d), 1, `day ${d}`);
+  w.untracked[3] = true;
+  assert.equal(habitDayStatus(w, 'tabs_am', 3), 'off', 'an untracked day asks nothing');
+  assert.equal(dayOutstanding(s, w, 3), 0);
+});
+
+test('ticking a flexible habit still counts towards the week', () => {
+  const s = fresh('run');
+  const w = s.weeks[WEEK38];
+  assert.equal(habitDayStatus(w, 'recovery', 1), 'anyday');
+  w.habits[1] = { recovery: true };
+  assert.equal(habitDone(w, 'recovery'), 1, 'the weekly total is what it feeds');
+  assert.equal(habitTarget(w, 'recovery'), 5);
 });
