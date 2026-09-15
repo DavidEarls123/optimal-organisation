@@ -1,0 +1,298 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+import { createInitialState, emptyState, migrate } from '../src/domain/state';
+import {
+  countPlan, daysPlan, ensurePlanCoverage, ensureWeek, everyPlan,
+  moveTask, planFromTemplate, prevWeekIdOf, shopListFor,
+} from '../src/domain/week';
+import {
+  activeHabits, dayAllDone, dayOutstanding, elapsedDays, habitDone, habitTarget,
+  planLabel, scheduledOn, streak, trackWeekCount, watchCount, weekScore,
+} from '../src/domain/scoring';
+import { isoWeekId, mondayOf, isoOf, daysUntil, previousWeekId } from '../src/domain/dates';
+
+const TUE = new Date(2026, 8, 15);            // Tue 15 Sep 2026, in week 38
+const WEEK38 = '2026-W38';
+
+function fresh(templateId = 'run') {
+  const s = createInitialState(TUE, templateId);
+  return s;
+}
+
+test('a fresh state has exactly this week, on the chosen template', () => {
+  const s = fresh();
+  assert.deepEqual(Object.keys(s.weeks), [WEEK38]);
+  assert.equal(s.weeks[WEEK38].monday, '2026-09-14');
+  assert.equal(s.weeks[WEEK38].templateId, 'run');
+});
+
+test('template targets become the week plan; 7+ means every day', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  assert.equal(w.habitPlan.tabs_am.mode, 'every');
+  assert.equal(w.habitPlan.recovery.mode, 'count');
+  assert.equal(w.habitPlan.recovery.n, 5);
+});
+
+test('a habit the template ignores falls back to its own default (Read book = Mon-Fri)', () => {
+  const s = fresh();
+  const plan = s.weeks[WEEK38].habitPlan.read;
+  assert.equal(plan.mode, 'days');
+  assert.deepEqual(plan.days, [0, 1, 2, 3, 4]);
+  assert.equal(planLabel(s.weeks[WEEK38], 'read'), 'Mo Tu We Th Fr');
+});
+
+test('an untracked day lowers the target rather than counting as a miss', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  assert.equal(habitTarget(w, 'tabs_am'), 7);
+  w.untracked[4] = true;                       // Friday off
+  assert.equal(habitTarget(w, 'tabs_am'), 6);
+  assert.equal(scheduledOn(w, 'tabs_am', 4), false);
+});
+
+test('untracked days also shrink a chosen-days target', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.habitPlan.meditate = daysPlan([0, 2, 4, 6]);
+  assert.equal(habitTarget(w, 'meditate'), 4);
+  w.untracked[4] = true;                       // Friday was one of the chosen days
+  assert.equal(habitTarget(w, 'meditate'), 3);
+});
+
+test('a count target can never exceed the tracked days available', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.habitPlan.guitar = countPlan(7);
+  [1, 2, 3].forEach((d) => { w.untracked[d] = true; });
+  assert.equal(habitTarget(w, 'guitar'), 4);
+});
+
+test('ticking a habit on an unscheduled day still counts towards the week', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.habitPlan.meditate = daysPlan([0, 2, 4, 6]);
+  assert.equal(scheduledOn(w, 'meditate', 1), false);   // Tuesday not chosen
+  w.habits[1] = { meditate: true };
+  assert.equal(habitDone(w, 'meditate'), 1);
+});
+
+test('ticks on untracked days are ignored entirely', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.habits[4] = { tabs_am: true };
+  assert.equal(habitDone(w, 'tabs_am'), 1);
+  w.untracked[4] = true;
+  assert.equal(habitDone(w, 'tabs_am'), 0);
+});
+
+test('pace measures against days elapsed; banked measures against the whole week', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.tasks = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+  // Every habit ticked on Mon and Tue, which is all that has happened by Tuesday.
+  const ids = activeHabits(s, w).map((h) => h.id);
+  w.habits[0] = Object.fromEntries(ids.map((id) => [id, true]));
+  w.habits[1] = Object.fromEntries(ids.map((id) => [id, true]));
+  const sc = weekScore(s, w, TUE);
+  assert.equal(sc.elapsed, 2);
+  assert.ok(sc.pace > 0.9, `pace should be near perfect, got ${sc.pace}`);
+  assert.ok(sc.banked < sc.pace, 'banked must trail pace mid-week');
+});
+
+test('a fully untracked week scores without dividing by zero', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  [0, 1, 2, 3, 4, 5, 6].forEach((d) => { w.untracked[d] = true; });
+  const sc = weekScore(s, w, TUE);
+  assert.equal(sc.trackedCount, 0);
+  assert.ok(Number.isFinite(sc.pace));
+  assert.ok(Number.isFinite(sc.banked));
+});
+
+test('discarded tasks are excluded, not counted as failures', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.tasks[0] = [
+    { id: 'a', text: 'done', state: 'done', plan: false, track: null, sec: 's1' },
+    { id: 'b', text: 'binned', state: 'dropped', plan: false, track: null, sec: 's1' },
+  ];
+  for (let d = 1; d < 7; d += 1) w.tasks[d] = [];
+  const sc = weekScore(s, w, TUE);
+  assert.equal(sc.tasksDone, 1);
+  assert.equal(sc.tasksOpen, 0);
+  assert.equal(sc.tasksDropped, 1);
+});
+
+test('a day is complete only when its scheduled habits and live tasks are done', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.tasks[1] = [
+    { id: 'a', text: 'run', state: 'open', plan: true, track: 'run', sec: 's1' },
+    { id: 'b', text: 'gone', state: 'dropped', plan: false, track: null, sec: 's1' },
+  ];
+  const ids = activeHabits(s, w).filter((h) => scheduledOn(w, h.id, 1)).map((h) => h.id);
+  w.habits[1] = Object.fromEntries(ids.map((id) => [id, true]));
+  assert.equal(dayOutstanding(s, w, 1), 1);
+  assert.equal(dayAllDone(s, w, 1), false);
+  w.tasks[1][0].state = 'done';
+  assert.equal(dayAllDone(s, w, 1), true);
+});
+
+test('streaks count back over tracked days only', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.habits[0] = { tabs_am: true };
+  w.habits[1] = { tabs_am: true };
+  assert.equal(streak(w, 'tabs_am', TUE), 2);
+  w.habits[0] = {};
+  assert.equal(streak(w, 'tabs_am', TUE), 1);
+});
+
+test('a tagged task logs a session when ticked, and not before', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.tasks[1] = [{ id: 'r', text: 'Intervals', state: 'open', plan: true, track: 'run', sec: 's3' }];
+  assert.equal(trackWeekCount(w, 'run'), 0);
+  w.tasks[1][0].state = 'done';
+  assert.equal(trackWeekCount(w, 'run'), 1);
+  w.untracked[1] = true;
+  assert.equal(trackWeekCount(w, 'run'), 0, 'untracked days drop out of the session count');
+});
+
+test('moving a task to another week creates that week and keeps the section', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.tasks[1] = [{ id: 't1', text: 'Intervals', state: 'open', plan: true, track: 'run', sec: 's3' }];
+  const res = moveTask(s, WEEK38, 1, 't1', '2026-09-24');   // Thursday of week 39
+  assert.ok(res);
+  const r = res!;
+  assert.equal(r.weekId, '2026-W39');
+  assert.equal(r.dayIndex, 3);
+  assert.equal(r.sectionId, 's3');
+  assert.equal(s.weeks[WEEK38].tasks[1].length, 0);
+  const moved = s.weeks['2026-W39'].tasks[3].find((t) => t.id === 't1');
+  assert.ok(moved, 'task landed on Thursday of the new week');
+  assert.equal(moved!.sec, 's3');
+});
+
+test('a moved task falls back to the first section when its heading is gone', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.tasks[1] = [{ id: 't1', text: 'Orphan', state: 'open', plan: false, track: null, sec: 'deleted' }];
+  const res = moveTask(s, WEEK38, 1, 't1', '2026-09-17');
+  assert.equal(res!.sectionId, s.sections[0].id);
+});
+
+test('a week created on demand inherits the previous template', () => {
+  const s = fresh('taper');
+  ensureWeek(s, '2026-09-21');
+  assert.equal(s.weeks['2026-W39'].templateId, 'taper');
+  assert.equal(s.weeks['2026-W39'].tasks[5][0].text, 'RACE DAY');
+});
+
+test('the shopping list copies forward once, then the weeks are independent', () => {
+  const s = fresh();
+  s.weeks[WEEK38].shop = [
+    { id: 'g1', name: 'Breakfast', items: [{ id: 'i1', text: 'Oats', done: true }] },
+  ];
+  ensureWeek(s, '2026-09-21');
+  const next = shopListFor(s, '2026-W39');
+  assert.equal(next.length, 1);
+  assert.equal(next[0].name, 'Breakfast');
+  assert.equal(next[0].items[0].text, 'Oats');
+  assert.equal(next[0].items[0].done, false, 'copied items start unticked');
+  assert.equal(s.weeks['2026-W39'].shopCopiedFrom, WEEK38);
+
+  next[0].items[0].text = 'Porridge oats';
+  next.push({ id: 'g2', name: 'Lunch', items: [] });
+  assert.equal(s.weeks[WEEK38].shop![0].items[0].text, 'Oats', 'last week is untouched');
+  assert.equal(s.weeks[WEEK38].shop!.length, 1);
+});
+
+test('the shopping list does not re-copy on later reads', () => {
+  const s = fresh();
+  s.weeks[WEEK38].shop = [{ id: 'g1', name: 'Breakfast', items: [] }];
+  ensureWeek(s, '2026-09-21');
+  shopListFor(s, '2026-W39');
+  s.weeks['2026-W39'].shop!.length = 0;
+  assert.equal(shopListFor(s, '2026-W39').length, 0);
+});
+
+test('watch counts tally a series across days and weeks', () => {
+  const s = fresh();
+  ensureWeek(s, '2026-09-21');
+  s.weeks[WEEK38].watched[1] = ['w2'];
+  s.weeks[WEEK38].watched[2] = ['w2', 'w1'];
+  s.weeks['2026-W39'].watched[0] = ['w2'];
+  assert.equal(watchCount(s, 'w2'), 3);
+  assert.equal(watchCount(s, 'w1'), 1);
+  assert.equal(watchCount(s, 'nope'), 0);
+});
+
+test('disabling a habit keeps its plan so re-enabling restores the same habit', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.habitPlan.calories = countPlan(6);
+  const calories = s.habits.find((h) => h.id === 'calories')!;
+  calories.active = false;
+  assert.ok(!activeHabits(s, w).some((h) => h.id === 'calories'));
+  assert.equal(habitTarget(w, 'calories'), 6, 'the plan survives being switched off');
+  calories.active = true;
+  assert.ok(activeHabits(s, w).some((h) => h.id === 'calories'));
+  assert.equal(w.habitPlan.calories.n, 6, 'and comes back exactly as it was');
+});
+
+test('a habit added later is given a plan in every week it is missing from', () => {
+  const s = fresh();
+  s.habits.push({ id: 'stretch', name: 'Stretch', short: 'Stretch', active: true });
+  assert.equal(ensurePlanCoverage(s, WEEK38), true);
+  assert.equal(s.weeks[WEEK38].habitPlan.stretch.n, 3);
+  assert.equal(ensurePlanCoverage(s, WEEK38), false, 'second pass is a no-op');
+});
+
+test('previous week is found by date, not by insertion order', () => {
+  const s = fresh();
+  ensureWeek(s, '2026-09-28');                   // skip a week
+  assert.equal(prevWeekIdOf(s, '2026-W40'), null);
+  ensureWeek(s, '2026-09-21');
+  assert.equal(prevWeekIdOf(s, '2026-W40'), '2026-W39');
+  assert.equal(prevWeekIdOf(s, WEEK38), null);
+});
+
+test('migrate repairs a state saved before fields existed', () => {
+  const old = {
+    weeks: {
+      '2026-W38': {
+        monday: '2026-09-14', templateId: 'run', focus: '',
+        habitPlan: { tabs_am: everyPlan() },
+        habits: { 0: { tabs_am: true } },
+        tasks: { 0: [{ id: 'a', text: 'Run', state: 'done', plan: true, sec: 'gone-section' }] },
+      },
+    },
+  };
+  const s = migrate(old as never)!;
+  assert.ok(s);
+  const t = s.weeks['2026-W38'].tasks[0][0];
+  assert.equal(t.sec, s.sections[0].id, 'orphaned section is repaired');
+  assert.equal(t.track, null, 'missing track becomes null');
+  assert.deepEqual(s.weeks['2026-W38'].untracked, {});
+  assert.deepEqual(s.weeks['2026-W38'].watched, {});
+  assert.ok(s.habits.length > 0);
+});
+
+test('migrate refuses junk rather than corrupting a fresh install', () => {
+  assert.equal(migrate(null), null);
+  assert.equal(migrate({} as never), null);
+  assert.equal(migrate({ weeks: undefined } as never), null);
+});
+
+test('date helpers hold at a year boundary', () => {
+  assert.equal(isoWeekId(new Date(2027, 0, 1)), '2026-W53');
+  assert.equal(isoOf(mondayOf(new Date(2027, 0, 1))), '2026-12-28');
+  assert.equal(previousWeekId('2027-01-04'), '2026-W53');
+  assert.equal(daysUntil('2026-09-24', TUE), 9);
+  assert.equal(daysUntil('2026-09-15', TUE), 0);
+  assert.equal(daysUntil('2026-09-14', TUE), -1);
+});
