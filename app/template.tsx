@@ -2,11 +2,11 @@ import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
-import { Body, Chip, Note, Screen } from '../src/ui/primitives';
+import { Body, Button, Chip, Note, Screen } from '../src/ui/primitives';
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
-import { planFromTemplate, planTasks } from '../src/domain/week';
+import { duplicateTemplate, planFromTemplate, planTasks } from '../src/domain/week';
 
 export default function TemplateScreen() {
   const t = useTheme();
@@ -51,8 +51,20 @@ export default function TemplateScreen() {
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                <Text style={{ fontSize: 15.5, fontWeight: '700', color: t.ink }}>{tpl.name}</Text>
+                <Text style={{ fontSize: 15.5, fontWeight: '700', color: t.ink, flex: 1 }}>{tpl.name}</Text>
                 <Chip text={tpl.tag} colour={on ? t.accent : t.ink3} />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit ${tpl.name}`}
+                  hitSlop={8}
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    router.push({ pathname: '/template-edit', params: { id } });
+                  }}
+                >
+                  <Text style={{ fontSize: 11, letterSpacing: 1, textTransform: 'uppercase',
+                    color: t.accent, fontWeight: '700' }}>Edit</Text>
+                </Pressable>
               </View>
               <Text style={{ fontSize: 13, lineHeight: 19, color: t.ink2 }}>{tpl.blurb}</Text>
               <Text style={{ fontSize: 13.5, lineHeight: 19, color: t.ink2, fontStyle: 'italic',
@@ -76,6 +88,22 @@ export default function TemplateScreen() {
             </Pressable>
           );
         })}
+        <Button
+          tone="ghost"
+          title="+ New template, copied from this one"
+          onPress={() => {
+            const from = current ?? state.templateOrder[0];
+            let created: string | null = null;
+            update((d) => {
+              created = duplicateTemplate(d, from, `${d.templates[from]?.name ?? 'Week'} copy`);
+            });
+            if (created) router.push({ pathname: '/template-edit', params: { id: created } });
+          }}
+        />
+        <Note>
+          Tapping a template applies it to this week, replacing its planned tasks and habit plan.
+          Edit changes the template itself and leaves every week alone.
+        </Note>
       </Body>
     </Screen>
   );

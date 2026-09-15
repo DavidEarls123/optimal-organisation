@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { createInitialState, emptyState, migrate } from '../src/domain/state';
 import {
   countPlan, daysPlan, ensurePlanCoverage, ensureWeek, everyPlan,
-  moveTask, planFromTemplate, prevWeekIdOf, saveWeekAsTemplate, shopListFor,
+  deleteTemplate, duplicateTemplate, moveTask, planFromTemplate, prevWeekIdOf,
+  saveWeekAsTemplate, setTemplatePlan, shopListFor, templatePlanFor,
 } from '../src/domain/week';
 import {
   activeHabits, dayAllDone, dayOutstanding, elapsedDays, habitDone, habitTarget,
@@ -310,25 +311,10 @@ test('saving a week as its template captures the plan and the tagged sessions', 
   assert.equal(saveWeekAsTemplate(s, WEEK38), true);
 
   const tpl = s.templates.run;
-  assert.equal(tpl.targets.guitar, 6);
-  assert.equal(tpl.targets.recovery, 7, 'every day becomes a target of 7');
+  assert.equal(tpl.plans!.guitar.n, 6);
+  assert.equal(tpl.plans!.recovery.mode, 'every');
   assert.deepEqual(tpl.plan[1], [['Intervals', 'run', 2]],
     'only planned, undiscarded tasks are kept, with their tag and section');
-});
-
-test('a chosen-days plan survives being saved, rather than flattening to a count', () => {
-  const s = fresh('run');
-  s.weeks[WEEK38].habitPlan.meditate = daysPlan([0, 2, 4]);
-  saveWeekAsTemplate(s, WEEK38);
-  assert.equal(s.templates.run.targets.meditate, undefined,
-    'a weekly count cannot express Mon/Wed/Fri, so it is not stored as one');
-  const def = s.habits.find((h) => h.id === 'meditate')!.def!;
-  assert.equal(def.mode, 'days');
-  assert.deepEqual(def.days, [0, 2, 4]);
-
-  ensureWeek(s, '2026-09-21');
-  assert.equal(s.weeks['2026-W39'].habitPlan.meditate.mode, 'days',
-    'and a week made afterwards picks the chosen days up');
 });
 
 test('saving a template leaves weeks already built from it alone', () => {
@@ -361,4 +347,65 @@ test('migrate seeds templates for a state saved before they were editable', () =
   assert.ok(s.templateOrder.includes('run'));
   assert.equal(s.templateOrder.every((id) => s.templates[id]), true,
     'the order never names a template that is not there');
+});
+
+test('a template can be edited directly, without touching any week', () => {
+  const s = fresh('run');
+  const before = JSON.parse(JSON.stringify(s.weeks[WEEK38].habitPlan));
+  setTemplatePlan(s, 'run', 'guitar', countPlan(6));
+  setTemplatePlan(s, 'run', 'meditate', daysPlan([0, 3]));
+  assert.deepEqual(s.weeks[WEEK38].habitPlan, before, 'this week is untouched');
+
+  ensureWeek(s, '2026-09-21');
+  const next = s.weeks['2026-W39'].habitPlan;
+  assert.equal(next.guitar.n, 6);
+  assert.equal(next.meditate.mode, 'days');
+  assert.deepEqual(next.meditate.days, [0, 3]);
+});
+
+test('templatePlanFor reads counts, edited plans and habit defaults alike', () => {
+  const s = fresh('run');
+  assert.equal(templatePlanFor(s, 'run', 'tabs_am').mode, 'every', 'a target of 7 reads as every day');
+  assert.equal(templatePlanFor(s, 'run', 'recovery').n, 5, 'a count reads as a count');
+  assert.equal(templatePlanFor(s, 'run', 'read').mode, 'days', 'and an unlisted habit falls to its own default');
+  setTemplatePlan(s, 'run', 'recovery', daysPlan([1, 3, 5]));
+  assert.deepEqual(templatePlanFor(s, 'run', 'recovery').days, [1, 3, 5], 'an edit wins over the count');
+});
+
+test('saving a week to its template keeps chosen days at template level now', () => {
+  const s = fresh('run');
+  s.weeks[WEEK38].habitPlan.meditate = daysPlan([0, 2, 4]);
+  saveWeekAsTemplate(s, WEEK38);
+  assert.deepEqual(s.templates.run.plans!.meditate.days, [0, 2, 4]);
+  ensureWeek(s, '2026-09-21');
+  assert.deepEqual(s.weeks['2026-W39'].habitPlan.meditate.days, [0, 2, 4]);
+});
+
+test('duplicating a template copies it and lands next to the original', () => {
+  const s = fresh('run');
+  setTemplatePlan(s, 'run', 'guitar', countPlan(6));
+  const id = duplicateTemplate(s, 'run', 'Marathon Peak')!;
+  assert.ok(id);
+  assert.equal(s.templates[id].name, 'Marathon Peak');
+  assert.equal(templatePlanFor(s, id, 'guitar').n, 6, 'it starts as a copy');
+  assert.equal(s.templateOrder[s.templateOrder.indexOf('run') + 1], id);
+
+  setTemplatePlan(s, id, 'guitar', countPlan(2));
+  assert.equal(templatePlanFor(s, 'run', 'guitar').n, 6, 'and then goes its own way');
+});
+
+test('deleting a template leaves the weeks using it intact', () => {
+  const s = fresh('run');
+  const w = s.weeks[WEEK38];
+  assert.equal(deleteTemplate(s, 'run'), true);
+  assert.ok(!s.templateOrder.includes('run'));
+  assert.equal(w.templateId, 'run', 'the week still names it');
+  assert.ok(templateOf(s, w), 'and still scores, by falling back');
+  assert.ok(Number.isFinite(weekScore(s, w, TUE).pace));
+});
+
+test('the last template cannot be deleted', () => {
+  const s = fresh('run');
+  for (const id of [...s.templateOrder]) deleteTemplate(s, id);
+  assert.equal(s.templateOrder.length, 1, 'one always survives');
 });

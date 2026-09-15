@@ -28,9 +28,10 @@ export function planFromTemplate(state: AppState, templateId: string): Record<st
   const out: Record<string, HabitPlan> = {};
   for (const h of state.habits) {
     if (!h.active) continue;
+    const stored = t.plans?.[h.id];
     const n = t.targets[h.id];
-    out[h.id] = n !== undefined
-      ? (n >= 7 ? everyPlan() : countPlan(n))
+    out[h.id] = stored ? clonePlan(stored)
+      : n !== undefined ? (n >= 7 ? everyPlan() : countPlan(n))
       : h.def ? clonePlan(h.def)
       : countPlan(3);
   }
@@ -171,32 +172,65 @@ export function saveWeekAsTemplate(state: AppState, weekId: string): boolean {
   const tpl = state.templates?.[w.templateId];
   if (!tpl) return false;
 
-  const targets: Record<string, number> = {};
+  // Store the plans whole. A weekly count cannot say Mon/Wed/Fri, and flattening
+  // it would quietly lose which days.
+  const plans: Record<string, HabitPlan> = {};
   for (const h of state.habits) {
     if (!h.active) continue;
     const plan = w.habitPlan[h.id];
-    if (!plan) continue;
-    targets[h.id] = plan.mode === 'every' ? 7
-      : plan.mode === 'days' ? plan.days.length
-      : plan.n;
+    if (plan) plans[h.id] = clonePlan(plan);
   }
-  tpl.targets = targets;
+  tpl.plans = plans;
 
-  const secIndex = new Map(state.sections.map((s, i) => [s.id, i]));
+  const secIndex = new Map(state.sections.map((sec, i) => [sec.id, i]));
   tpl.plan = [0, 1, 2, 3, 4, 5, 6].map((d) =>
     (w.tasks[d] ?? [])
       .filter((x) => x.plan && x.state !== 'dropped')
       .map((x) => [x.text, x.track ?? null, secIndex.get(x.sec) ?? 0] as PlanEntry));
 
-  // Chosen-days plans cannot be expressed as a weekly count, so keep them as the
-  // habit's own default instead of silently flattening them to "N times a week".
-  for (const h of state.habits) {
-    const plan = w.habitPlan[h.id];
-    if (plan?.mode === 'days') {
-      h.def = { mode: 'days', days: [...plan.days], n: plan.days.length };
-      delete tpl.targets[h.id];
-    }
-  }
+  return true;
+}
+
+/** What a template currently asks of one habit, whether it was written as a
+ *  count or edited into a full plan. */
+export function templatePlanFor(state: AppState, templateId: string, habitId: string): HabitPlan {
+  const t = state.templates[templateId];
+  const stored = t?.plans?.[habitId];
+  if (stored) return clonePlan(stored);
+  const n = t?.targets?.[habitId];
+  if (n !== undefined) return n >= 7 ? everyPlan() : countPlan(n);
+  const h = state.habits.find((x) => x.id === habitId);
+  return h?.def ? clonePlan(h.def) : countPlan(3);
+}
+
+/** Edit a template directly, without going anywhere near a week. */
+export function setTemplatePlan(
+  state: AppState, templateId: string, habitId: string, plan: HabitPlan,
+): void {
+  const t = state.templates[templateId];
+  if (!t) return;
+  t.plans ??= {};
+  t.plans[habitId] = clonePlan(plan);
+  delete t.targets[habitId];
+}
+
+/** A copy of an existing template, under a new id, placed after it in the picker. */
+export function duplicateTemplate(state: AppState, fromId: string, name: string): string | null {
+  const src = state.templates[fromId];
+  if (!src) return null;
+  const id = uid('tpl');
+  state.templates[id] = { ...JSON.parse(JSON.stringify(src)), id, name };
+  const at = state.templateOrder.indexOf(fromId);
+  state.templateOrder.splice(at < 0 ? state.templateOrder.length : at + 1, 0, id);
+  return id;
+}
+
+/** Weeks already using it keep working — templateOf falls back — but it leaves
+ *  the picker. Refuses to remove the last one. */
+export function deleteTemplate(state: AppState, id: string): boolean {
+  if (state.templateOrder.length <= 1) return false;
+  delete state.templates[id];
+  state.templateOrder = state.templateOrder.filter((x) => x !== id);
   return true;
 }
 

@@ -18,6 +18,8 @@ export default function RootLayout() {
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="template"
                 options={{ presentation: 'modal', headerShown: true, title: 'Shape of the week' }} />
+              <Stack.Screen name="template-edit"
+                options={{ presentation: 'modal', headerShown: true, title: 'Edit template' }} />
               <Stack.Screen name="habits"
                 options={{ presentation: 'modal', headerShown: true, title: 'Habits this week' }} />
               <Stack.Screen name="backup"

@@ -122,8 +122,11 @@ export interface WeekTemplate {
   why: string;
   note?: string;
   weights: { habits: number; tasks: number };
-  /** Standard weekly counts per habit id. 7+ becomes "every day". */
+  /** Standard weekly counts per habit id. 7+ becomes "every day".
+   *  How the built-ins are written; `plans` overrides it once edited. */
   targets: Record<string, number>;
+  /** Full plans per habit id, which can express chosen days. Takes precedence. */
+  plans?: Record<string, HabitPlan>;
   /** Seven days of scaffold tasks. */
   plan: PlanEntry[][];
 }

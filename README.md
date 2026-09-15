@@ -165,11 +165,16 @@ Rules worth knowing, all of them covered by tests:
   After that the weeks are independent.
 - **A film is finished the night you watch it; a series is not.** Series stay selectable,
   count the nights, and are completed by hand from the list.
-- **Templates are edited by example.** Set a week up the way you want it, then
-  *Week → Edit this week → Save this week as the … template*. The habit plan and the
-  planned tasks become what that template means. Weeks already built from it keep what
-  they have; only new ones follow the change. A chosen-days plan (Mon/Wed/Fri) cannot be
-  expressed as a weekly count, so it is stored on the habit itself rather than flattened.
+- **Templates are yours to edit, two ways.** Directly, from the template chip →
+  *Edit* on any of them — name, scoring split, and every habit's frequency, without
+  going near a week. Or by example: set a week up how you like it, then
+  *Week → Edit this week → Save this week as the … template*, which also captures the
+  planned tasks. **+ New template** copies one to start from.
+- **Editing a template never rewrites history.** Weeks already built from it keep their
+  plan and their tasks. Only weeks created afterwards follow the new version, and
+  re-picking the template on a week applies it deliberately.
+- **Deleting a template leaves its weeks working.** They keep scoring — `templateOf`
+  falls back — it simply stops appearing in the picker. The last one cannot be deleted.
 
 ---
 
