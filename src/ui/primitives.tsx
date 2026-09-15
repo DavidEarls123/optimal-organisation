@@ -224,26 +224,106 @@ export function Empty({ children }: { children: React.ReactNode }) {
   return <Text style={{ fontSize: 13, color: t.ink3, paddingVertical: 6 }}>{children}</Text>;
 }
 
-/** The mark. Two arcs closing on a filled centre — a week coming round to a
- *  point. Drawn from views rather than an image so it takes the accent colour
- *  and stays crisp at any size, and costs nothing to ship. */
-export function Mark({ size = 18, colour }: { size?: number; colour?: string }) {
-  const t = useTheme();
-  const c = colour ?? t.accent;
-  const ring = Math.max(1.5, size * 0.12);
+/** The mark: Trace.
+ *
+ *  Six weeks as equal bars, the seventh standing as the stem of a 1, and the
+ *  numeral's head carrying on in a second colour back to the first bar — which
+ *  is drawn in that same colour, because that is where it came from.
+ *
+ *  Built from plain views. react-native-svg is not in the installed binary, so
+ *  using it would mean nobody sees the mark until the next build; this ships
+ *  over the air. The curve is a short polyline of rotated bars, which at these
+ *  sizes is indistinguishable from a real one.
+ *
+ *  Below about 22px there is no room for six bars and a curve, so the mark
+ *  drops to a reduced form — fewer weeks, heavier strokes. Same idea, legible.
+ */
+
+/** [x, y] pairs on the same 100x100 field the app icon is drawn on, so the
+ *  two cannot drift apart. */
+const TRACE_TAIL: [number, number][] = [
+  [5, 67], [17.4, 66.3], [29.3, 64.6], [40.6, 61.6], [51.2, 57.3],
+  [61, 51.2], [69.9, 43.2], [77.8, 33], [83, 27],
+];
+const TRACE_TAIL_SMALL: [number, number][] = [
+  [9, 62], [26, 60], [42, 55], [56, 46], [68, 33], [74, 26],
+];
+
+function Segments({ points, width, colour, k }: {
+  points: [number, number][]; width: number; colour: string; k: number;
+}) {
   return (
+    <>
+      {points.slice(0, -1).map(([x1, y1], i) => {
+        const [x2, y2] = points[i + 1];
+        const dx = (x2 - x1) * k;
+        const dy = (y2 - y1) * k;
+        const len = Math.hypot(dx, dy) + width;   // overlap, so joins do not gap
+        return (
+          <View
+            key={i}
+            style={{
+              position: 'absolute',
+              left: x1 * k + dx / 2 - len / 2,
+              top: y1 * k + dy / 2 - width / 2,
+              width: len,
+              height: width,
+              borderRadius: width / 2,
+              backgroundColor: colour,
+              transform: [{ rotate: `${Math.atan2(dy, dx)}rad` }],
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+export function Mark({ size = 18, one, trace }: {
+  size?: number; one?: string; trace?: string;
+}) {
+  const t = useTheme();
+  const c1 = one ?? t.accent;
+  const c2 = trace ?? t.hit;
+  const k = size / 100;               // field units to points
+  const small = size < 22;
+
+  const bar = (x: number, y: number, w: number, h: number, colour: string, op = 1) => (
     <View
-      accessible={false}
+      key={`${x}-${y}`}
       style={{
-        width: size, height: size, borderRadius: size / 2,
-        borderWidth: ring, borderColor: c,
-        borderRightColor: 'transparent',
-        alignItems: 'center', justifyContent: 'center',
-        transform: [{ rotate: '-45deg' }],
+        position: 'absolute', left: x * k, top: y * k,
+        width: w * k, height: h * k, borderRadius: Math.max(1, 2.5 * k),
+        backgroundColor: colour, opacity: op,
       }}
-    >
-      <View style={{ width: size * 0.3, height: size * 0.3, borderRadius: size * 0.15,
-        backgroundColor: c }} />
+    />
+  );
+
+  // The drawn mark spans y=8..96, so the box is shorter than it is wide.
+  return (
+    <View accessible={false} style={{ width: size, height: size * 0.88 }}>
+      <View style={{ position: 'absolute', left: 0, top: -8 * k, width: size, height: size }}>
+        {small ? (
+          <>
+            {bar(26, 64, 16, 20, c1, 0.32)}
+            {bar(49, 64, 16, 20, c1, 0.32)}
+            <Segments points={TRACE_TAIL_SMALL} width={Math.max(2, 11 * k)} colour={c2} k={k} />
+            {bar(1, 58, 16, 26, c2)}
+            <Segments points={[[72, 28], [92, 9]]} width={Math.max(2.5, 13 * k)} colour={c1} k={k} />
+            {bar(82, 8, 17, 76, c1)}
+            {bar(0.5, 89, 99, 8, c1)}
+          </>
+        ) : (
+          <>
+            {[15.5, 30.5, 45.5, 60.5, 75.5].map((x) => bar(x, 71, 9, 13, c1, 0.32))}
+            <Segments points={TRACE_TAIL} width={Math.max(1.5, 6.5 * k)} colour={c2} k={k} />
+            {bar(0.5, 67, 9, 17, c2)}
+            <Segments points={[[83, 27], [94, 9.5]]} width={Math.max(2, 10.5 * k)} colour={c1} k={k} />
+            {bar(88.5, 8, 11, 76, c1)}
+            {bar(0.5, 89, 99, 7, c1)}
+          </>
+        )}
+      </View>
     </View>
   );
 }
@@ -252,8 +332,8 @@ export function Mark({ size = 18, colour }: { size?: number; colour?: string }) 
  *  heading row, so it costs no vertical space of its own. */
 export function CornerMark() {
   return (
-    <View style={{ opacity: 0.55 }}>
-      <Mark size={15} />
+    <View style={{ opacity: 0.75 }}>
+      <Mark size={17} />
     </View>
   );
 }
