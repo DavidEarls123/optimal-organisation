@@ -59,4 +59,4 @@ jobs:
           MESSAGE=$(printf '%s' "$COMMIT_MESSAGE" | head -n 1 | cut -c1-140)
           [ -n "$MESSAGE" ] || MESSAGE="update"
           echo "Publishing to $UPDATE_BRANCH: $MESSAGE"
-          eas update --branch "$UPDATE_BRANCH" --message "$MESSAGE"
+          eas update --branch "$UPDATE_BRANCH" --platform ios --message "$MESSAGE"
