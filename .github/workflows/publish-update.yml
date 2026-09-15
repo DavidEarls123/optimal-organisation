@@ -48,5 +48,15 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
+      # The commit message goes in through the environment, never interpolated
+      # into the command. A message containing a quote, a newline or a > would
+      # otherwise be run as shell — which is both a bug and an injection hole.
       - name: Publish the update
-        run: eas update --branch ${{ inputs.branch || 'preview' }} --message "${{ github.event.head_commit.message || 'manual publish' }}"
+        env:
+          UPDATE_BRANCH: ${{ inputs.branch || 'preview' }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message || 'manual publish' }}
+        run: |
+          MESSAGE=$(printf '%s' "$COMMIT_MESSAGE" | head -n 1 | cut -c1-140)
+          [ -n "$MESSAGE" ] || MESSAGE="update"
+          echo "Publishing to $UPDATE_BRANCH: $MESSAGE"
+          eas update --branch "$UPDATE_BRANCH" --message "$MESSAGE"
