@@ -128,35 +128,35 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
   );
 }
 
-/** A filled tick for a completed day, a dash for an untracked one, otherwise a ring. */
+/** A tick for a completed day, a dash for an untracked one, otherwise a circle
+ *  filled from the bottom in proportion to how much of the day is done. */
 function DayMark({ done, off, score }: { done: boolean; off: boolean; score: number }) {
   const t = useTheme();
+  const base = {
+    width: 24, height: 24, borderRadius: 12,
+    alignItems: 'center' as const, justifyContent: 'center' as const,
+  };
   if (off) {
     return (
-      <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 1.5,
-        borderColor: t.rule, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={[base, { borderWidth: 1.5, borderColor: t.rule, borderStyle: 'dashed' }]}>
         <View style={{ width: 9, height: 1.5, backgroundColor: t.ink3, borderRadius: 1 }} />
       </View>
     );
   }
   if (done) {
     return (
-      <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: t.hit,
-        alignItems: 'center', justifyContent: 'center' }}>
+      <View style={[base, { backgroundColor: t.hit }]}>
         <Text style={{ color: t.sheet, fontSize: 13, fontWeight: '900', lineHeight: 16 }}>✓</Text>
       </View>
     );
   }
+  const filled = Math.max(0, Math.min(1, score));
   return (
-    <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 3, borderColor: t.rule,
-      alignItems: 'center', justifyContent: 'center' }}>
-      <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 3,
-        borderColor: t.hit, position: 'absolute',
-        opacity: score > 0.02 ? 1 : 0,
-        borderLeftColor: score > 0.5 ? t.hit : 'transparent',
-        borderBottomColor: score > 0.25 ? t.hit : 'transparent',
-        borderRightColor: score > 0.75 ? t.hit : 'transparent',
-        transform: [{ rotate: '-45deg' }] }} />
+    <View style={[base, { borderWidth: 1.5, borderColor: t.rule, overflow: 'hidden' }]}>
+      <View style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+        height: `${filled * 100}%`, backgroundColor: t.hit, opacity: 0.85,
+      }} />
     </View>
   );
 }

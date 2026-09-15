@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
@@ -38,70 +38,68 @@ export default function WeekScreen() {
               </Pressable>
             }
           />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={{ minWidth: 330 }}>
-              <View style={{ flexDirection: 'row', paddingBottom: 7 }}>
-                <View style={{ width: 118 }} />
-                {DAY_LETTERS.map((l, d) => (
-                  <View key={d} style={{ width: 30, alignItems: 'center' }}>
-                    <Text style={{ fontSize: 10, letterSpacing: 0.8,
-                      color: d === ti && current ? t.accent : t.ink3,
-                      fontWeight: d === ti && current ? '700' : '400',
-                      textDecorationLine: week.untracked[d] ? 'line-through' : 'none' }}>{l}</Text>
-                  </View>
-                ))}
-                <View style={{ width: 42, alignItems: 'flex-end' }}>
-                  <Mono style={{ fontSize: 10 }}>HIT</Mono>
+          <View>
+            <View style={{ flexDirection: 'row', paddingBottom: 7, alignItems: 'flex-end' }}>
+              <View style={{ flex: 1, minWidth: 80 }} />
+              {DAY_LETTERS.map((l, d) => (
+                <View key={d} style={{ width: 28, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 10, letterSpacing: 0.8,
+                    color: d === ti && current ? t.accent : t.ink3,
+                    fontWeight: d === ti && current ? '700' : '400',
+                    textDecorationLine: week.untracked[d] ? 'line-through' : 'none' }}>{l}</Text>
                 </View>
+              ))}
+              <View style={{ width: 36, alignItems: 'flex-end' }}>
+                <Mono style={{ fontSize: 10 }}>HIT</Mono>
               </View>
-
-              {habits.map((h) => {
-                const n = habitDone(week, h.id);
-                const tg = habitTarget(week, h.id);
-                return (
-                  <View key={h.id} style={{ flexDirection: 'row', alignItems: 'center',
-                    borderTopWidth: 1, borderTopColor: t.rule2, paddingVertical: 3 }}>
-                    <View style={{ width: 118, paddingRight: 8 }}>
-                      <Text style={{ fontSize: 13, color: t.ink }}>{h.name}</Text>
-                      <Mono style={{ fontSize: 9, letterSpacing: 0.8, textTransform: 'uppercase' }}>
-                        {planLabel(week, h.id)}
-                      </Mono>
-                    </View>
-                    {DAY_LETTERS.map((_, d) => {
-                      const on = Boolean(week.habits[d]?.[h.id]);
-                      const offDay = Boolean(week.untracked[d]);
-                      const sched = scheduledOn(week, h.id, d);
-                      return (
-                        <Pressable
-                          key={d}
-                          accessibilityRole="checkbox"
-                          accessibilityState={{ checked: on }}
-                          accessibilityLabel={`${h.name} ${DAY_NAMES[d]}`}
-                          onPress={() => update((s) => {
-                            const map = (s.weeks[weekId].habits[d] ??= {});
-                            if (map[h.id]) delete map[h.id]; else map[h.id] = true;
-                          })}
-                          style={{ width: 30, height: 32, alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <View style={{
-                            width: 15, height: 15, borderRadius: 4, borderWidth: 1.5,
-                            borderStyle: offDay ? 'dotted' : sched ? 'solid' : 'dotted',
-                            borderColor: on ? t.hit : t.rule,
-                            backgroundColor: on ? t.hit : offDay ? t.rule2 : 'transparent',
-                            opacity: offDay ? 0.5 : sched ? 1 : 0.55,
-                          }} />
-                        </Pressable>
-                      );
-                    })}
-                    <View style={{ width: 42, alignItems: 'flex-end' }}>
-                      <Mono style={{ fontSize: 11, color: tg && n >= tg ? t.hit : t.ink3,
-                        fontWeight: tg && n >= tg ? '700' : '400' }}>{`${n}/${tg}`}</Mono>
-                    </View>
-                  </View>
-                );
-              })}
             </View>
-          </ScrollView>
+
+            {habits.map((h) => {
+              const n = habitDone(week, h.id);
+              const tg = habitTarget(week, h.id);
+              return (
+                <View key={h.id} style={{ flexDirection: 'row', alignItems: 'center',
+                  borderTopWidth: 1, borderTopColor: t.rule2, paddingVertical: 3 }}>
+                  <View style={{ flex: 1, minWidth: 80, paddingRight: 6 }}>
+                    <Text style={{ fontSize: 13, color: t.ink }}>{h.name}</Text>
+                    <Mono style={{ fontSize: 9, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+                      {planLabel(week, h.id)}
+                    </Mono>
+                  </View>
+                  {DAY_LETTERS.map((_, d) => {
+                    const on = Boolean(week.habits[d]?.[h.id]);
+                    const offDay = Boolean(week.untracked[d]);
+                    const sched = scheduledOn(week, h.id, d);
+                    return (
+                      <Pressable
+                        key={d}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: on }}
+                        accessibilityLabel={`${h.name} ${DAY_NAMES[d]}`}
+                        onPress={() => update((s2) => {
+                          const map = (s2.weeks[weekId].habits[d] ??= {});
+                          if (map[h.id]) delete map[h.id]; else map[h.id] = true;
+                        })}
+                        style={{ width: 28, height: 32, alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        <View style={{
+                          width: 15, height: 15, borderRadius: 4, borderWidth: 1.5,
+                          borderStyle: offDay || !sched ? 'dotted' : 'solid',
+                          borderColor: on ? t.hit : t.rule,
+                          backgroundColor: on ? t.hit : offDay ? t.rule2 : 'transparent',
+                          opacity: offDay ? 0.5 : sched ? 1 : 0.55,
+                        }} />
+                      </Pressable>
+                    );
+                  })}
+                  <View style={{ width: 36, alignItems: 'flex-end' }}>
+                    <Mono style={{ fontSize: 11, color: tg && n >= tg ? t.hit : t.ink3,
+                      fontWeight: tg && n >= tg ? '700' : '400' }}>{`${n}/${tg}`}</Mono>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
           <Note>
             {`Solid = planned this week. Dotted = not planned. Struck column = untracked day.`}
             {tpl.note ? `  ${tpl.name}. ${tpl.note}` : ''}

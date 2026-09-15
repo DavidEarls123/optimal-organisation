@@ -202,10 +202,7 @@ export default function DayScreen() {
                 </View>
 
                 <View style={{ borderTopWidth: 1, borderTopColor: t.rule }}>
-                  {items.length === 0 ? (
-                    <View style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: t.rule,
-                      borderRadius: radius.md, height: 32, marginTop: 6 }} />
-                  ) : items.map((x) => (
+                  {items.length === 0 ? null : items.map((x) => (
                     <TaskRow
                       key={x.id}
                       task={x}

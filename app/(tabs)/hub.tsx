@@ -46,7 +46,9 @@ function ThisWeek() {
   const daysDone = Object.values(week.complete).filter(Boolean).length;
   const offDays = Object.values(week.untracked).filter(Boolean).length;
   const sessions = state.trackables.reduce((a, tr) => a + trackWeekCount(week, tr.id), 0);
-  const verdict = sc.pace >= 0.85 ? ['On track', t.hit, t.hitSoft]
+  const untouched = sc.habitsDone === 0 && sc.tasksDone === 0;
+  const verdict = untouched ? ['Not started', t.ink2, t.sunk]
+    : sc.pace >= 0.85 ? ['On track', t.hit, t.hitSoft]
     : sc.pace >= 0.65 ? ['Slipping', t.partial, t.partialSoft]
     : ['Off track', t.miss, t.missSoft];
 
