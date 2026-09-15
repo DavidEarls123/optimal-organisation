@@ -6,6 +6,7 @@ import {
   countPlan, daysPlan, ensurePlanCoverage, ensureWeek, everyPlan,
   deleteTemplate, duplicateTemplate, moveTask, planFromTemplate, prevWeekIdOf,
   saveWeekAsTemplate, setTemplatePlan, shopListFor, templatePlanFor, templateSummary,
+  templateTraining,
 } from '../src/domain/week';
 import {
   activeHabits, dayAllDone, dayOutstanding, elapsedDays, habitDone, habitTarget,
@@ -437,6 +438,39 @@ test('what the summary promises is what building a week delivers', () => {
     assert.equal(habitTarget(w, h.id), summary.counts[h.id],
       `${h.id}: the card and the built week agree`);
   }
+});
+
+test('the training a template card shows is the training a week delivers', () => {
+  const s = fresh('run');
+  const shown = templateTraining(s, 'run');
+  assert.ok(shown.length > 0, 'a run block lays down tagged sessions');
+
+  ensureWeek(s, '2026-09-21');
+  const w = s.weeks['2026-W39'];
+  const built: Record<string, number> = {};
+  for (let d = 0; d < 7; d += 1) {
+    for (const task of w.tasks[d] ?? []) {
+      if (task.track) built[task.track] = (built[task.track] ?? 0) + 1;
+    }
+  }
+  assert.deepEqual(
+    Object.fromEntries(shown.map((k) => [k.id, k.n])), built,
+    'the card and the built week agree on every trackable',
+  );
+});
+
+test('the template cards distinguish a run block from a deload', () => {
+  const s = fresh('run');
+  const runs = (id: string) => templateTraining(s, id).find((k) => k.id === 'run')?.n ?? 0;
+  assert.ok(runs('run') > runs('deload'), 'a run block runs more than a deload');
+});
+
+test('template training is listed in trackable order, and skips the unused', () => {
+  const s = fresh('run');
+  const shown = templateTraining(s, 'run').map((k) => k.id);
+  const order = s.trackables.map((k) => k.id).filter((id) => shown.includes(id));
+  assert.deepEqual(shown, order);
+  assert.ok(shown.every((id) => templateTraining(s, 'run').find((k) => k.id === id)!.n > 0));
 });
 
 test('a habit owed any day this week does not hold the day open', () => {

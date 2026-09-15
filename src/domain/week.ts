@@ -227,6 +227,26 @@ export function templateSummary(state: AppState, templateId: string): {
   return { weeklyTicks, everyDay, counts };
 }
 
+/** How much tagged training a template lays down in a week, in the order the
+ *  trackables are listed. This is what actually tells one template from
+ *  another — a run block from a deload — so it is what the picker shows.
+ *  It counts the plan the same way `planTasks` does, so the card cannot
+ *  promise sessions that picking the template would not deliver. */
+export function templateTraining(
+  state: AppState, templateId: string,
+): { id: string; name: string; n: number }[] {
+  const t = state.templates?.[templateId] ?? TEMPLATES[templateId] ?? TEMPLATES.general;
+  const n: Record<string, number> = {};
+  for (let d = 0; d < 7; d += 1) {
+    for (const [, track] of t.plan[d] ?? []) {
+      if (track) n[track] = (n[track] ?? 0) + 1;
+    }
+  }
+  return state.trackables
+    .filter((k) => n[k.id])
+    .map((k) => ({ id: k.id, name: k.name, n: n[k.id] }));
+}
+
 /** Edit a template directly, without going anywhere near a week. */
 export function setTemplatePlan(
   state: AppState, templateId: string, habitId: string, plan: HabitPlan,

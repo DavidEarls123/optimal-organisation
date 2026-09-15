@@ -6,7 +6,7 @@ import { Body, Button, Chip, Note, Screen } from '../src/ui/primitives';
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
-import { duplicateTemplate, planFromTemplate, planTasks, templateSummary } from '../src/domain/week';
+import { duplicateTemplate, planFromTemplate, planTasks, templateTraining } from '../src/domain/week';
 
 export default function TemplateScreen() {
   const t = useTheme();
@@ -73,18 +73,14 @@ export default function TemplateScreen() {
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
                 {(() => {
-                  // Read the same way a week is built, so the card cannot promise
-                  // something picking it would not deliver.
-                  const sum = templateSummary(state, id);
-                  const named = ['recovery', 'guitar', 'journal']
-                    .filter((h) => sum.counts[h] !== undefined)
-                    .map((h) => `${h} ×${sum.counts[h]}`);
+                  // Counted off the plan the same way a week is built, so the card
+                  // cannot promise sessions picking it would not deliver.
+                  const training = templateTraining(state, id)
+                    .map((k) => `${k.name} ×${k.n}`);
                   return [
+                    ...training,
                     `habits ${Math.round(tpl.weights.habits * 100)}%`,
                     `tasks ${Math.round(tpl.weights.tasks * 100)}%`,
-                    `${sum.weeklyTicks} ticks a week`,
-                    `${sum.everyDay} daily`,
-                    ...named,
                   ];
                 })().map((s) => (
                   <View key={s} style={{ backgroundColor: t.sunk, borderRadius: 4,
