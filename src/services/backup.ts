@@ -43,6 +43,30 @@ export async function exportBackup(state: AppState): Promise<ExportResult> {
   }
 }
 
+/** Hands the raw, unreadable saved state to the share sheet as-is. Used when
+ *  the app cannot load what is on the phone: getting the bytes off it is the
+ *  only thing that might still save the data, so nothing is parsed or fixed. */
+export async function exportRaw(raw: string): Promise<ExportResult> {
+  try {
+    const filename = `optimal-week-unreadable-${new Date().toISOString().slice(0, 10)}.txt`;
+    const file = new File(stagingDir(), filename);
+    if (file.exists) file.delete();
+    file.create();
+    file.write(raw);
+
+    if (!(await Sharing.isAvailableAsync())) {
+      return { ok: false, reason: 'Sharing is not available on this device.' };
+    }
+    await Sharing.shareAsync(file.uri, {
+      mimeType: 'text/plain', UTI: 'public.plain-text',
+      dialogTitle: 'Save the unreadable data',
+    });
+    return { ok: true, filename };
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : 'Could not write the file.' };
+  }
+}
+
 export type ImportOutcome =
   | { status: 'cancelled' }
   | { status: 'failed'; reason: string }

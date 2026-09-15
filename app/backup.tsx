@@ -6,7 +6,7 @@ import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
 import { summarise, type BackupSummary } from '../src/domain/backup';
-import { exportBackup, pickBackup } from '../src/services/backup';
+import { exportBackup, exportRaw, pickBackup } from '../src/services/backup';
 import type { AppState } from '../src/domain/types';
 
 function Facts({ summary }: { summary: BackupSummary }) {
@@ -36,7 +36,7 @@ function Facts({ summary }: { summary: BackupSummary }) {
 
 export default function BackupScreen() {
   const t = useTheme();
-  const { state, replaceAll, undoReplace, canUndo } = useStore();
+  const { state, replaceAll, undoReplace, canUndo, trouble, startFresh } = useStore();
   const [busy, setBusy] = useState(false);
   const [staged, setStaged] = useState<{ state: AppState; summary: BackupSummary;
     filename: string; exportedAt: string } | null>(null);
@@ -82,9 +82,49 @@ export default function BackupScreen() {
     );
   };
 
+  const doExportRaw = async () => {
+    if (!trouble?.raw) return;
+    setBusy(true);
+    const res = await exportRaw(trouble.raw);
+    setBusy(false);
+    if (!res.ok) Alert.alert('Could not save it', res.reason ?? 'Something went wrong.');
+  };
+
+  const confirmFresh = () => {
+    Alert.alert(
+      'Give up on the unreadable data?',
+      'This starts an empty app and lets it save again. Whatever is on the phone now '
+      + 'is overwritten and cannot be got back. Save it to a file first if you have not.',
+      [{ text: 'Cancel', style: 'cancel' },
+       { text: 'Start fresh', style: 'destructive', onPress: startFresh }],
+    );
+  };
+
   return (
     <Screen>
       <Body>
+        {trouble ? (
+          <Section>
+            <View style={{ borderWidth: 1, borderColor: t.accentLine,
+              backgroundColor: t.sunk, borderRadius: radius.md, padding: 12, gap: 9 }}>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: t.ink }}>
+                {trouble.kind === 'unreadable' ? 'Nothing is being saved'
+                  : trouble.kind === 'fellback' ? 'Recovered from the safety copy'
+                  : 'Saving is failing'}
+              </Text>
+              <Text style={{ fontSize: 13, lineHeight: 19, color: t.ink2 }}>{trouble.detail}</Text>
+              {trouble.kind === 'unreadable' ? (
+                <>
+                  <Button title="Save the unreadable data to a file" onPress={doExportRaw}
+                    disabled={busy || !trouble.raw} />
+                  <Button title="Restore from a backup file" onPress={doPick} disabled={busy} />
+                  <Button tone="ghost" title="Start fresh instead" onPress={confirmFresh} />
+                </>
+              ) : null}
+            </View>
+          </Section>
+        ) : null}
+
         <Section>
           <SectionHead title="On this phone" right="right now" />
           <Facts summary={here} />
