@@ -48,3 +48,7 @@ web-build/
 
 # macOS
 .DS_Store
+
+# Python bytecode from the icon generator
+__pycache__/
+*.pyc
