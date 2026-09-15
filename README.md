@@ -26,15 +26,23 @@ A QR code appears in the terminal. Point the iPhone **Camera** at it and tap the
 it opens in Expo Go. Leave the terminal running; that is the dev server, and the app
 reloads whenever the code changes.
 
-**The phone and the computer must be on the same Wi-Fi.** If they are not, or the office
-network blocks it:
+**The phone and the computer must be on the same Wi-Fi**, and Windows must let Node
+through the firewall. When Windows asks, allow it on **Private networks**. If the prompt
+never appeared, from an Administrator Command Prompt:
 
-```bash
-npx expo start --tunnel
+```
+netsh advfirewall firewall add rule name="Expo Metro 8081" dir=in action=allow protocol=TCP localport=8081
 ```
 
-Slower, but it works from anywhere. You do not need to log in to Expo to run the app this
-way — an account is only needed later, for a standalone build.
+To tell a firewall problem from anything else, open the `http://<your-ip>:8081` address
+Metro prints in **Safari on the phone**. Something back means the network path is fine;
+a timeout means the firewall or the network is in the way.
+
+As a last resort `npx expo start --tunnel` routes around the network entirely — but many
+corporate networks block ngrok, which it depends on, so fix the firewall first.
+
+You do not need to log in to Expo to run the app this way — an account is only needed
+later, for a standalone build.
 
 **First run:** the app is empty, on the General Week template. Tap the blue template chip
 to choose the week's shape. The Day tab asks for calendar permission the first time; say
