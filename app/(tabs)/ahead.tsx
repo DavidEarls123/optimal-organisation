@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import {
-  Body, Button, Chip, Empty, Field, Mono, Note, Screen, Section, SectionHead, Tick,
+  Body, Button, Chip, CornerMark, Empty, Field, Mono, Note, Screen, Section, SectionHead, Tick,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -50,6 +50,12 @@ export default function AheadScreen() {
   return (
     <Screen>
       <Body>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: -10 }}>
+          <CornerMark />
+          <Mono style={{ letterSpacing: 1.6, textTransform: 'uppercase', fontSize: 11 }}>
+            Ahead
+          </Mono>
+        </View>
         <Section>
           <SectionHead title="Coming up" right={`${trips.length + events.length} tracked`} />
           {rail.length === 0 ? <Empty>Nothing on the horizon.</Empty> : (

@@ -8,7 +8,7 @@ import { radius } from '../theme/tokens';
 import { DAY_LETTERS, addDays, isoOf, isoWeekId, parseISO, weekNumber } from '../domain/dates';
 import { ensureWeek } from '../domain/week';
 import { dayScore, isCurrentWeek, templateOf, todayIndex } from '../domain/scoring';
-import { Mono } from './primitives';
+import { CornerMark, Mono } from './primitives';
 
 function rangeLabel(mondayIso: string): string {
   const mon = parseISO(mondayIso);
@@ -46,9 +46,12 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
     <View style={{ paddingHorizontal: 18, paddingTop: 12, gap: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <View style={{ flex: 1 }}>
-          <Mono style={{ letterSpacing: 1.6, textTransform: 'uppercase', fontSize: 11 }}>
-            {`Week ${weekNumber(weekId)} · ${weekId.slice(0, 4)}${current ? ' · this week' : ''}`}
-          </Mono>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <CornerMark />
+            <Mono style={{ letterSpacing: 1.6, textTransform: 'uppercase', fontSize: 11 }}>
+              {`Week ${weekNumber(weekId)} · ${weekId.slice(0, 4)}${current ? ' · this week' : ''}`}
+            </Mono>
+          </View>
           <Text style={{ fontSize: 23, fontWeight: '700', color: t.ink, letterSpacing: -0.5, marginTop: 2 }}>
             {rangeLabel(week.monday)}
           </Text>

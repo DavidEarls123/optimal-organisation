@@ -223,3 +223,54 @@ export function Empty({ children }: { children: React.ReactNode }) {
   const t = useTheme();
   return <Text style={{ fontSize: 13, color: t.ink3, paddingVertical: 6 }}>{children}</Text>;
 }
+
+/** The mark. Two arcs closing on a filled centre — a week coming round to a
+ *  point. Drawn from views rather than an image so it takes the accent colour
+ *  and stays crisp at any size, and costs nothing to ship. */
+export function Mark({ size = 18, colour }: { size?: number; colour?: string }) {
+  const t = useTheme();
+  const c = colour ?? t.accent;
+  const ring = Math.max(1.5, size * 0.12);
+  return (
+    <View
+      accessible={false}
+      style={{
+        width: size, height: size, borderRadius: size / 2,
+        borderWidth: ring, borderColor: c,
+        borderRightColor: 'transparent',
+        alignItems: 'center', justifyContent: 'center',
+        transform: [{ rotate: '-45deg' }],
+      }}
+    >
+      <View style={{ width: size * 0.3, height: size * 0.3, borderRadius: size * 0.15,
+        backgroundColor: c }} />
+    </View>
+  );
+}
+
+/** The small corner mark every screen carries. Sits on the baseline of a
+ *  heading row, so it costs no vertical space of its own. */
+export function CornerMark() {
+  return (
+    <View style={{ opacity: 0.55 }}>
+      <Mark size={15} />
+    </View>
+  );
+}
+
+/** The full lockup, for the top of the Hub. */
+export function Wordmark({ name, by }: { name: string; by?: string }) {
+  const t = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <Mark size={26} />
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 15, fontWeight: '800', letterSpacing: 1.6,
+          textTransform: 'uppercase', color: t.ink }}>{name}</Text>
+        {by ? (
+          <Text style={{ fontSize: 11, letterSpacing: 0.3, color: t.ink3, marginTop: 1 }}>{by}</Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}

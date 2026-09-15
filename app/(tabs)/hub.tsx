@@ -6,8 +6,10 @@ import { useRouter } from 'expo-router';
 import { WeekHeader } from '../../src/ui/WeekHeader';
 import {
   Bar, Body, Button, Chip, Empty, Mono, Note, Screen, Section, SectionHead, Segmented, Tile,
+  Wordmark,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
+import { APP_BY, APP_NAME } from '../../src/brand';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { bandColour, radius } from '../../src/theme/tokens';
 import {
@@ -23,6 +25,7 @@ export default function HubScreen() {
     <Screen>
       <WeekHeader compact />
       <Body>
+        <Wordmark name={APP_NAME} by={APP_BY} />
         <Segmented
           value={view}
           onChange={setView}
