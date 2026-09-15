@@ -6,7 +6,7 @@ import { Body, Button, Chip, Note, Screen } from '../src/ui/primitives';
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
-import { duplicateTemplate, planFromTemplate, planTasks } from '../src/domain/week';
+import { duplicateTemplate, planFromTemplate, planTasks, templateSummary } from '../src/domain/week';
 
 export default function TemplateScreen() {
   const t = useTheme();
@@ -72,13 +72,21 @@ export default function TemplateScreen() {
                 {tpl.why}
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
-                {[
-                  `habits ${Math.round(tpl.weights.habits * 100)}%`,
-                  `tasks ${Math.round(tpl.weights.tasks * 100)}%`,
-                  `recovery ×${tpl.targets.recovery ?? 0}`,
-                  `guitar ×${tpl.targets.guitar ?? 0}`,
-                  `journal ×${tpl.targets.journal ?? 0}`,
-                ].map((s) => (
+                {(() => {
+                  // Read the same way a week is built, so the card cannot promise
+                  // something picking it would not deliver.
+                  const sum = templateSummary(state, id);
+                  const named = ['recovery', 'guitar', 'journal']
+                    .filter((h) => sum.counts[h] !== undefined)
+                    .map((h) => `${h} ×${sum.counts[h]}`);
+                  return [
+                    `habits ${Math.round(tpl.weights.habits * 100)}%`,
+                    `tasks ${Math.round(tpl.weights.tasks * 100)}%`,
+                    `${sum.weeklyTicks} ticks a week`,
+                    `${sum.everyDay} daily`,
+                    ...named,
+                  ];
+                })().map((s) => (
                   <View key={s} style={{ backgroundColor: t.sunk, borderRadius: 4,
                     paddingHorizontal: 6, paddingVertical: 2 }}>
                     <Text style={{ fontSize: 10, color: t.ink3, fontVariant: ['tabular-nums'] }}>{s}</Text>

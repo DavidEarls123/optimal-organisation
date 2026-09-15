@@ -8,9 +8,18 @@ import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES } from '../src/domain/dates';
 import {
-  countPlan, daysPlan, deleteTemplate, everyPlan, setTemplatePlan, templatePlanFor,
+  clonePlan, countPlan, daysPlan, deleteTemplate, everyPlan,
 } from '../src/domain/week';
-import type { HabitMode } from '../src/domain/types';
+import type { HabitMode, HabitPlan, WeekTemplate } from '../src/domain/types';
+
+/** What the template asks of a habit, read out of a draft rather than the store. */
+function planIn(draft: WeekTemplate, habit: { id: string; def?: HabitPlan }): HabitPlan {
+  const stored = draft.plans?.[habit.id];
+  if (stored) return clonePlan(stored);
+  const n = draft.targets?.[habit.id];
+  if (n !== undefined) return n >= 7 ? everyPlan() : countPlan(n);
+  return habit.def ? clonePlan(habit.def) : countPlan(3);
+}
 
 const MODES: { key: HabitMode; label: string }[] = [
   { key: 'every', label: 'Every day' },
@@ -24,22 +33,49 @@ export default function TemplateEditScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const { state, update } = useStore();
   const templateId = String(id ?? '');
-  const tpl = state.templates[templateId];
+  const saved = state.templates[templateId];
+
+  // Edits happen on a copy. Nothing reaches the store, a week, or the picker card
+  // until Save — so backing out really does back out.
+  const [draft, setDraft] = useState<WeekTemplate | null>(
+    () => (saved ? JSON.parse(JSON.stringify(saved)) : null));
   const [busy, setBusy] = useState(false);
 
-  if (!tpl) {
+  if (!saved || !draft) {
     return <Screen><Body><Note>That template is gone.</Note></Body></Screen>;
   }
+
+  const tpl = draft;
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  const edit = (fn: (d: WeekTemplate) => void) => setDraft((prev) => {
+    const next: WeekTemplate = JSON.parse(JSON.stringify(prev));
+    fn(next);
+    return next;
+  });
+  const setPlan = (habitId: string, plan: HabitPlan) => edit((d) => {
+    d.plans ??= {};
+    d.plans[habitId] = clonePlan(plan);
+    delete d.targets[habitId];
+  });
+  const save = () => {
+    update((d) => { d.templates[templateId] = JSON.parse(JSON.stringify(draft)); });
+    router.back();
+  };
+  const leave = () => {
+    if (!dirty) { router.back(); return; }
+    Alert.alert('Discard changes?', `You have unsaved edits to ${draft.name}.`, [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: () => router.back() },
+    ]);
+  };
 
   const inUse = Object.values(state.weeks).filter((w) => w.templateId === templateId).length;
   const active = state.habits.filter((h) => h.active);
   const habitsPct = Math.round(tpl.weights.habits * 100);
 
-  const setWeights = (pct: number) => update((d) => {
-    const x = d.templates[templateId];
-    if (!x) return;
+  const setWeights = (pct: number) => edit((d) => {
     const clamped = Math.max(40, Math.min(90, pct));
-    x.weights = { habits: clamped / 100, tasks: (100 - clamped) / 100 };
+    d.weights = { habits: clamped / 100, tasks: (100 - clamped) / 100 };
   });
 
   return (
@@ -49,13 +85,13 @@ export default function TemplateEditScreen() {
           <SectionHead title="Name" />
           <Field
             value={tpl.name}
-            onChangeText={(v) => update((d) => { const x = d.templates[templateId]; if (x) x.name = v; })}
+            onChangeText={(v) => edit((d) => { d.name = v; })}
             accessibilityLabel="Template name"
             style={{ fontSize: 16, fontWeight: '700', color: t.ink }}
           />
           <Field
             value={tpl.blurb}
-            onChangeText={(v) => update((d) => { const x = d.templates[templateId]; if (x) x.blurb = v; })}
+            onChangeText={(v) => edit((d) => { d.blurb = v; })}
             accessibilityLabel="What this week is for"
             placeholder="What this kind of week is for…"
             multiline
@@ -104,7 +140,7 @@ export default function TemplateEditScreen() {
         <Section>
           <SectionHead title="Habits" right="what this week asks" />
           {active.map((h) => {
-            const plan = templatePlanFor(state, templateId, h.id);
+            const plan = planIn(draft, h);
             return (
               <View key={h.id} style={{ gap: 8, borderTopWidth: 1, borderTopColor: t.rule2,
                 paddingTop: 11 }}>
@@ -127,10 +163,10 @@ export default function TemplateEditScreen() {
                         key={m.key}
                         accessibilityRole="radio"
                         accessibilityState={{ selected: on }}
-                        onPress={() => update((d) => setTemplatePlan(d, templateId, h.id,
+                        onPress={() => setPlan(h.id,
                           m.key === 'every' ? everyPlan()
                           : m.key === 'days' ? daysPlan(plan.days.length ? plan.days : [0, 2, 4])
-                          : countPlan(plan.n || 3)))}
+                          : countPlan(plan.n || 3))}
                         style={{ flex: 1, paddingVertical: 7, borderRadius: radius.sm,
                           backgroundColor: on ? t.sheet : 'transparent', alignItems: 'center' }}
                       >
@@ -152,11 +188,9 @@ export default function TemplateEditScreen() {
                           accessibilityRole="checkbox"
                           accessibilityState={{ checked: on }}
                           accessibilityLabel={DAY_NAMES[d]}
-                          onPress={() => update((s2) => {
-                            const days = on ? plan.days.filter((x) => x !== d)
-                              : [...plan.days, d].sort((a, b) => a - b);
-                            setTemplatePlan(s2, templateId, h.id, daysPlan(days));
-                          })}
+                          onPress={() => setPlan(h.id, daysPlan(on
+                            ? plan.days.filter((x) => x !== d)
+                            : [...plan.days, d].sort((a, b) => a - b)))}
                           style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderWidth: 1,
                             borderRadius: radius.md,
                             borderColor: on ? t.accent : t.rule,
@@ -173,8 +207,7 @@ export default function TemplateEditScreen() {
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel="Fewer"
-                      onPress={() => update((s2) => setTemplatePlan(s2, templateId, h.id,
-                        countPlan(Math.max(1, plan.n - 1))))}
+                      onPress={() => setPlan(h.id, countPlan(Math.max(1, plan.n - 1)))}
                       style={{ width: 34, height: 34, borderWidth: 1, borderColor: t.rule,
                         borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' }}
                     >
@@ -185,8 +218,7 @@ export default function TemplateEditScreen() {
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel="More"
-                      onPress={() => update((s2) => setTemplatePlan(s2, templateId, h.id,
-                        countPlan(Math.min(7, plan.n + 1))))}
+                      onPress={() => setPlan(h.id, countPlan(Math.min(7, plan.n + 1)))}
                       style={{ width: 34, height: 34, borderWidth: 1, borderColor: t.rule,
                         borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' }}
                     >
@@ -199,10 +231,20 @@ export default function TemplateEditScreen() {
             );
           })}
           <Note>
-            Changing this does not touch weeks already built from the template. Pick it again on a
-            week to apply the new version.
+            Saving does not touch weeks already built from this template. Pick it again on a week
+            to apply the new version.
           </Note>
         </Section>
+
+        <View style={{ gap: 8 }}>
+          <Button
+            tone="big"
+            title={dirty ? 'Save template' : 'Saved'}
+            onPress={save}
+            disabled={!dirty}
+          />
+          <Button tone="ghost" title={dirty ? 'Discard changes' : 'Close'} onPress={leave} />
+        </View>
 
         <Section>
           <SectionHead title="Danger" right={inUse ? `used by ${inUse} week${inUse === 1 ? '' : 's'}` : 'unused'} />

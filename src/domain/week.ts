@@ -203,6 +203,30 @@ export function templatePlanFor(state: AppState, templateId: string, habitId: st
   return h?.def ? clonePlan(h.def) : countPlan(3);
 }
 
+/** How many ticks a template asks of one habit in a week. */
+export function templateCountFor(state: AppState, templateId: string, habitId: string): number {
+  const p = templatePlanFor(state, templateId, habitId);
+  return p.mode === 'every' ? 7 : p.mode === 'days' ? p.days.length : p.n;
+}
+
+/** Everything the picker card needs, read the same way the week is built, so the
+ *  preview cannot drift from what picking it would actually do. */
+export function templateSummary(state: AppState, templateId: string): {
+  weeklyTicks: number; everyDay: number; counts: Record<string, number>;
+} {
+  let weeklyTicks = 0;
+  let everyDay = 0;
+  const counts: Record<string, number> = {};
+  for (const h of state.habits) {
+    if (!h.active) continue;
+    const n = templateCountFor(state, templateId, h.id);
+    counts[h.id] = n;
+    weeklyTicks += n;
+    if (n >= 7) everyDay += 1;
+  }
+  return { weeklyTicks, everyDay, counts };
+}
+
 /** Edit a template directly, without going anywhere near a week. */
 export function setTemplatePlan(
   state: AppState, templateId: string, habitId: string, plan: HabitPlan,

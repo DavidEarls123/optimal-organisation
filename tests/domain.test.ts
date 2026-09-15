@@ -5,7 +5,7 @@ import { createInitialState, emptyState, migrate } from '../src/domain/state';
 import {
   countPlan, daysPlan, ensurePlanCoverage, ensureWeek, everyPlan,
   deleteTemplate, duplicateTemplate, moveTask, planFromTemplate, prevWeekIdOf,
-  saveWeekAsTemplate, setTemplatePlan, shopListFor, templatePlanFor,
+  saveWeekAsTemplate, setTemplatePlan, shopListFor, templatePlanFor, templateSummary,
 } from '../src/domain/week';
 import {
   activeHabits, dayAllDone, dayOutstanding, elapsedDays, habitDone, habitTarget,
@@ -408,4 +408,32 @@ test('the last template cannot be deleted', () => {
   const s = fresh('run');
   for (const id of [...s.templateOrder]) deleteTemplate(s, id);
   assert.equal(s.templateOrder.length, 1, 'one always survives');
+});
+
+test('the template summary follows edits, so a preview cannot go stale', () => {
+  const s = fresh('run');
+  const before = templateSummary(s, 'run');
+  assert.equal(before.counts.recovery, 5, 'read from the template targets');
+
+  setTemplatePlan(s, 'run', 'recovery', countPlan(2));
+  const after = templateSummary(s, 'run');
+  assert.equal(after.counts.recovery, 2, 'and from an edited plan');
+  assert.equal(after.weeklyTicks, before.weeklyTicks - 3);
+
+  setTemplatePlan(s, 'run', 'guitar', daysPlan([0, 3]));
+  assert.equal(templateSummary(s, 'run').counts.guitar, 2, 'chosen days count as their length');
+});
+
+test('what the summary promises is what building a week delivers', () => {
+  const s = fresh('run');
+  setTemplatePlan(s, 'run', 'recovery', countPlan(2));
+  setTemplatePlan(s, 'run', 'meditate', daysPlan([1, 3, 5]));
+  const summary = templateSummary(s, 'run');
+
+  ensureWeek(s, '2026-09-21');
+  const w = s.weeks['2026-W39'];
+  for (const h of s.habits.filter((x) => x.active)) {
+    assert.equal(habitTarget(w, h.id), summary.counts[h.id],
+      `${h.id}: the card and the built week agree`);
+  }
 });
