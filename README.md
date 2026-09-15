@@ -13,7 +13,7 @@ device, nothing is sent anywhere.
 
 ## Running it
 
-You need a computer with **Node 20 or newer**, and **Expo Go** on your iPhone.
+You need a computer with **Node 22 or newer** (the EAS CLI needs it), and **Expo Go** on your iPhone.
 
 ```bash
 git clone https://github.com/DavidEarls123/optimal-organisation
