@@ -1,4 +1,4 @@
-# Optimal Week
+# Week One
 
 A personal weekly operating system, built as a standalone iPhone app.
 
@@ -135,7 +135,7 @@ already has, and never writes to them. That one decision removes a great deal of
    will appear here.
 2. Allow access when the app asks. If you said no, the Day tab shows a **Calendar — not
    connected** panel with a button; once iOS has stopped asking, that button takes you
-   straight to **Settings → Optimal Week → Calendars**, where it needs **Full Access**.
+   straight to **Settings → Week One → Calendars**, where it needs **Full Access**.
 
 `src/services/calendar.ts` also guesses which sessions are trackable (`inferTrack`), so a
 Runna interval session shows a **Run** chip and a one-tap *+ Task* that logs the session

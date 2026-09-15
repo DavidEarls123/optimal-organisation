@@ -99,10 +99,10 @@ test('a disabled habit comes back disabled, with its plan intact', () => {
 test('junk is refused rather than half-applied', () => {
   for (const [text, hint] of [
     ['not json at all', 'JSON'],
-    ['{}', 'not an Optimal Week backup'],
-    ['[]', 'not an Optimal Week backup'],
+    ['{}', 'not a Week One backup'],
+    ['[]', 'not a Week One backup'],
     ['null', 'does not contain a backup'],
-    ['{"kind":"something-else","state":{"weeks":{}}}', 'not an Optimal Week backup'],
+    ['{"kind":"something-else","state":{"weeks":{}}}', 'not a Week One backup'],
   ] as const) {
     const res = parseBackup(text);
     assert.equal(res.ok, false, `should refuse: ${text}`);

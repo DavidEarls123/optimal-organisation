@@ -54,7 +54,7 @@ export default function DayScreen() {
     if (a === 'blocked') {
       Alert.alert(
         'Turn it on in Settings',
-        'iOS will not ask again from inside the app. Settings → Optimal Week → Calendars, '
+        'iOS will not ask again from inside the app. Open Settings below, then Calendars, '
         + 'and choose Full Access.',
         [{ text: 'Not now', style: 'cancel' },
          { text: 'Open Settings', onPress: () => { Linking.openSettings(); } }],
@@ -173,7 +173,7 @@ export default function DayScreen() {
             <Note>
               {access === 'error'
                 ? `The calendar could not be read: ${calendarError() ?? 'unknown error'}`
-                : 'Optimal Week reads your phone\u2019s calendar so appointments and planned runs '
+                : 'Week One reads your phone\u2019s calendar so appointments and planned runs '
                   + 'show up on the day. It never writes to it.'}
             </Note>
             {access === 'error' ? null : (

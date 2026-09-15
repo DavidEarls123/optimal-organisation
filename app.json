@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Optimal Week",
+    "name": "Week One",
     "slug": "optimal-week",
     "version": "1.0.0",
     "scheme": "optimalweek",
@@ -12,8 +12,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.davidearls.optimalweek",
       "infoPlist": {
-        "NSCalendarsUsageDescription": "Optimal Week reads your calendar so planned runs and appointments show up on the right day. It never writes to your calendar.",
-        "NSCalendarsFullAccessUsageDescription": "Optimal Week reads your calendar so planned runs and appointments show up on the right day. It never writes to your calendar.",
+        "NSCalendarsUsageDescription": "Week One reads your calendar so planned runs and appointments show up on the right day. It never writes to your calendar.",
+        "NSCalendarsFullAccessUsageDescription": "Week One reads your calendar so planned runs and appointments show up on the right day. It never writes to your calendar.",
         "RCTAsyncStorageExcludeFromBackup": false
       }
     },
@@ -38,7 +38,7 @@
       [
         "expo-calendar",
         {
-          "calendarPermission": "Optimal Week reads your calendar so planned runs and appointments show up on the right day."
+          "calendarPermission": "Week One reads your calendar so planned runs and appointments show up on the right day."
         }
       ],
       [

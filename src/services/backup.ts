@@ -35,7 +35,7 @@ export async function exportBackup(state: AppState): Promise<ExportResult> {
     await Sharing.shareAsync(file.uri, {
       mimeType: 'application/json',
       UTI: 'public.json',
-      dialogTitle: 'Save your Optimal Week backup',
+      dialogTitle: 'Save your Week One backup',
     });
     return { ok: true, filename };
   } catch (e) {

@@ -79,7 +79,7 @@ export function parseBackup(text: string): ParseResult {
   }
   const env = raw as Partial<BackupEnvelope>;
   if (env.kind !== BACKUP_KIND) {
-    return { ok: false, reason: 'That is not an Optimal Week backup.' };
+    return { ok: false, reason: 'That is not a Week One backup.' };
   }
   if (typeof env.format !== 'number' || env.format > BACKUP_FORMAT) {
     return { ok: false, reason: 'That backup was made by a newer version of the app.' };
