@@ -67,8 +67,8 @@ function Shopping() {
                 if (gg) gg.name = v;
               })}
               style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 0, paddingHorizontal: 0,
-                paddingVertical: 2, fontSize: 11, letterSpacing: 1.4, textTransform: 'uppercase',
-                fontWeight: '600', color: t.ink2 }}
+                paddingVertical: 2, fontSize: 12.5, letterSpacing: 1.1, textTransform: 'uppercase',
+                fontWeight: '700', color: t.ink }}
               accessibilityLabel={`Rename ${g.name}`}
             />
             <Mono>{`${g.items.filter((i) => i.done).length}/${g.items.length}`}</Mono>

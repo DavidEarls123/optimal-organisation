@@ -159,8 +159,9 @@ export default function DayScreen() {
 
         <Section>
           <SectionHead
+            size="title"
             title={parseISO(dateIso).toLocaleDateString('en-GB',
-              { weekday: 'long', day: 'numeric', month: 'short' })}
+              { weekday: 'long', day: 'numeric', month: 'long' })}
             right={`${live.filter((x) => x.state === 'done').length}/${live.length}`}
           />
           {state.sections.map((sc) => {
@@ -177,8 +178,8 @@ export default function DayScreen() {
                       if (s) s.name = v;
                     })}
                     style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 0,
-                      paddingHorizontal: 0, paddingVertical: 2, fontSize: 11,
-                      letterSpacing: 1.4, textTransform: 'uppercase', fontWeight: '600', color: t.ink2 }}
+                      paddingHorizontal: 0, paddingVertical: 2, fontSize: 12.5,
+                      letterSpacing: 1.1, textTransform: 'uppercase', fontWeight: '700', color: t.ink }}
                     accessibilityLabel={`Rename ${sc.name}`}
                   />
                   <Mono>{`${done}/${items.length}`}</Mono>

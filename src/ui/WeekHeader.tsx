@@ -113,7 +113,7 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
               <Text style={{ fontSize: 10, letterSpacing: 1, color: selected ? t.accent : t.ink3 }}>
                 {letter}
               </Text>
-              <DayMark done={done} off={off} score={score} />
+              <DayMark done={done} off={off} score={score} selected={selected} />
               <Text style={{ fontSize: 13, fontWeight: '600', color: off ? t.ink3 : t.ink,
                 fontVariant: ['tabular-nums'] }}>
                 {addDays(parseISO(week.monday), d).getDate()}
@@ -128,12 +128,49 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
   );
 }
 
-/** A tick for a completed day, a dash for an untracked one, otherwise a circle
- *  filled from the bottom in proportion to how much of the day is done. */
-function DayMark({ done, off, score }: { done: boolean; off: boolean; score: number }) {
+/** A real arc, swept clockwise from twelve o'clock, built from two clipped
+ *  half-discs. react-native-svg would be tidier but it is a native module, and
+ *  that would mean a rebuild rather than an update. */
+function ProgressRing({ progress, size, thickness, track, fill, hole }: {
+  progress: number; size: number; thickness: number;
+  track: string; fill: string; hole: string;
+}) {
+  const deg = Math.max(0, Math.min(1, progress)) * 360;
+  const right = Math.min(deg, 180);
+  const left = Math.max(0, deg - 180);
+  const half = size / 2;
+  const disc = { width: half, height: size, backgroundColor: fill } as const;
+  return (
+    <View style={{ width: size, height: size, borderRadius: half, backgroundColor: track }}>
+      <View style={{ position: 'absolute', top: 0, left: half, width: half, height: size,
+        overflow: 'hidden' }}>
+        <View style={[disc, {
+          borderTopRightRadius: half, borderBottomRightRadius: half,
+          transformOrigin: '0% 50%', transform: [{ rotate: `${180 + right}deg` }],
+        }]} />
+      </View>
+      <View style={{ position: 'absolute', top: 0, left: 0, width: half, height: size,
+        overflow: 'hidden' }}>
+        <View style={[disc, {
+          borderTopLeftRadius: half, borderBottomLeftRadius: half,
+          transformOrigin: '100% 50%', transform: [{ rotate: `${180 + left}deg` }],
+        }]} />
+      </View>
+      <View style={{ position: 'absolute', left: thickness, top: thickness,
+        width: size - thickness * 2, height: size - thickness * 2,
+        borderRadius: (size - thickness * 2) / 2, backgroundColor: hole }} />
+    </View>
+  );
+}
+
+/** A tick for a completed day, a dash for an untracked one, otherwise the arc. */
+function DayMark({ done, off, score, selected }: {
+  done: boolean; off: boolean; score: number; selected: boolean;
+}) {
   const t = useTheme();
+  const size = 24;
   const base = {
-    width: 24, height: 24, borderRadius: 12,
+    width: size, height: size, borderRadius: size / 2,
     alignItems: 'center' as const, justifyContent: 'center' as const,
   };
   if (off) {
@@ -150,13 +187,14 @@ function DayMark({ done, off, score }: { done: boolean; off: boolean; score: num
       </View>
     );
   }
-  const filled = Math.max(0, Math.min(1, score));
   return (
-    <View style={[base, { borderWidth: 1.5, borderColor: t.rule, overflow: 'hidden' }]}>
-      <View style={{
-        position: 'absolute', left: 0, right: 0, bottom: 0,
-        height: `${filled * 100}%`, backgroundColor: t.hit, opacity: 0.85,
-      }} />
-    </View>
+    <ProgressRing
+      progress={score}
+      size={size}
+      thickness={3}
+      track={t.rule}
+      fill={t.hit}
+      hole={selected ? t.accentSoft : t.sheet}
+    />
   );
 }

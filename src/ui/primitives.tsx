@@ -31,8 +31,8 @@ export function Body({ children }: { children: React.ReactNode }) {
 export function Label({ children, style }: { children: React.ReactNode; style?: StyleProp<TextStyle> }) {
   const t = useTheme();
   return (
-    <Text style={[{ fontSize: 11, letterSpacing: 1.4, textTransform: 'uppercase',
-      color: t.ink2, fontWeight: '600' }, style]}>{children}</Text>
+    <Text style={[{ fontSize: 12, letterSpacing: 1.1, textTransform: 'uppercase',
+      color: t.ink2, fontWeight: '700' }, style]}>{children}</Text>
   );
 }
 
@@ -45,15 +45,25 @@ export function Mono({ children, style }: { children: React.ReactNode; style?: S
   );
 }
 
-export function SectionHead({ title, right }: { title: string; right?: React.ReactNode }) {
+/** `size="title"` is for the thing a screen is actually about — the day you are
+ *  looking at. Everything else stays a quiet uppercase label, so the two do not
+ *  compete for the same rung of the hierarchy. */
+export function SectionHead({ title, right, size = 'label' }: {
+  title: string; right?: React.ReactNode; size?: 'label' | 'title';
+}) {
   const t = useTheme();
   return (
     <View style={{
       flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between',
-      borderBottomWidth: StyleSheet.hairlineWidth * 2, borderBottomColor: t.rule,
-      paddingBottom: 6, gap: 10,
+      borderBottomWidth: size === 'title' ? 1 : StyleSheet.hairlineWidth * 2,
+      borderBottomColor: size === 'title' ? t.rule : t.rule,
+      paddingBottom: size === 'title' ? 8 : 6, gap: 10,
     }}>
-      <Label>{title}</Label>
+      {size === 'title'
+        ? <Text style={{ fontSize: 20, fontWeight: '700', color: t.ink, letterSpacing: -0.3 }}>
+            {title}
+          </Text>
+        : <Label>{title}</Label>}
       {typeof right === 'string' ? <Mono>{right}</Mono> : right}
     </View>
   );
