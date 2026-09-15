@@ -118,8 +118,8 @@ and a rebuild is two clicks when it is ever needed.
 
 ## How your calendar gets in
 
-The app **reads** your phone's calendar and never writes to it. That one decision removes
-a great deal of plumbing:
+There is nothing to link inside the app. It **reads** whatever calendars your iPhone
+already has, and never writes to them. That one decision removes a great deal of plumbing:
 
 - **Outlook** — add your account to iOS Calendar and its events appear on the right day.
   No Microsoft login, no OAuth, no Graph API.
@@ -127,6 +127,15 @@ a great deal of plumbing:
   feed into Apple, Google or Outlook calendars and refreshes it whenever you change the
   plan or rearrange a week, so planned sessions arrive here automatically. Runna has no
   public API; this is the supported route and it is the better one.
+
+**Setting it up** is two things, both outside this app:
+
+1. Add the account to iOS: **Settings → Apps → Calendar → Accounts → Add Account**, and
+   pick Outlook.com or Exchange. Once its events appear in Apple's own Calendar app, they
+   will appear here.
+2. Allow access when the app asks. If you said no, the Day tab shows a **Calendar — not
+   connected** panel with a button; once iOS has stopped asking, that button takes you
+   straight to **Settings → Optimal Week → Calendars**, where it needs **Full Access**.
 
 `src/services/calendar.ts` also guesses which sessions are trackable (`inferTrack`), so a
 Runna interval session shows a **Run** chip and a one-tap *+ Task* that logs the session

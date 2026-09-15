@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, Text, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 
@@ -16,7 +16,8 @@ import {
   activeHabits, dayOutstanding, habitDone, habitTarget, scheduledOn, templateOf,
 } from '../../src/domain/scoring';
 import type { CalendarEvent, Task } from '../../src/domain/types';
-import { eventsForDay } from '../../src/services/calendar';
+import { askForCalendar, calendarAccess, eventsForDay, type CalendarAccess }
+  from '../../src/services/calendar';
 
 export default function DayScreen() {
   const t = useTheme();
@@ -26,6 +27,7 @@ export default function DayScreen() {
   const [moveId, setMoveId] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [access, setAccess] = useState<CalendarAccess | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [tagFor, setTagFor] = useState<Record<string, string>>({});
 
@@ -34,9 +36,29 @@ export default function DayScreen() {
   useEffect(() => {
     let alive = true;
     if (!dateIso) return;
-    eventsForDay(dateIso).then((e) => { if (alive) setEvents(e); });
+    calendarAccess().then((a) => {
+      if (!alive) return;
+      setAccess(a);
+      if (a === 'granted') eventsForDay(dateIso).then((e) => { if (alive) setEvents(e); });
+      else setEvents([]);
+    });
     return () => { alive = false; };
   }, [dateIso]);
+
+  const connectCalendar = useCallback(async () => {
+    const a = access === 'blocked' ? 'blocked' : await askForCalendar();
+    setAccess(a);
+    if (a === 'granted') { setEvents(await eventsForDay(dateIso)); return; }
+    if (a === 'blocked') {
+      Alert.alert(
+        'Turn it on in Settings',
+        'iOS will not ask again from inside the app. Settings → Optimal Week → Calendars, '
+        + 'and choose Full Access.',
+        [{ text: 'Not now', style: 'cancel' },
+         { text: 'Open Settings', onPress: () => { Linking.openSettings(); } }],
+      );
+    }
+  }, [access, dateIso]);
 
   useEffect(() => { setMoveId(null); setShowPicker(false); }, [day, weekId]);
 
@@ -117,6 +139,20 @@ export default function DayScreen() {
               Nothing on this day counts towards the week — targets drop to match.
             </Text>
           </View>
+        ) : null}
+
+        {access && access !== 'granted' ? (
+          <Section>
+            <SectionHead title="Calendar" right="not connected" />
+            <Note>
+              Optimal Week reads your phone&apos;s calendar so appointments and planned runs show up
+              on the day. It never writes to it.
+            </Note>
+            <Button
+              title={access === 'blocked' ? 'Turn it on in Settings' : 'Allow calendar access'}
+              onPress={connectCalendar}
+            />
+          </Section>
         ) : null}
 
         {events.length ? (

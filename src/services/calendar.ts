@@ -9,6 +9,33 @@ import { parseISO, addDays } from '../domain/dates';
 
 let granted: boolean | null = null;
 
+export type CalendarAccess = 'granted' | 'ask' | 'blocked';
+
+/** Reads the current state without prompting, so the UI can say something
+ *  useful instead of silently showing no events. */
+export async function calendarAccess(): Promise<CalendarAccess> {
+  try {
+    const p = await Calendar.getCalendarPermissionsAsync();
+    granted = p.granted;
+    if (p.granted) return 'granted';
+    return p.canAskAgain ? 'ask' : 'blocked';
+  } catch {
+    return 'blocked';
+  }
+}
+
+/** Prompts, if iOS will still let us. Returns the state afterwards. */
+export async function askForCalendar(): Promise<CalendarAccess> {
+  try {
+    const p = await Calendar.requestCalendarPermissionsAsync();
+    granted = p.granted;
+    if (p.granted) return 'granted';
+    return p.canAskAgain ? 'ask' : 'blocked';
+  } catch {
+    return 'blocked';
+  }
+}
+
 export async function ensureCalendarPermission(): Promise<boolean> {
   if (granted !== null) return granted;
   try {
@@ -18,6 +45,17 @@ export async function ensureCalendarPermission(): Promise<boolean> {
     granted = false;
   }
   return granted;
+}
+
+/** Names of the calendars being read, so you can tell whether Outlook is among them. */
+export async function calendarNames(): Promise<string[]> {
+  if (!(await ensureCalendarPermission())) return [];
+  try {
+    const cals = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+    return [...new Set(cals.map((c) => c.title).filter(Boolean) as string[])].sort();
+  } catch {
+    return [];
+  }
 }
 
 /** Guess the trackable a planned session belongs to, from its calendar source
