@@ -16,7 +16,7 @@ import {
   activeHabits, dayOutstanding, habitDayStatus, habitDone, habitTarget, planLabel,
 } from '../../src/domain/scoring';
 import type { CalendarEvent, Habit, Task, Week } from '../../src/domain/types';
-import { askForCalendar, calendarAccess, eventsForDay, type CalendarAccess }
+import { askForCalendar, calendarAccess, calendarError, eventsForDay, type CalendarAccess }
   from '../../src/services/calendar';
 
 export default function DayScreen() {
@@ -153,15 +153,19 @@ export default function DayScreen() {
 
         {access && access !== 'granted' ? (
           <Section>
-            <SectionHead title="Calendar" right="not connected" />
+            <SectionHead title="Calendar" right={access === 'error' ? 'not working' : 'not connected'} />
             <Note>
-              Optimal Week reads your phone&apos;s calendar so appointments and planned runs show up
-              on the day. It never writes to it.
+              {access === 'error'
+                ? `The calendar could not be read: ${calendarError() ?? 'unknown error'}`
+                : 'Optimal Week reads your phone\u2019s calendar so appointments and planned runs '
+                  + 'show up on the day. It never writes to it.'}
             </Note>
-            <Button
-              title={access === 'blocked' ? 'Turn it on in Settings' : 'Allow calendar access'}
-              onPress={connectCalendar}
-            />
+            {access === 'error' ? null : (
+              <Button
+                title={access === 'blocked' ? 'Turn it on in Settings' : 'Allow calendar access'}
+                onPress={connectCalendar}
+              />
+            )}
           </Section>
         ) : null}
 
