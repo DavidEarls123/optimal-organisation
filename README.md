@@ -13,24 +13,54 @@ device, nothing is sent anywhere.
 
 ## Running it
 
-You need the **Expo Go** app on your iPhone (free, from the App Store) and Node 20+ on
-your computer.
+You need a computer with **Node 20 or newer**, and **Expo Go** on your iPhone.
 
 ```bash
-npm install
+git clone https://github.com/DavidEarls123/optimal-organisation
+cd optimal-organisation
+npm install        # a few minutes, once
 npm start
 ```
 
-Scan the QR code with your iPhone camera. The app opens in Expo Go and reloads as the
-code changes.
+A QR code appears in the terminal. Point the iPhone **Camera** at it and tap the banner —
+it opens in Expo Go. Leave the terminal running; that is the dev server, and the app
+reloads whenever the code changes.
 
-When you want it as a real app icon rather than living inside Expo Go, that's an EAS
-build — a separate step, and it needs a free Expo account.
+**The phone and the computer must be on the same Wi-Fi.** If they are not, or the office
+network blocks it:
+
+```bash
+npx expo start --tunnel
+```
+
+Slower, but it works from anywhere. You do not need to log in to Expo to run the app this
+way — an account is only needed later, for a standalone build.
+
+**First run:** the app is empty, on the General Week template. Tap the blue template chip
+to choose the week's shape. The Day tab asks for calendar permission the first time; say
+yes and your Outlook events (and any Runna sessions) appear on the day.
+
+**While it is running:** shake the phone for the dev menu, or press `r` in the terminal to
+reload.
 
 ```bash
 npm test         # domain logic tests
 npm run typecheck
 ```
+
+### When it becomes a real app icon
+
+Expo Go is for trying it. A permanent install is an EAS build, which does need your Expo
+account:
+
+```bash
+npm install -g eas-cli
+eas login
+eas build --platform ios --profile preview
+```
+
+**Export a backup from Expo Go first** (Hub → Your data) and restore it into the installed
+app. They are separate apps with separate storage.
 
 ---
 
