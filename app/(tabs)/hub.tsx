@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Text, View } from 'react-native';
+import { Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
@@ -12,6 +13,7 @@ import { bandColour, radius } from '../../src/theme/tokens';
 import {
   activeHabits, habitDone, habitTarget, planLabel, streak, templateOf, trackWeekCount, weekScore,
 } from '../../src/domain/scoring';
+import { applyUpdate, checkForUpdate, currentVersion, updatesEnabled } from '../../src/services/updates';
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 
@@ -166,6 +168,7 @@ function ThisWeek() {
 
 function YourData() {
   const router = useRouter();
+  const [checking, setChecking] = useState(false);
   return (
     <Section>
       <SectionHead title="Your data" right="on this phone only" />
@@ -174,6 +177,33 @@ function YourData() {
         Everything lives on this phone and is included in your iPhone backup. Export a copy before
         you move to the installed app — Expo Go&apos;s storage does not come with you.
       </Note>
+      {updatesEnabled ? (
+        <>
+          <Button
+            tone="ghost"
+            title={checking ? 'Checking…' : 'Check for app updates'}
+            onPress={async () => {
+              setChecking(true);
+              const out = await checkForUpdate();
+              setChecking(false);
+              if (out.status === 'current') { Alert.alert('Up to date', 'You have the latest version.'); return; }
+              if (out.status === 'failed') { Alert.alert('Could not check', out.reason); return; }
+              if (out.status === 'ready') {
+                Alert.alert('Update ready', 'Restart now to use it?', [
+                  { text: 'Later', style: 'cancel' },
+                  { text: 'Restart', onPress: () => { applyUpdate(); } },
+                ]);
+              }
+            }}
+          />
+          <Note>{`Version ${currentVersion()}. Updates arrive on their own when you next open the app.`}</Note>
+        </>
+      ) : (
+        <Note>
+          Running from the dev server, so there is nothing to update — the code is whatever your
+          computer is serving.
+        </Note>
+      )}
     </Section>
   );
 }

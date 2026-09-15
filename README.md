@@ -56,19 +56,51 @@ npm test         # domain logic tests
 npm run typecheck
 ```
 
-### When it becomes a real app icon
+---
 
-Expo Go is for trying it. A permanent install is an EAS build, which does need your Expo
-account:
+## Getting off the laptop
+
+Expo Go is scaffolding. It needs your computer running Metro and both devices on the same
+Wi-Fi, which is no way to track a week. The destination is an **installed app**: its own
+icon, its own copy of the code, works on a plane.
+
+### What it costs
+
+An **Apple Developer Program** membership, **$99 a year**. There is no free route to a
+permanently installed iOS app. A free Apple ID can sideload, but the profile expires after
+seven days and needs a Mac with Xcode to re-sign — not worth it for something you intend
+to open every morning.
+
+### One-time setup
 
 ```bash
 npm install -g eas-cli
 eas login
+eas build:configure
 eas build --platform ios --profile preview
 ```
 
-**Export a backup from Expo Go first** (Hub → Your data) and restore it into the installed
-app. They are separate apps with separate storage.
+EAS builds on Expo's Macs, so you do not need one. It walks you through Apple sign-in and
+certificates. When it finishes you get a link; open it on the iPhone to install.
+
+**Export your data from Expo Go first** (Hub → Your data → Backup & restore) and restore it
+into the installed app. Separate apps, separate storage.
+
+### Updates, from a git push
+
+`.github/workflows/publish-update.yml` publishes an update every time `main` changes. It
+typechecks and runs the tests first, and only publishes if both pass. The app checks on
+launch and applies what it finds; **Hub → Your data → Check for app updates** fetches on
+demand.
+
+It needs one secret: an Expo access token from
+[expo.dev/settings/access-tokens](https://expo.dev/settings/access-tokens), saved in the
+repo under **Settings → Secrets and variables → Actions** as `EXPO_TOKEN`.
+
+**What travels this way and what does not:** JavaScript and assets go over the air, which
+is nearly everything — screens, logic, wording, layout. Native changes do not: a new Expo
+module, a new permission, anything touching `app.json` plugins. Those need
+`eas build` again. You will be told which when the time comes.
 
 ---
 
