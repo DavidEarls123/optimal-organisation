@@ -20,6 +20,8 @@ export default function RootLayout() {
                 options={{ presentation: 'modal', headerShown: true, title: 'Shape of the week' }} />
               <Stack.Screen name="habits"
                 options={{ presentation: 'modal', headerShown: true, title: 'Habits this week' }} />
+              <Stack.Screen name="backup"
+                options={{ presentation: 'modal', headerShown: true, title: 'Backup & restore' }} />
               <Stack.Screen name="watch"
                 options={{ presentation: 'modal', headerShown: true, title: 'What did you watch?' }} />
             </Stack>

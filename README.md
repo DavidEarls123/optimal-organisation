@@ -121,8 +121,16 @@ Two things that follow from all this:
 - **In Expo Go, the data belongs to Expo Go.** Delete that app and it goes. It will also
   *not* carry across when you move to a standalone build — that is a different app with a
   different sandbox, starting empty.
-- **One device, one copy.** A restored iPhone backup brings it back. A lost phone with no
-  backup does not. There is no export yet; see below.
+- **One device, one copy** — unless you export. **Hub → Your data → Backup & restore**
+  writes a JSON file and hands it to the share sheet: AirDrop, Mail, Files, wherever you
+  want it. Restoring reads it back. The app never sends the file anywhere itself.
+
+Restoring shows you what is in the file before it changes anything, and keeps one step of
+undo. A backup is a snapshot, not a sync: two phones editing the same week will not merge,
+the last file you restore wins.
+
+**Do this before you move from Expo Go to the installed app.** They are separate apps with
+separate storage, so the installed one starts empty. Export, install, restore.
 
 ---
 
@@ -138,7 +146,7 @@ Honest list, in rough priority order:
    Rescheduling a task already uses the native picker; the other two should follow.
 4. **The Hub's year view needs history.** It only ever shows weeks actually recorded and
    says so when there are too few. Nothing in it is invented.
-5. **Export and restore.** There is no way to get your data out of the app yet. Worth doing
-   before it holds anything you would miss — a JSON export you can mail to yourself is an
-   afternoon; syncing across devices is a much bigger decision.
+5. **Sync across devices.** Export and restore is manual, and deliberately so — real sync
+   means a server, an account, and merge rules. Only worth it if you want this on an iPad
+   or Mac too.
 6. **Sample data.** A fresh install starts genuinely empty, on the General Week template.

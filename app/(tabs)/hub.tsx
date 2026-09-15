@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
 import {
-  Bar, Body, Chip, Empty, Mono, Note, Screen, Section, SectionHead, Segmented, Tile,
+  Bar, Body, Button, Chip, Empty, Mono, Note, Screen, Section, SectionHead, Segmented, Tile,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -157,7 +158,23 @@ function ThisWeek() {
           are left out of the count.
         </Note>
       </Section>
+
+      <YourData />
     </>
+  );
+}
+
+function YourData() {
+  const router = useRouter();
+  return (
+    <Section>
+      <SectionHead title="Your data" right="on this phone only" />
+      <Button tone="ghost" title="Backup & restore" onPress={() => router.push('/backup')} />
+      <Note>
+        Everything lives on this phone and is included in your iPhone backup. Export a copy before
+        you move to the installed app — Expo Go&apos;s storage does not come with you.
+      </Note>
+    </Section>
   );
 }
 
