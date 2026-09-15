@@ -93,6 +93,11 @@ typechecks and runs the tests first, and only publishes if both pass. The app ch
 launch and applies what it finds; **Hub → Your data → Check for app updates** fetches on
 demand.
 
+It publishes to the **`preview`** channel, which is what `eas build --profile preview`
+listens on. Channels have to match or the update goes nowhere — if you later build a
+TestFlight or App Store version, that listens on `production`, and the workflow default
+needs changing to suit.
+
 It needs one secret: an Expo access token from
 [expo.dev/settings/access-tokens](https://expo.dev/settings/access-tokens), saved in the
 repo under **Settings → Secrets and variables → Actions** as `EXPO_TOKEN`.

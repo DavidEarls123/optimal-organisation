@@ -1,5 +1,10 @@
 # Push to main -> the installed app picks the change up next time it opens.
 #
+# Publishes to the `preview` channel, because that is what `eas build --profile
+# preview` listens on, and that is the build installed on the phone. If you ever
+# move to a TestFlight or App Store build, that one listens on `production` —
+# change the default below to match, or the updates will go nowhere visible.
+#
 # Only JavaScript and assets travel this way. Anything native — a new Expo
 # module, a permission, a change to app.json's plugins — needs a fresh build
 # instead, because the binary on the phone has to change.
@@ -11,8 +16,8 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: Update branch to publish to
-        default: production
+        description: Update channel to publish to
+        default: preview
         type: string
 
 jobs:
@@ -44,4 +49,4 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Publish the update
-        run: eas update --branch ${{ inputs.branch || 'production' }} --message "${{ github.event.head_commit.message || 'manual publish' }}"
+        run: eas update --branch ${{ inputs.branch || 'preview' }} --message "${{ github.event.head_commit.message || 'manual publish' }}"
