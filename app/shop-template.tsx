@@ -7,7 +7,6 @@ import {
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { resetShopFromTemplate, shopTemplateOf, uid } from '../src/domain/week';
-import { SHOP_TEMPLATE } from '../src/domain/catalogue';
 
 const ITEM_LIMIT = 60;
 const HEADING_LIMIT = 28;
@@ -144,24 +143,6 @@ export default function ShopTemplateScreen() {
                  text: 'Replace',
                  style: 'destructive',
                  onPress: () => update((d) => { resetShopFromTemplate(d, weekId); }),
-               }],
-            )}
-          />
-          <Button
-            tone="ghost"
-            title="Start the standard list again from the defaults"
-            onPress={() => Alert.alert(
-              'Back to the default headings?',
-              `Breakfast, Lunch, Dinner, Snacks, Home, Personal, Miscellaneous — with ${
-                SHOP_TEMPLATE.reduce((a, g) => a + g.items.length, 0)} items. Your standard list is replaced.`,
-              [{ text: 'Cancel', style: 'cancel' },
-               {
-                 text: 'Reset',
-                 style: 'destructive',
-                 onPress: () => update((d) => {
-                   d.shopTemplate = undefined;
-                   shopTemplateOf(d);
-                 }),
                }],
             )}
           />

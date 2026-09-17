@@ -165,20 +165,24 @@ export function shopListFor(state: AppState, weekId: string): ShopGroup[] {
       w.shopCopiedFrom = null;
     }
   }
-  // Whatever it was built from, the standard list is always in it. Adding
-  // something to the standard list should turn up on the week you are on, not
-  // only on weeks you have not opened yet.
-  mergeTemplateInto(w.shop, shopTemplateOf(state));
   return w.shop;
 }
 
 /** Adds anything in the standard list that the week is missing, under the
  *  right heading, creating the heading if it is not there. Never removes and
- *  never touches a tick. */
-export function mergeTemplateInto(list: ShopGroup[], template: ShopGroup[]): number {
+ *  never touches a tick.
+ *
+ *  `only` limits it to the headings named, because bringing the whole standard
+ *  list in is rarely what you want after the first time — and doing it on
+ *  every read meant a heading you deleted came straight back. */
+export function mergeTemplateInto(
+  list: ShopGroup[], template: ShopGroup[], only?: string[],
+): number {
+  const wanted = only ? new Set(only.map((n) => n.trim().toLowerCase())) : null;
   let added = 0;
   for (const src of template) {
     const key = src.name.trim().toLowerCase();
+    if (wanted && !wanted.has(key)) continue;
     let into = list.find((g) => g.name.trim().toLowerCase() === key);
     if (!into) {
       into = { id: uid('g'), name: src.name, items: [] };
@@ -194,6 +198,24 @@ export function mergeTemplateInto(list: ShopGroup[], template: ShopGroup[]): num
     }
   }
   return added;
+}
+
+/** What each heading of the standard list would add to this week: the heading
+ *  name, how many new items it brings, and whether the week has it at all.
+ *  Lets the picker say what a choice costs before it is made. */
+export function templateOffer(
+  list: ShopGroup[], template: ShopGroup[],
+): { name: string; adds: number; isNew: boolean }[] {
+  return template.map((src) => {
+    const key = src.name.trim().toLowerCase();
+    const into = list.find((g) => g.name.trim().toLowerCase() === key);
+    const have = new Set((into?.items ?? []).map((i) => i.text.trim().toLowerCase()));
+    const adds = src.items.filter((i) => {
+      const t = i.text.trim().toLowerCase();
+      return t && !have.has(t);
+    }).length;
+    return { name: src.name, adds, isNew: !into };
+  });
 }
 
 /** How often each thing has actually been bought, across every week.

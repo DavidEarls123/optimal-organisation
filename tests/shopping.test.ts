@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { createInitialState, migrate } from '../src/domain/state';
 import {
   buildTripItems, ensureWeek, marksOn, mergeTemplateInto, missingRegulars, mostBought,
-  resetShopFromTemplate, shopCounts, shopListFor, shopTemplateOf, shoppingList, tripTemplateOf,
+  resetShopFromTemplate, shopCounts, shopListFor, shopTemplateOf, shoppingList, templateOffer,
+  tripTemplateOf,
 } from '../src/domain/week';
 import { TRIP_CATEGORIES } from '../src/domain/catalogue';
 import type { AppState, ShopGroup } from '../src/domain/types';
@@ -166,17 +167,64 @@ test('a day inside a trip is marked, and so is the day a countdown lands on', ()
   assert.deepEqual(marksOn(s, '2026-09-20'), { trips: [], events: ['Dentist'] });
 });
 
-test('the standard list is merged into a week that never had it', () => {
+test('bringing in one heading brings in only that heading', () => {
   const s = fresh();
   s.weeks[WEEK].shop = [{ id: 'g1', name: 'Dinner', items: [
     { id: 'i1', text: 'Mince', need: true, done: false },
   ] }];
   const list = shopListFor(s, WEEK);
-  assert.ok(list.some((g) => g.name === 'Breakfast'), 'missing headings appear');
-  assert.ok(list.find((g) => g.name === 'Dinner')!.items.some((i) => i.id === 'i1'),
-    'and what was already there is untouched');
+
+  assert.ok(mergeTemplateInto(list, shopTemplateOf(s), ['Breakfast']) > 0);
+
+  assert.ok(list.some((g) => g.name === 'Breakfast'), 'the one asked for appears');
+  assert.ok(!list.some((g) => g.name === 'Snacks'), 'and the others do not');
   assert.equal(list.find((g) => g.name === 'Dinner')!.items.find((i) => i.id === 'i1')!.need, true,
-    'including its ticks');
+    'what was already there keeps its ticks');
+});
+
+test('bringing in a heading the week already has only adds what is missing', () => {
+  const s = fresh();
+  s.weeks[WEEK].shop = [{ id: 'g1', name: 'Dinner', items: [
+    { id: 'i1', text: 'Mince', need: true, done: true },
+  ] }];
+  const list = shopListFor(s, WEEK);
+  const added = mergeTemplateInto(list, shopTemplateOf(s), ['Dinner']);
+
+  const dinner = list.find((g) => g.name === 'Dinner')!;
+  assert.equal(dinner.items.filter((i) => i.text === 'Mince').length, 1, 'no second Mince');
+  assert.equal(dinner.items.find((i) => i.text === 'Mince')!.done, true, 'and it is still bought');
+  assert.equal(dinner.items.length, 1 + added);
+});
+
+test('the offer says what each heading would cost before you pick it', () => {
+  const s = fresh();
+  s.weeks[WEEK].shop = [{ id: 'g1', name: 'Dinner', items: [
+    { id: 'i1', text: 'Mince', need: false, done: false },
+  ] }];
+  const offer = templateOffer(s.weeks[WEEK].shop!, shopTemplateOf(s));
+
+  const dinner = offer.find((o) => o.name === 'Dinner')!;
+  assert.equal(dinner.isNew, false, 'the week has this heading');
+  assert.ok(dinner.adds > 0 && dinner.adds < 4, 'and Mince is not counted again');
+
+  const breakfast = offer.find((o) => o.name === 'Breakfast')!;
+  assert.equal(breakfast.isNew, true);
+  assert.equal(breakfast.adds, 4);
+});
+
+test('a heading with nothing new to give says so', () => {
+  const s = fresh();
+  const list = shopListFor(s, WEEK);
+  assert.ok(templateOffer(list, shopTemplateOf(s)).every((o) => o.adds === 0),
+    'a fresh week already has all of it');
+});
+
+test('bringing nothing in is asked for by naming nothing', () => {
+  const s = fresh();
+  const list = shopListFor(s, WEEK);
+  const before = JSON.stringify(list);
+  assert.equal(mergeTemplateInto(list, shopTemplateOf(s), []), 0);
+  assert.equal(JSON.stringify(list), before);
 });
 
 test('merging does not duplicate an item the week already has', () => {

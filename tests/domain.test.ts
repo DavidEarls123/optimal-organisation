@@ -229,16 +229,25 @@ test('the shopping list copies forward once, then the weeks are independent', ()
   assert.equal(s.weeks[WEEK38].shop!.length, 1);
 });
 
-test('the standard list is merged in even when the week came from last week', () => {
+test('a week carried over from last week is exactly last week, not the standard list', () => {
   const s = fresh();
   s.weeks[WEEK38].shop = [
     { id: 'g1', name: 'Breakfast', items: [{ id: 'i1', text: 'Hot sauce', need: true, done: true }] },
   ];
   ensureWeek(s, '2026-09-21');
   const next = shopListFor(s, '2026-W39');
-  assert.ok(next.some((g) => g.name === 'Dinner'), 'headings it never had turn up');
-  assert.ok(next.find((g) => g.name === 'Breakfast')!.items.some((i) => i.text === 'Eggs'),
-    'and so do items under a heading it did have');
+  assert.deepEqual(next.map((g) => g.name), ['Breakfast'],
+    'nothing is added behind your back; bringing the standard list in is a choice');
+  assert.ok(next[0].items.some((i) => i.text === 'Hot sauce'));
+});
+
+test('a heading you delete stays deleted', () => {
+  const s = fresh();
+  const list = shopListFor(s, WEEK38);
+  assert.ok(list.some((g) => g.name === 'Snacks'));
+  s.weeks[WEEK38].shop = list.filter((g) => g.name !== 'Snacks');
+  assert.ok(!shopListFor(s, WEEK38).some((g) => g.name === 'Snacks'),
+    'reading the list again does not put it back');
 });
 
 test('the shopping list does not re-copy on later reads', () => {

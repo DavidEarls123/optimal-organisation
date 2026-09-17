@@ -11,7 +11,8 @@ import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import {
-  missingRegulars, mostBought, shopCounts, shopListFor, shoppingList, uid,
+  mergeTemplateInto, missingRegulars, mostBought, shopCounts, shopListFor, shopTemplateOf,
+  shoppingList, templateOffer, uid,
 } from '../../src/domain/week';
 import { watchCount } from '../../src/domain/scoring';
 import { weekNumber } from '../../src/domain/dates';
@@ -130,6 +131,8 @@ function Shopping({ scroller }: { scroller: React.RefObject<ScrollView | null> }
   /** Shopping mode: only what is needed, and only the got tick. */
   const [inShop, setInShop] = useState(false);
   const [insight, setInsight] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
   const composerY = useRef(0);
   const week = state.weeks[weekId];
   if (!week) return null;
@@ -144,6 +147,7 @@ function Shopping({ scroller }: { scroller: React.RefObject<ScrollView | null> }
   const trolley = shoppingList(groups);
   const bought = mostBought(state);
   const missing = missingRegulars(state, weekId);
+  const offer = templateOffer(groups, state.shopTemplate ?? []);
 
   const lift = () => {
     const y = composerY.current;
@@ -223,6 +227,8 @@ function Shopping({ scroller }: { scroller: React.RefObject<ScrollView | null> }
         </View>
         <IconButton label="What you actually buy" glyph="chart.bar"
           fallback="◍" onPress={() => setInsight(true)} />
+        <IconButton label="Bring in from the standard list" glyph="tray.and.arrow.down"
+          fallback="↓" onPress={() => { setPicked([]); setImporting(true); }} />
         <IconButton label="Edit the standard list" glyph="square.and.pencil"
           fallback="✎" onPress={() => router.push('/shop-template')} />
       </View>
@@ -339,6 +345,66 @@ function Shopping({ scroller }: { scroller: React.RefObject<ScrollView | null> }
         <Text style={{ fontSize: 11, letterSpacing: 1.3, textTransform: 'uppercase',
           color: t.accent, fontWeight: '600' }}>+ Add heading</Text>
       </Pressable>
+
+      <Sheet
+        open={importing}
+        title="Bring in from the standard list"
+        onClose={() => setImporting(false)}
+        footer={
+          <>
+            <View style={{ flex: 1 }}>
+              <Button
+                tone="ghost"
+                title={picked.length === offer.length ? 'None' : 'All'}
+                onPress={() => setPicked(picked.length === offer.length
+                  ? [] : offer.map((o) => o.name))}
+              />
+            </View>
+            <Button
+              title={picked.length ? `Add ${picked.length}` : 'Add'}
+              disabled={picked.length === 0}
+              onPress={() => {
+                update((d) => {
+                  const list = d.weeks[weekId].shop;
+                  if (list) mergeTemplateInto(list, shopTemplateOf(d), picked);
+                }, 'bringing those in');
+                setImporting(false);
+              }}
+            />
+          </>
+        }
+      >
+        <Note>
+          Only the headings you choose, and only the things missing from them. Nothing
+          already on your list is touched, and nothing is marked as needed.
+        </Note>
+        {offer.map((o) => {
+          const on = picked.includes(o.name);
+          const nothing = o.adds === 0;
+          return (
+            <Pressable
+              key={o.name}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: on }}
+              disabled={nothing}
+              onPress={() => setPicked((p) => (on
+                ? p.filter((n) => n !== o.name) : [...p, o.name]))}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 11,
+                borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 11,
+                borderColor: on ? t.accent : t.rule,
+                backgroundColor: on ? t.accentSoft : 'transparent',
+                opacity: nothing ? 0.4 : 1 }}
+            >
+              <Tick on={on} tone="accent" />
+              <Text style={{ flex: 1, fontSize: 14.5, color: t.ink,
+                fontWeight: on ? '600' : '400' }}>{o.name}</Text>
+              <Mono style={{ fontSize: 11 }}>
+                {nothing ? 'all here' : `+${o.adds}${o.isNew ? ' · new' : ''}`}
+              </Mono>
+            </Pressable>
+          );
+        })}
+      </Sheet>
 
       <Sheet open={insight} title="What you actually buy" onClose={() => setInsight(false)}>
         {bought.length === 0 ? (
