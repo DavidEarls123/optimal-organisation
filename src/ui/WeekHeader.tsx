@@ -44,18 +44,28 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
 
   return (
     <View style={{ paddingHorizontal: 18, paddingTop: 12, gap: 12 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-        <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <CornerMark />
-            <Mono style={{ letterSpacing: 1.6, textTransform: 'uppercase', fontSize: 11 }}>
-              {`Week ${weekNumber(weekId)} · ${weekId.slice(0, 4)}${current ? ' · this week' : ''}`}
-            </Mono>
-          </View>
-          <Text style={{ fontSize: 23, fontWeight: '700', color: t.ink, letterSpacing: -0.5, marginTop: 2 }}>
-            {rangeLabel(week.monday)}
-          </Text>
-        </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <CornerMark />
+        <Mono style={{ flex: 1, letterSpacing: 1.6, textTransform: 'uppercase', fontSize: 11 }}>
+          {`Week ${weekNumber(weekId)}${current ? ' · this week' : ` · ${weekId.slice(0, 4)}`}`}
+        </Mono>
+        <Pressable
+          onPress={() => router.push('/template')}
+          accessibilityRole="button"
+          accessibilityLabel={`Template: ${tpl.name}. Change it.`}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+            borderWidth: 1, borderColor: t.accentLine, backgroundColor: t.accentSoft,
+            borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5 }}
+        >
+          <Text style={{ fontSize: 12, fontWeight: '600', color: t.accent }}>{tpl.name}</Text>
+          <Text style={{ fontSize: 10, color: t.accent }}>▾</Text>
+        </Pressable>
+      </View>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: -4 }}>
+        <Text style={{ flex: 1, fontSize: 23, fontWeight: '700', color: t.ink, letterSpacing: -0.5 }}>
+          {rangeLabel(week.monday)}
+        </Text>
         <View style={{ flexDirection: 'row', gap: 4 }}>
           {([['‹', -1, hasPrev], ['›', 1, true]] as const).map(([glyph, delta, enabled]) => (
             <Pressable
@@ -64,27 +74,15 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
               disabled={!enabled}
               accessibilityRole="button"
               accessibilityLabel={delta < 0 ? 'Previous week' : 'Next week'}
-              style={{ width: 32, height: 32, borderRadius: radius.sm + 2, borderWidth: 1,
+              style={{ width: 30, height: 30, borderRadius: radius.sm + 2, borderWidth: 1,
                 borderColor: t.rule, alignItems: 'center', justifyContent: 'center',
                 opacity: enabled ? 1 : 0.3 }}
             >
-              <Text style={{ color: t.ink2, fontSize: 17, lineHeight: 20 }}>{glyph}</Text>
+              <Text style={{ color: t.ink2, fontSize: 16, lineHeight: 19 }}>{glyph}</Text>
             </Pressable>
           ))}
         </View>
       </View>
-
-      <Pressable
-        onPress={() => router.push('/template')}
-        accessibilityRole="button"
-        style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7,
-          borderWidth: 1, borderColor: t.accentLine, backgroundColor: t.accentSoft,
-          borderRadius: radius.pill, paddingHorizontal: 11, paddingVertical: 6 }}
-      >
-        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: t.accent }} />
-        <Text style={{ fontSize: 12.5, fontWeight: '600', color: t.accent }}>{tpl.name}</Text>
-        <Text style={{ fontSize: 11, color: t.accent }}>▾</Text>
-      </Pressable>
 
       {!compact && week.focus ? (
         <Text style={{ fontSize: 15.5, lineHeight: 21, color: t.ink2, fontStyle: 'italic',
@@ -109,15 +107,17 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
               accessibilityLabel={`${letter} ${parseISO(week.monday).getDate() + d}`}
               style={{ flex: 1, alignItems: 'center', gap: 5, paddingVertical: 7,
                 borderRadius: radius.md, borderWidth: 1,
-                borderColor: selected ? t.accentLine : 'transparent',
-                backgroundColor: selected ? t.accentSoft : 'transparent',
-                opacity: future ? 0.55 : 1 }}
+                borderColor: selected ? t.accent : 'transparent',
+                backgroundColor: selected ? t.accent : 'transparent',
+                opacity: future && !selected ? 0.55 : 1 }}
             >
-              <Text style={{ fontSize: 10, letterSpacing: 1, color: selected ? t.accent : t.ink3 }}>
+              <Text style={{ fontSize: 10, letterSpacing: 1, fontWeight: selected ? '700' : '400',
+                color: selected ? t.sheet : t.ink3 }}>
                 {letter}
               </Text>
               <DayMark done={done} off={off} score={score} selected={selected} />
-              <Text style={{ fontSize: 13, fontWeight: '600', color: off ? t.ink3 : t.ink,
+              <Text style={{ fontSize: 13, fontWeight: selected ? '800' : '600',
+                color: selected ? t.sheet : off ? t.ink3 : t.ink,
                 fontVariant: ['tabular-nums'] }}>
                 {addDays(parseISO(week.monday), d).getDate()}
               </Text>
@@ -176,16 +176,24 @@ function DayMark({ done, off, score, selected }: {
     width: size, height: size, borderRadius: size / 2,
     alignItems: 'center' as const, justifyContent: 'center' as const,
   };
+  // The selected day is now a filled accent chip, so everything drawn on it
+  // needs its contrast taken from that fill rather than from the sheet.
+  const ground = selected ? t.accent : t.sheet;
+  const quiet = selected ? t.accentLine : t.rule;
+
   if (off) {
     return (
-      <View style={[base, { borderWidth: 1.5, borderColor: t.rule, borderStyle: 'dashed' }]}>
-        <View style={{ width: 9, height: 1.5, backgroundColor: t.ink3, borderRadius: 1 }} />
+      <View style={[base, { borderWidth: 1.5, borderColor: selected ? t.sheet : t.rule,
+        borderStyle: 'dashed', opacity: selected ? 0.75 : 1 }]}>
+        <View style={{ width: 9, height: 1.5, borderRadius: 1,
+          backgroundColor: selected ? t.sheet : t.ink3 }} />
       </View>
     );
   }
   if (done) {
     return (
-      <View style={[base, { backgroundColor: t.hit }]}>
+      <View style={[base, { backgroundColor: t.hit,
+        borderWidth: selected ? 1.5 : 0, borderColor: t.sheet }]}>
         <Text style={{ color: t.sheet, fontSize: 13, fontWeight: '900', lineHeight: 16 }}>✓</Text>
       </View>
     );
@@ -195,9 +203,9 @@ function DayMark({ done, off, score, selected }: {
       progress={score}
       size={size}
       thickness={3}
-      track={t.rule}
+      track={quiet}
       fill={t.hit}
-      hole={selected ? t.accentSoft : t.sheet}
+      hole={ground}
     />
   );
 }

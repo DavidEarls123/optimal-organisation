@@ -32,6 +32,8 @@ export default function DayScreen() {
   const [tagFor, setTagFor] = useState<Record<string, string>>({});
   /** Which section has its composer open. Only ever one. */
   const [adding, setAdding] = useState<string | null>(null);
+  /** True once the list has scrolled past the top, so the day bar shrinks. */
+  const [condensed, setCondensed] = useState(false);
 
   const dateIso = week ? dayDateIso(week.monday, day) : '';
 
@@ -62,7 +64,7 @@ export default function DayScreen() {
     }
   }, [access, dateIso]);
 
-  useEffect(() => { setMoveId(null); setShowPicker(false); setAdding(null); }, [day, weekId]);
+  useEffect(() => { setMoveId(null); setShowPicker(false); setAdding(null); setCondensed(false); }, [day, weekId]);
 
   const tasks = useMemo(() => (week?.tasks[day] ?? []), [week, day]);
   const live = tasks;
@@ -157,7 +159,28 @@ export default function DayScreen() {
   return (
     <Screen>
       <WeekHeader />
-      <Body>
+
+      {/* The day stays put while the list moves under it, shrinking to a single
+          line once you are past the top so it costs almost nothing. */}
+      <View style={{ paddingHorizontal: 18, paddingTop: condensed ? 4 : 10,
+        paddingBottom: condensed ? 6 : 8, borderBottomWidth: 1,
+        borderBottomColor: condensed ? t.rule : 'transparent',
+        backgroundColor: t.sheet, flexDirection: 'row', alignItems: 'baseline', gap: 10 }}>
+        <Text
+          numberOfLines={1}
+          style={{ flex: 1, fontWeight: '700', color: t.ink,
+            fontSize: condensed ? 15 : 21, letterSpacing: -0.3 }}
+        >
+          {parseISO(dateIso).toLocaleDateString('en-GB', condensed
+            ? { weekday: 'short', day: 'numeric', month: 'short' }
+            : { weekday: 'long', day: 'numeric', month: 'long' })}
+        </Text>
+        <Mono style={{ fontSize: condensed ? 11 : 12.5 }}>
+          {`${live.filter((x) => x.state === 'done').length}/${live.length}`}
+        </Mono>
+      </View>
+
+      <Body onScroll={(y) => setCondensed(y > 18)}>
         {off ? (
           <View style={{ backgroundColor: t.sunk, borderRadius: radius.md, padding: 11 }}>
             <Text style={{ fontSize: 12.5, lineHeight: 18, color: t.ink2 }}>
@@ -229,15 +252,12 @@ export default function DayScreen() {
         ) : null}
 
         <Section>
-          <SectionHead
-            size="title"
-            title={parseISO(dateIso).toLocaleDateString('en-GB',
-              { weekday: 'long', day: 'numeric', month: 'long' })}
-            right={`${live.filter((x) => x.state === 'done').length}/${live.length}`}
-          />
           {state.sections.map((sc) => {
-            const items = live.filter((x) => x.sec === sc.id);
-            const done = items.filter((x) => x.state === 'done').length;
+            const inSec = live.filter((x) => x.sec === sc.id);
+            // Ticked work sinks, so what is left to do is always at the top.
+            const items = [...inSec.filter((x) => x.state !== 'done'),
+                           ...inSec.filter((x) => x.state === 'done')];
+            const done = inSec.length - items.filter((x) => x.state !== 'done').length;
             return (
               <View key={sc.id}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 13,
@@ -441,10 +461,13 @@ function HabitGroup({ label, hint, habits, week, ticked, tone, onToggle }: {
               >
                 <Tick on={on} tone={tone === 'today' ? 'hit' : 'accent'} size={18} />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13.5, fontWeight: '500',
+                  <Text numberOfLines={1} style={{ fontSize: 13.5, fontWeight: '500',
                     color: tone === 'off' ? t.ink2 : t.ink }}>{h.short || h.name}</Text>
+                  {/* Always a second line. A habit with no plan for this week has
+                      no plan label, and without this the name sat off centre
+                      against tiles that do have one. */}
                   <Mono style={{ fontSize: 9, letterSpacing: 0.6, textTransform: 'uppercase' }}>
-                    {planLabel(week, h.id)}
+                    {planLabel(week, h.id) || 'Not this week'}
                   </Mono>
                 </View>
                 <Mono style={{ color: on ? fill : t.ink3 }}>{`${n}/${tg}`}</Mono>

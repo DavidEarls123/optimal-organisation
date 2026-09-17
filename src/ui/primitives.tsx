@@ -16,12 +16,20 @@ export function Screen({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function Body({ children }: { children: React.ReactNode }) {
+export function Body({ children, onScroll, scrollRef }: {
+  children: React.ReactNode;
+  onScroll?: (y: number) => void;
+  scrollRef?: React.Ref<ScrollView>;
+}) {
   return (
     <ScrollView
+      ref={scrollRef}
       style={{ flex: 1 }}
       contentContainerStyle={{ padding: 18, paddingBottom: 48, gap: 22 }}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="interactive"
+      scrollEventThrottle={32}
+      onScroll={onScroll ? (e) => onScroll(e.nativeEvent.contentOffset.y) : undefined}
     >
       {children}
     </ScrollView>
