@@ -38,6 +38,43 @@ export const TRACK_PRESETS = [
 ];
 
 /** Week templates, in picker order. */
+/** Habits worth offering rather than making someone type. Grouped so the
+ *  list reads as a menu instead of a wall. */
+export const HABIT_PRESETS: { group: string; items: Omit<Habit, 'active'>[] }[] = [
+  {
+    group: 'Body',
+    items: [
+      { id: 'tabs_am',  name: 'Morning tablets',  short: 'AM tablets' },
+      { id: 'tabs_pm',  name: 'Evening tablets',  short: 'PM tablets' },
+      { id: 'calories', name: 'Track calories',   short: 'Calories' },
+      { id: 'water',    name: 'Water',            short: 'Water' },
+      { id: 'weight',   name: 'Weight',           short: 'Weight', picks: 'weight' },
+      { id: 'recovery', name: 'Ice bath / boots', short: 'Recovery' },
+      { id: 'stretch',  name: 'Stretch',          short: 'Stretch' },
+      { id: 'steps',    name: 'Steps',            short: 'Steps' },
+    ],
+  },
+  {
+    group: 'Mind',
+    items: [
+      { id: 'journal',  name: 'Journal',   short: 'Journal' },
+      { id: 'meditate', name: 'Meditate',  short: 'Meditate' },
+      { id: 'read',     name: 'Read book', short: 'Read',
+        def: { mode: 'days', days: [0, 1, 2, 3, 4], n: 5 } },
+      { id: 'nophone',  name: 'No phone in bed', short: 'No phone' },
+    ],
+  },
+  {
+    group: 'Practice',
+    items: [
+      { id: 'duolingo', name: 'Duolingo',        short: 'Duolingo' },
+      { id: 'guitar',   name: 'Guitar practice', short: 'Guitar' },
+      { id: 'tv',       name: 'TV',              short: 'TV', picks: 'watch',
+        def: { mode: 'count', days: [], n: 3 } },
+    ],
+  },
+];
+
 export const TEMPLATES: Record<string, WeekTemplate> = {
   strength: {
     id: 'strength', name: 'Strength Block', tag: 'Hypertrophy',

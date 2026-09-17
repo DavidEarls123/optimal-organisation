@@ -20,7 +20,9 @@ export interface Habit {
   /** Disabling keeps the habit and its whole history; re-enabling is the same habit. */
   active: boolean;
   /** Ticking this habit opens a picker instead of toggling. */
-  picks?: 'watch';
+  /** Ticking this habit opens something instead of just toggling:
+   *  'watch' picks from the watchlist, 'weight' asks for a number. */
+  picks?: 'watch' | 'weight';
   /** Fallback plan when the week template says nothing about this habit. */
   def?: HabitPlan;
 }
@@ -108,8 +110,19 @@ export interface AppState {
   trips: Trip[];
   events: CountdownEvent[];
   sample: boolean;
+  /** Everything the app remembers about how you want it to behave. */
+  prefs: Prefs;
   version: number;
 }
+
+export interface Prefs {
+  /** 'system' follows the phone; the other two override it. */
+  theme: 'system' | 'light' | 'dark';
+  /** What a weight is shown and entered in. */
+  weightUnit: 'kg' | 'lb';
+}
+
+export const DEFAULT_PREFS: Prefs = { theme: 'system', weightUnit: 'kg' };
 
 /** [text, trackableId | null, sectionIndex] */
 export type PlanEntry = [string, string | null, number];

@@ -2,9 +2,6 @@ import React, { useState } from 'react';
 import { Alert, Pressable, Text, View } from 'react-native';
 
 import { Body, Button, Field, Mono, Note, Screen, SectionHead } from '../src/ui/primitives';
-
-/** A habit name has to fit a tile two-up on a phone. */
-export const HABIT_LIMIT = 32;
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
@@ -13,6 +10,9 @@ import { countPlan, daysPlan, everyPlan, planFromTemplate, saveWeekAsTemplate, u
 import { habitTarget, templateOf } from '../src/domain/scoring';
 import { slug } from '../src/domain/catalogue';
 import type { HabitMode } from '../src/domain/types';
+
+/** A habit name has to fit a tile two-up on a phone. */
+export const HABIT_LIMIT = 32;
 
 function Stepper({ label, glyph, onPress }: { label: string; glyph: string; onPress: () => void }) {
   const t = useTheme();

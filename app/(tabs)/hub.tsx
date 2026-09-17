@@ -177,6 +177,7 @@ function YourData() {
   return (
     <Section>
       <SectionHead title="Your data" right="on this phone only" />
+      <Button title="Settings" onPress={() => router.push('/settings')} />
       <Button tone="ghost" title="Backup & restore" onPress={() => router.push('/backup')} />
       <Note>
         Everything lives on this phone and is included in your iPhone backup. Export a copy before

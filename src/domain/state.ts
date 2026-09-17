@@ -1,3 +1,4 @@
+import { DEFAULT_PREFS } from './types';
 import type { AppState, WatchItem } from './types';
 import { DEFAULT_HABITS, DEFAULT_SECTIONS, DEFAULT_TRACKABLES, TEMPLATES, TEMPLATE_ORDER } from './catalogue';
 import { createWeek } from './week';
@@ -17,6 +18,7 @@ export function emptyState(): AppState {
     trips: [],
     events: [],
     sample: false,
+    prefs: { ...DEFAULT_PREFS },
     version: STATE_VERSION,
   };
 }
@@ -46,6 +48,10 @@ export function migrate(loaded: Partial<AppState> | null): AppState | null {
     weeks: loaded.weeks,
     version: STATE_VERSION,
   };
+
+  s.prefs = { ...DEFAULT_PREFS, ...(loaded.prefs ?? {}) };
+  if (!['system', 'light', 'dark'].includes(s.prefs.theme)) s.prefs.theme = 'system';
+  if (!['kg', 'lb'].includes(s.prefs.weightUnit)) s.prefs.weightUnit = 'kg';
 
   for (const h of s.habits) if (h.active === undefined) h.active = true;
   // Renamed to TV. Only touched when it still holds the name it shipped with,

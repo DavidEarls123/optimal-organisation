@@ -11,8 +11,8 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <ThemeProvider>
-          <StoreProvider>
+        <StoreProvider>
+          <ThemeProvider>
             <StatusBar style="auto" />
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
@@ -26,9 +26,11 @@ export default function RootLayout() {
                 options={{ presentation: 'modal', headerShown: true, title: 'Backup & restore' }} />
               <Stack.Screen name="watch"
                 options={{ presentation: 'modal', headerShown: true, title: 'What did you watch?' }} />
+              <Stack.Screen name="settings"
+                options={{ presentation: 'modal', headerShown: true, title: 'Settings' }} />
             </Stack>
-          </StoreProvider>
-        </ThemeProvider>
+          </ThemeProvider>
+        </StoreProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

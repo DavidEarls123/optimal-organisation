@@ -79,3 +79,19 @@ test('a loaded state keeps its weeks', () => {
   const out = decideLoad(good(), null);
   assert.ok(out.kind === 'loaded' && Object.keys(out.state.weeks).length > 0);
 });
+
+test('a state saved before preferences existed gets the defaults', () => {
+  const old = JSON.parse(good());
+  delete old.prefs;
+  const out = decideLoad(JSON.stringify(old), null);
+  assert.equal(out.kind, 'loaded');
+  assert.deepEqual(out.kind === 'loaded' && out.state.prefs, { theme: 'system', weightUnit: 'kg' });
+});
+
+test('preferences already set are kept, and nonsense is replaced', () => {
+  const s = JSON.parse(good());
+  s.prefs = { theme: 'dark', weightUnit: 'sacks of coal' };
+  const out = decideLoad(JSON.stringify(s), null);
+  assert.equal(out.kind === 'loaded' && out.state.prefs.theme, 'dark', 'a real choice survives');
+  assert.equal(out.kind === 'loaded' && out.state.prefs.weightUnit, 'kg', 'nonsense does not');
+});
