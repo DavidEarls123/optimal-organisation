@@ -6,9 +6,10 @@ import { Body, Button, Field, Mono, Note, Screen, Section, SectionHead } from '.
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
+import { TEMPLATE_GOALS } from '../src/domain/catalogue';
 import { DAY_LETTERS, DAY_NAMES } from '../src/domain/dates';
 import {
-  clonePlan, countPlan, daysPlan, deleteTemplate, everyPlan,
+  clonePlan, countPlan, daysPlan, deleteTemplate, everyPlan, uid,
 } from '../src/domain/week';
 import type { HabitMode, HabitPlan, WeekTemplate } from '../src/domain/types';
 
@@ -97,6 +98,85 @@ export default function TemplateEditScreen() {
             placeholder="What this kind of week is for…"
             multiline
             style={{ minHeight: 64 }}
+          />
+        </Section>
+
+        <Section>
+          <SectionHead title="Goal" right={tpl.tag || 'none'} />
+          <Note>What this kind of week is for. It shows on the week itself.</Note>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {TEMPLATE_GOALS.map((g) => {
+              const on = tpl.tag.trim().toLowerCase() === g.toLowerCase();
+              return (
+                <Pressable
+                  key={g}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  onPress={() => edit((d) => { d.tag = on ? '' : g; })}
+                  style={{ borderWidth: 1, borderRadius: radius.pill,
+                    paddingHorizontal: 12, paddingVertical: 7,
+                    borderColor: on ? t.accent : t.rule,
+                    backgroundColor: on ? t.accentSoft : 'transparent' }}
+                >
+                  <Text style={{ fontSize: 12.5, fontWeight: on ? '700' : '400',
+                    color: on ? t.accent : t.ink2 }}>{g}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Field
+            value={tpl.tag}
+            onChangeText={(v) => edit((d) => { d.tag = v; })}
+            placeholder="Or your own…"
+            maxLength={20}
+            accessibilityLabel="Goal"
+          />
+        </Section>
+
+        <Section>
+          <SectionHead
+            title="Day sections"
+            right={`${(tpl.sections ?? state.sections).length}`}
+          />
+          <Note>
+            The headings a day is split into on this kind of week. A week takes a copy when
+            it is built, so changing them here shapes weeks from now on.
+          </Note>
+          {(tpl.sections ?? state.sections).map((sc, i) => (
+            <View key={sc.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Mono style={{ width: 16 }}>{String(i + 1)}</Mono>
+              <Field
+                value={sc.name}
+                onChangeText={(v) => edit((d) => {
+                  d.sections = (d.sections ?? state.sections.map((x) => ({ ...x })));
+                  const found = d.sections.find((x) => x.id === sc.id);
+                  if (found) found.name = v;
+                })}
+                maxLength={24}
+                accessibilityLabel={`Rename ${sc.name}`}
+              />
+              {(tpl.sections ?? state.sections).length > 1 ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${sc.name}`}
+                  hitSlop={8}
+                  onPress={() => edit((d) => {
+                    d.sections = (d.sections ?? state.sections.map((x) => ({ ...x })))
+                      .filter((x) => x.id !== sc.id);
+                  })}
+                >
+                  <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ))}
+          <Button
+            tone="ghost"
+            title="+ Add a section"
+            onPress={() => edit((d) => {
+              d.sections = [...(d.sections ?? state.sections.map((x) => ({ ...x }))),
+                { id: uid('s'), name: 'New section' }];
+            })}
           />
         </Section>
 

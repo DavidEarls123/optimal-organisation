@@ -2,11 +2,11 @@ import React from 'react';
 import { Alert, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
-import { Body, Button, Chip, Field, Mono, Note, Screen, Section, SectionHead } from '../src/ui/primitives';
+import { Body, Button, Chip, Note, Screen, Section, SectionHead } from '../src/ui/primitives';
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
-import { applyTemplate, duplicateTemplate, templateChange, templateTraining, uid } from '../src/domain/week';
+import { applyTemplate, duplicateTemplate, templateChange, templateTraining } from '../src/domain/week';
 
 export default function TemplateScreen() {
   const t = useTheme();
@@ -51,61 +51,6 @@ export default function TemplateScreen() {
           any of it afterwards for this week alone.
         </Note>
 
-        <Section>
-          <SectionHead title="Day sections" right="every week" />
-          <Note>
-            The headings every day is split into. Renaming one here renames it everywhere, so a
-            day always reads the same way — they are not editable on the day itself.
-          </Note>
-          {state.sections.map((sc, i) => (
-            <View key={sc.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-              paddingTop: 7 }}>
-              <Mono style={{ width: 18 }}>{String(i + 1)}</Mono>
-              <Field
-                value={sc.name}
-                onChangeText={(v) => update((d) => {
-                  const x = d.sections.find((y) => y.id === sc.id);
-                  if (x) x.name = v;
-                })}
-                accessibilityLabel={`Rename ${sc.name}`}
-              />
-              {state.sections.length > 1 ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${sc.name}`}
-                  hitSlop={8}
-                  onPress={() => Alert.alert(
-                    `Remove ${sc.name}?`,
-                    'Tasks under this heading move to the first one. Nothing is deleted.',
-                    [{ text: 'Cancel', style: 'cancel' },
-                     {
-                       text: 'Remove',
-                       style: 'destructive',
-                       onPress: () => update((d) => {
-                         d.sections = d.sections.filter((x) => x.id !== sc.id);
-                         const to = d.sections[0].id;
-                         for (const w of Object.values(d.weeks)) {
-                           for (const arr of Object.values(w.tasks)) {
-                             for (const x of arr) if (x.sec === sc.id) x.sec = to;
-                           }
-                         }
-                       }),
-                     }],
-                  )}
-                >
-                  <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          ))}
-          <View style={{ paddingTop: 9 }}>
-            <Button
-              tone="ghost"
-              title="+ Add a section"
-              onPress={() => update((d) => { d.sections.push({ id: uid('s'), name: 'New section' }); })}
-            />
-          </View>
-        </Section>
         {state.templateOrder.map((id) => {
           const tpl = state.templates[id];
           if (!tpl) return null;
@@ -164,6 +109,11 @@ export default function TemplateScreen() {
             </Pressable>
           );
         })}
+        <Button
+          tone="ghost"
+          title="Adjust this week only, without changing a template"
+          onPress={() => router.push('/habits')}
+        />
         <Button
           tone="ghost"
           title="+ New template, copied from this one"

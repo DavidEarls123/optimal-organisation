@@ -71,6 +71,10 @@ export interface Week {
   /** ISO date (YYYY-MM-DD) of the Monday. */
   monday: string;
   templateId: string;
+  /** This week's headings, copied from its template when the week was built.
+   *  Kept on the week so changing a template later does not silently move
+   *  tasks already filed under a heading that has gone. */
+  sections?: Section[];
   focus: string;
   habitPlan: Record<string, HabitPlan>;
   /** dayIndex -> habitId -> ticked */
@@ -148,6 +152,8 @@ export type PlanEntry = [string, string | null, number];
 export interface WeekTemplate {
   id: string;
   name: string;
+  /** The goal this kind of week serves — Hypertrophy, Taper, Recovery and so
+   *  on. Chosen from a list, or typed. */
   tag: string;
   blurb: string;
   why: string;
@@ -160,6 +166,9 @@ export interface WeekTemplate {
   plans?: Record<string, HabitPlan>;
   /** Seven days of scaffold tasks. */
   plan: PlanEntry[][];
+  /** The headings a day is split into on this kind of week. Absent means the
+   *  app's standard three; a template that sets its own overrides them. */
+  sections?: Section[];
 }
 
 /** A calendar entry read from the phone, never written by this app. */

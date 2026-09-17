@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
 import {
-  Body, Button, Empty, Mono, Note, Screen, Section, SectionHead,
+  Body, Chip, Empty, Mono, Note, Screen, Section, SectionHead,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -14,8 +14,18 @@ import {
   activeHabits, habitDone, habitTarget, isCurrentWeek, planLabel, scheduledOn, templateOf, todayIndex,
 } from '../../src/domain/scoring';
 
+/** 15 – 21 September, or 28 September – 4 October when it straddles two. */
+function rangeLabel(mondayIso: string): string {
+  const mon = parseISO(mondayIso);
+  const sun = addDays(mon, 6);
+  const m = (d: Date) => d.toLocaleDateString('en-GB', { month: 'long' });
+  const same = m(mon) === m(sun);
+  return `${mon.getDate()}${same ? '' : ` ${m(mon)}`} \u2013 ${sun.getDate()} ${m(sun)}`;
+}
+
 export default function WeekScreen() {
   const t = useTheme();
+  const [condensed, setCondensed] = useState(false);
   const router = useRouter();
   const { state, weekId, today, update } = useStore();
   const week = state.weeks[weekId];
@@ -29,26 +39,41 @@ export default function WeekScreen() {
   return (
     <Screen>
       <WeekHeader compact />
-      <Body>
+
+      {/* Same treatment as the Day: the range stays put and shrinks once the
+          page moves under it, with the week number small on the right. */}
+      <View style={{ paddingHorizontal: 18, paddingTop: condensed ? 4 : 10,
+        paddingBottom: condensed ? 6 : 8, borderBottomWidth: 1,
+        borderBottomColor: condensed ? t.rule : 'transparent',
+        backgroundColor: t.sheet, flexDirection: 'row', alignItems: 'baseline', gap: 10 }}>
+        <Text
+          numberOfLines={1}
+          style={{ flex: 1, fontWeight: '700', color: t.ink,
+            fontSize: condensed ? 15 : 21, letterSpacing: -0.3 }}
+        >
+          {rangeLabel(week.monday)}
+        </Text>
+        <Mono style={{ fontSize: condensed ? 10.5 : 11.5 }}>
+          {`week ${weekNumber(weekId)}`}
+        </Mono>
+      </View>
+
+      <Body onScroll={(y) => setCondensed(y > 18)}>
         <Section>
-          <SectionHead title="This week is a" right={`week ${weekNumber(weekId)}`} />
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Template: ${tpl.name}. Change it.`}
             onPress={() => router.push('/template')}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
               borderWidth: 1, borderColor: t.accentLine, backgroundColor: t.accentSoft,
-              borderRadius: radius.md, paddingHorizontal: 13, paddingVertical: 12 }}
+              borderRadius: radius.md, paddingHorizontal: 13, paddingVertical: 13 }}
           >
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: t.accent }}>{tpl.name}</Text>
-              <Text style={{ fontSize: 12.5, color: t.ink2, marginTop: 2 }}>{tpl.blurb}</Text>
-            </View>
+            {tpl.tag ? <Chip text={tpl.tag} colour={t.accent} soft={t.sheet} /> : null}
+            <Text style={{ flex: 1, fontSize: 16, fontWeight: '700', color: t.accent }}>
+              {tpl.name}
+            </Text>
             <Text style={{ fontSize: 13, color: t.accent }}>Change ›</Text>
           </Pressable>
-          {tpl.note ? <Note>{tpl.note}</Note> : null}
-          <Button tone="ghost" title="Edit this week\u2019s habits"
-            onPress={() => router.push('/habits')} />
         </Section>
 
         <Section>

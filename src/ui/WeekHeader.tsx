@@ -188,10 +188,10 @@ function DayMark({ done, off, score, selected }: {
   // The selected day is now a filled accent chip, so everything drawn on it
   // needs its contrast taken from that fill rather than from the sheet.
   const ground = selected ? t.accent : t.sheet;
-  // On the filled chip, accentLine is nearly the fill itself — the ring
-  // disappeared. The unfilled part of the track is the paper colour held back,
-  // which reads on either ground.
-  const quiet = selected ? (t.dark ? t.paper : t.sheet) : t.rule;
+  // On the filled chip the track has to be the chip's own colour lightened,
+  // not a palette colour: paper is nearly black in dark mode, so an empty
+  // ring came out as a black disc. Translucent white works on either accent.
+  const quiet = selected ? 'rgba(255,255,255,0.34)' : t.rule;
 
   if (off) {
     return (

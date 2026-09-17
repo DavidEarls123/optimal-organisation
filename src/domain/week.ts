@@ -1,4 +1,4 @@
-import type { AppState, HabitPlan, PlanEntry, ShopGroup, Task, Week, TripItem } from './types';
+import type { AppState, HabitPlan, PlanEntry, ShopGroup, Task, Week, TripItem, Section } from './types';
 import {
   SHOP_TEMPLATE, TEMPLATES, TRIP_BASE, TRIP_CATEGORIES, TRIP_TEMPLATES,
 } from './catalogue';
@@ -42,7 +42,9 @@ export function planFromTemplate(state: AppState, templateId: string): Record<st
 
 export function planTasks(state: AppState, templateId: string, dayIndex: number): Task[] {
   const t = state.templates?.[templateId] ?? TEMPLATES[templateId] ?? TEMPLATES.general;
-  const secs = state.sections.length ? state.sections : [{ id: 's1', name: 'Morning' }];
+  // A template's scaffold refers to its own headings, or the standard ones.
+  const from = t.sections?.length ? t.sections : state.sections;
+  const secs = from.length ? from : [{ id: 's1', name: 'Morning' }];
   const entries: PlanEntry[] = t.plan[dayIndex] ?? [];
   return entries.map(([text, track, si]) => ({
     id: uid('p'),
@@ -67,6 +69,8 @@ export function createWeek(state: AppState, mondayIso: string, templateId: strin
     watched: {},
     at: {},
     readings: {},
+    sections: (state.templates[templateId]?.sections ?? state.sections)
+      .map((x) => ({ ...x })),
   };
   for (let d = 0; d < 7; d += 1) w.tasks[d] = planTasks(state, templateId, d);
   return w;
@@ -282,9 +286,9 @@ export function moveTask(
   const dayIndex = Math.round((target.getTime() - mon.getTime()) / 86400000);
 
   const [task] = arr.splice(i, 1);
-  if (!state.sections.some((s) => s.id === task.sec)) {
-    task.sec = state.sections[0]?.id ?? 's1';
-  }
+  // The heading it was filed under may not exist on the week it is going to.
+  const there = sectionsOf(state, weekId);
+  if (!there.some((x) => x.id === task.sec)) task.sec = there[0]?.id ?? 's1';
   const dest = state.weeks[weekId];
   dest.tasks[dayIndex] = [...(dest.tasks[dayIndex] ?? []), task];
   return { weekId, dayIndex, sectionId: task.sec };
@@ -309,7 +313,7 @@ export function saveWeekAsTemplate(state: AppState, weekId: string): boolean {
   }
   tpl.plans = plans;
 
-  const secIndex = new Map(state.sections.map((sec, i) => [sec.id, i]));
+  const secIndex = new Map(sectionsOf(state, weekId).map((sec, i) => [sec.id, i]));
   tpl.plan = [0, 1, 2, 3, 4, 5, 6].map((d) =>
     (w.tasks[d] ?? [])
       .filter((x) => x.plan)
@@ -387,7 +391,7 @@ export function nudgeTask(
   const w = state.weeks[weekId];
   if (!w) return null;
   const arr = w.tasks[day] ?? [];
-  const secIds = state.sections.map((x) => x.id);
+  const secIds = sectionsOf(state, weekId).map((x) => x.id);
   if (!secIds.length) return null;
 
   // Read the day the way it is drawn: section by section, in order.
@@ -539,6 +543,16 @@ export function applyTemplate(state: AppState, weekId: string, templateId: strin
 
   w.templateId = templateId;
   w.habitPlan = planFromTemplate(state, templateId);
+  // Take the new template's headings, and rehome any task filed under one it
+  // does not have rather than leaving it drawn nowhere.
+  const next = (state.templates[templateId]?.sections ?? state.sections).map((x) => ({ ...x }));
+  w.sections = next;
+  const ok = new Set(next.map((x) => x.id));
+  for (let d = 0; d < 7; d += 1) {
+    for (const x of w.tasks[d] ?? []) {
+      if (!ok.has(x.sec)) x.sec = next[0]?.id ?? 's1';
+    }
+  }
 
   for (let d = 0; d < 7; d += 1) {
     const had = w.tasks[d] ?? [];
@@ -602,7 +616,7 @@ export function marksOn(state: AppState, dateIso: string): {
 export function orderedTasks(state: AppState, weekId: string, day: number): Task[] {
   const w = state.weeks[weekId];
   if (!w) return [];
-  const secIds = state.sections.map((x) => x.id);
+  const secIds = sectionsOf(state, weekId).map((x) => x.id);
   const rank = (t: Task) => {
     const i = secIds.indexOf(t.sec);
     return i < 0 ? 0 : i;
@@ -621,7 +635,7 @@ export function placeTask(
 ): string | null {
   const w = state.weeks[weekId];
   if (!w) return null;
-  const secIds = state.sections.map((x) => x.id);
+  const secIds = sectionsOf(state, weekId).map((x) => x.id);
   if (!secIds.length) return null;
 
   const flat = orderedTasks(state, weekId, day);
@@ -641,4 +655,15 @@ export function placeTask(
   rest.splice(at, 0, task);
   w.tasks[day] = rest;
   return task.sec;
+}
+
+/** The headings a week is split into: its own if it has them, otherwise its
+ *  template's, otherwise the app's standard three. Everything that draws or
+ *  files a task goes through this, so there is one answer. */
+export function sectionsOf(state: AppState, weekId: string): Section[] {
+  const w = state.weeks[weekId];
+  if (w?.sections?.length) return w.sections;
+  const tpl = w ? (state.templates[w.templateId] ?? TEMPLATES[w.templateId]) : null;
+  if (tpl?.sections?.length) return tpl.sections;
+  return state.sections;
 }

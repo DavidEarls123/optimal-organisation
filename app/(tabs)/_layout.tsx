@@ -50,7 +50,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="lists"
         options={{ title: 'Lists', tabBarIcon: tab('checklist', 'checklist.checked', '☰') }} />
       <Tabs.Screen name="ahead"
-        options={{ title: 'Goals', tabBarIcon: tab('flag', 'flag.fill', '◷') }} />
+        options={{ title: 'Coming Up', tabBarIcon: tab('flag', 'flag.fill', '◷') }} />
     </Tabs>
   );
 }

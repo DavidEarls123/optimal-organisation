@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState } from '../src/domain/state';
-import { applyTemplate, templateChange } from '../src/domain/week';
+import { applyTemplate, sectionsOf, templateChange } from '../src/domain/week';
 import { habitDone, weekScore } from '../src/domain/scoring';
 import type { AppState } from '../src/domain/types';
 
@@ -159,4 +159,41 @@ test('a week asking nothing at all scores zero rather than full marks', () => {
   w.habitPlan = {};
   for (let d = 0; d < 7; d += 1) w.tasks[d] = [];
   assert.equal(weekScore(s, w, TUE).banked, 0);
+});
+
+test('a week takes its headings from its template', () => {
+  const s = fresh('run');
+  s.templates.deload.sections = [
+    { id: 'am', name: 'Morning' }, { id: 'pm', name: 'Rest of the day' },
+  ];
+  applyTemplate(s, WEEK, 'deload');
+  assert.deepEqual(sectionsOf(s, WEEK).map((x) => x.name), ['Morning', 'Rest of the day']);
+});
+
+test('a task filed under a heading the new template lacks is rehomed, not lost', () => {
+  const s = fresh('run');
+  const w = s.weeks[WEEK];
+  const gone = s.sections[2].id;
+  w.tasks[3] = [{ id: 'mine', text: 'Stretch', state: 'open', plan: false, track: null, sec: gone }];
+  s.templates.deload.sections = [{ id: 'am', name: 'Morning' }];
+
+  applyTemplate(s, WEEK, 'deload');
+
+  const still = (s.weeks[WEEK].tasks[3] ?? []).find((x) => x.id === 'mine');
+  assert.ok(still, 'the task is still there');
+  assert.equal(still.sec, 'am', 'under the only heading that now exists');
+});
+
+test('a template without its own headings uses the standard ones', () => {
+  const s = fresh('run');
+  delete s.templates.run.sections;
+  assert.deepEqual(sectionsOf(s, WEEK).map((x) => x.name), s.sections.map((x) => x.name));
+});
+
+test('editing a template’s headings does not disturb a week already built', () => {
+  const s = fresh('run');
+  const before = sectionsOf(s, WEEK).map((x) => x.name);
+  s.templates.run.sections = [{ id: 'one', name: 'All day' }];
+  assert.deepEqual(sectionsOf(s, WEEK).map((x) => x.name), before,
+    'the week kept the copy it was built with');
 });

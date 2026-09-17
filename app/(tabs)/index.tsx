@@ -16,7 +16,9 @@ import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES, dayDateIso, isoOf, parseISO } from '../../src/domain/dates';
-import { marksOn, moveTask, nudgeTask, orderedTasks, placeTask, uid } from '../../src/domain/week';
+import {
+  marksOn, moveTask, nudgeTask, orderedTasks, placeTask, sectionsOf, uid,
+} from '../../src/domain/week';
 import {
   activeHabits, dayOutstanding, fromKg, habitDayStatus, habitDone, habitTarget, pacing,
   planLabel, toKg,
@@ -50,6 +52,8 @@ export default function DayScreen() {
   const [weighing, setWeighing] = useState<string | null>(null);
   /** The task being dragged, and where it would land. */
   const [dragId, setDragId] = useState<string | null>(null);
+  /** Where the dragged task would land if you let go now. */
+  const [dragTo, setDragTo] = useState<number | null>(null);
   /** Every row's height, so a drag knows how far a place is. */
   const rowH = useRef<Record<string, number>>({});
 
@@ -64,6 +68,8 @@ export default function DayScreen() {
   }, []);
 
   const dateIso = week ? dayDateIso(week.monday, day) : '';
+  // Headings come from the week, which took them from its template.
+  const sections = useMemo(() => sectionsOf(state, weekId), [state, weekId]);
 
   useEffect(() => {
     let alive = true;
@@ -139,15 +145,30 @@ export default function DayScreen() {
     return Math.max(0, Math.min(rest.length, at));
   }, [state, weekId, day]);
 
-  const onDragMove = useCallback((id: string) => {
+  const onDragMove = useCallback((id: string, dy: number) => {
     setDragId((cur) => (cur === id ? cur : id));
-  }, []);
+    const to = dropIndex(id, dy);
+    setDragTo((cur) => (cur === to ? cur : to));
+  }, [dropIndex]);
 
   const onDragEnd = useCallback((id: string, dy: number) => {
     const to = dropIndex(id, dy);
     setDragId(null);
+    setDragTo(null);
     update((d) => { placeTask(d, weekId, day, id, to); });
   }, [dropIndex, update, weekId, day]);
+
+  /** Each task's position in the day once the dragged one is lifted out of it,
+   *  so a row knows whether the drop line belongs above it. */
+  const restIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!dragId) return m;
+    orderedTasks(state, weekId, day)
+      .filter((x) => x.id !== dragId)
+      .forEach((x, i) => m.set(x.id, i));
+    return m;
+  }, [dragId, state, weekId, day]);
+  const restCount = restIndex.size;
 
   const deleteTask = useCallback((id: string, text: string) => {
     Alert.alert(
@@ -181,7 +202,7 @@ export default function DayScreen() {
     setShowPicker(false);
     if (landed) {
       const l = landed as { weekId: string; dayIndex: number; sectionId: string };
-      const secName = state.sections.find((s) => s.id === l.sectionId)?.name ?? '';
+      const secName = sections.find((s) => s.id === l.sectionId)?.name ?? '';
       const when = parseISO(targetIso);
       Alert.alert(
         'Rescheduled',
@@ -190,7 +211,7 @@ export default function DayScreen() {
         + (l.weekId !== weekId ? ` · week ${l.weekId.slice(-2)}` : ''),
       );
     }
-  }, [update, weekId, day, state.sections]);
+  }, [update, weekId, day, sections]);
 
   const toggleHabit = useCallback((habitId: string) => {
     const h = state.habits.find((x) => x.id === habitId);
@@ -386,7 +407,7 @@ export default function DayScreen() {
         ) : null}
 
         <Section>
-          {state.sections.map((sc) => {
+          {sections.map((sc) => {
             const inSec = live.filter((x) => x.sec === sc.id);
             // Ticked work sinks, so what is left to do is always at the top.
             const items = [...inSec.filter((x) => x.state !== 'done'),
@@ -403,8 +424,11 @@ export default function DayScreen() {
 
                 <View style={{ borderTopWidth: 1, borderTopColor: t.rule }}>
                   {items.length === 0 ? null : items.map((x) => (
+                    <React.Fragment key={x.id}>
+                      {dragId && dragTo !== null && restIndex.get(x.id) === dragTo ? (
+                        <DropLine />
+                      ) : null}
                     <TaskRow
-                      key={x.id}
                       task={x}
                       open={moveId === x.id}
                       onToggle={() => setTaskState(x.id, x.state === 'done' ? 'open' : 'done')}
@@ -418,12 +442,19 @@ export default function DayScreen() {
                       onMoveToDay={(d) => doMove(x.id, dayDateIso(week.monday, d))}
                       onPickDate={() => setShowPicker(true)}
                       onMeasure={(h) => { rowH.current[x.id] = h; }}
-                      onDragMove={() => onDragMove(x.id)}
+                      onDragMove={(dy) => onDragMove(x.id, dy)}
                       onDragEnd={(dy) => onDragEnd(x.id, dy)}
                       dragging={dragId === x.id}
                       currentDay={day}
                     />
+                    </React.Fragment>
                   ))}
+                  {/* Landing at the very bottom of the day has no row to sit
+                      above, so the line goes after the last one. */}
+                  {dragId && dragTo !== null && dragTo >= restCount
+                    && sc.id === sections[sections.length - 1].id ? (
+                      <DropLine />
+                    ) : null}
                 </View>
 
                 {adding === sc.id ? (
@@ -587,6 +618,16 @@ export default function DayScreen() {
         />
       </Sheet>
     </Screen>
+  );
+}
+
+/** Where the task will be when you let go. Drawn where the gap will open,
+ *  rather than left to be guessed from how far the row has moved. */
+function DropLine() {
+  const t = useTheme();
+  return (
+    <View style={{ height: 2, marginVertical: 3, borderRadius: 1,
+      backgroundColor: t.accent }} />
   );
 }
 
@@ -823,7 +864,7 @@ function TaskRow({
   onReorder: (dir: -1 | 1) => void; onMoveToDay: (d: number) => void; onPickDate: () => void;
   onRename: (text: string) => void;
   onMeasure: (h: number) => void;
-  onDragMove: () => void;
+  onDragMove: (dy: number) => void;
   onDragEnd: (dy: number) => void;
   dragging: boolean;
 }) {
@@ -840,11 +881,12 @@ function TaskRow({
   const drag = useMemo(
     () => Gesture.Pan()
       .activateAfterLongPress(220)
-      .onStart(() => {
-        runOnJS(onDragMove)();
+      .onStart((e) => {
+        runOnJS(onDragMove)(e.translationY);
       })
       .onUpdate((e) => {
         lift.value = e.translationY;
+        runOnJS(onDragMove)(e.translationY);
       })
       .onEnd((e) => {
         runOnJS(onDragEnd)(e.translationY);

@@ -75,6 +75,13 @@ export const HABIT_PRESETS: { group: string; items: Omit<Habit, 'active'>[] }[] 
   },
 ];
 
+/** Goals a week template can serve. Free text is allowed too; these are
+ *  the ones worth offering rather than making someone remember. */
+export const TEMPLATE_GOALS = [
+  'Hypertrophy', 'Strength', 'Endurance', 'Taper', 'Recovery', 'Deload',
+  'Baseline', 'Maintenance', 'Cutting', 'Race prep', 'Rehab', 'Off season',
+];
+
 /** The headings a shopping list starts with, and a few things under each that
  *  most weeks want. Every bit of it is editable; this is only the starting
  *  point so the list is never a blank page. */
