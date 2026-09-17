@@ -4,8 +4,8 @@ import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
 import {
-  Body, Button, Chip, Empty, Field, Mono, Note, Screen, Section, SectionHead, Segmented, Sheet,
-  Tick,
+  Body, Button, Chip, Empty, Field, IconButton, Mono, Note, Screen, Section, SectionHead,
+  Segmented, Sheet, Tick,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -37,10 +37,9 @@ export default function ListsScreen() {
 }
 
 /** One line on the list. Two ticks: needed this week, and got it. */
-function ShopRow({ item, onNeed, onGot, onRename, onDelete }: {
+function ShopRow({ item, onNeed, onRename, onDelete }: {
   item: ShopItem;
   onNeed: () => void;
-  onGot: () => void;
   onRename: (text: string) => void;
   onDelete: () => void;
 }) {
@@ -97,18 +96,6 @@ function ShopRow({ item, onNeed, onGot, onRename, onDelete }: {
         style={{ flex: 1 }}
       >
         <Text style={{ fontSize: 14, color: item.need ? t.ink : t.ink3 }}>{item.text}</Text>
-      </Pressable>
-
-      <Pressable
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: item.done }}
-        accessibilityLabel={`Got ${item.text}`}
-        hitSlop={6}
-        disabled={!item.need}
-        onPress={onGot}
-        style={{ width: 34, alignItems: 'center', opacity: item.need ? 1 : 0.2 }}
-      >
-        <Tick on={item.done} tone="hit" />
       </Pressable>
 
       <Pressable onPress={onDelete} hitSlop={6} accessibilityRole="button"
@@ -172,50 +159,33 @@ function Shopping({ scroller }: { scroller: React.RefObject<ScrollView | null> }
 
   // ---- shopping mode: the short list, and only the tick that matters in a shop
   if (inShop) {
+    // One list, in the order it is written down. Which heading a thing came
+    // from is a way of organising the week, not of walking round a shop.
+    const walk = trolley.flatMap((g) => g.items.map((it) => ({ it, groupId: g.id })));
     return (
       <Section>
-        <SectionHead
-          title="At the shop"
-          right={`${got}/${need} · ${trolley.length} ${trolley.length === 1 ? 'aisle' : 'aisles'}`}
-        />
+        <SectionHead title="At the shop" right={`${got}/${need}`} />
         <Button title="← Back to the whole list" onPress={() => setInShop(false)} />
-        {trolley.length === 0 ? (
+        {walk.length === 0 ? (
           <Empty>Nothing marked as needed this week.</Empty>
         ) : null}
-        {trolley.map((g) => {
-          const gGot = g.items.filter((i) => i.done).length;
-          return (
-            <View key={g.id}>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8,
-                paddingTop: 15, paddingBottom: 5 }}>
-                <Text style={{ flex: 1, fontSize: 13, letterSpacing: 1.1, textTransform: 'uppercase',
-                  fontWeight: '700', color: gGot === g.items.length ? t.hit : t.ink }}>
-                  {g.name}
-                </Text>
-                <Mono style={{ fontSize: 11, color: gGot === g.items.length ? t.hit : t.ink3 }}>
-                  {`${gGot}/${g.items.length}`}
-                </Mono>
-              </View>
-              <View style={{ borderTopWidth: 1, borderTopColor: t.rule }}>
-                {g.items.map((it) => (
-                  <Pressable
-                    key={it.id}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: it.done }}
-                    accessibilityLabel={it.text}
-                    onPress={() => setItem(g.id, it.id, { done: !it.done })}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
-                      paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: t.rule2 }}
-                  >
-                    <Tick on={it.done} size={22} tone="hit" />
-                    <Text style={{ flex: 1, fontSize: 16, color: it.done ? t.ink3 : t.ink,
-                      textDecorationLine: it.done ? 'line-through' : 'none' }}>{it.text}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          );
-        })}
+        <View style={{ borderTopWidth: walk.length ? 1 : 0, borderTopColor: t.rule }}>
+          {walk.map(({ it, groupId }) => (
+            <Pressable
+              key={it.id}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: it.done }}
+              accessibilityLabel={it.text}
+              onPress={() => setItem(groupId, it.id, { done: !it.done })}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+                paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: t.rule2 }}
+            >
+              <Tick on={it.done} size={22} tone="hit" />
+              <Text style={{ flex: 1, fontSize: 16, color: it.done ? t.ink3 : t.ink,
+                textDecorationLine: it.done ? 'line-through' : 'none' }}>{it.text}</Text>
+            </Pressable>
+          ))}
+        </View>
         {got === need && need > 0 ? (
           <Note>That is everything. Nothing left on the list.</Note>
         ) : null}
@@ -228,18 +198,19 @@ function Shopping({ scroller }: { scroller: React.RefObject<ScrollView | null> }
     <Section>
       <SectionHead title={`Shopping · week ${weekNumber(weekId)}`} right={`${need} needed`} />
 
-      <View style={{ flexDirection: 'row', gap: 8 }}>
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'stretch' }}>
         <View style={{ flex: 1 }}>
+          {/* The count in brackets, so the label never wraps to a second line. */}
           <Button
-            title={need
-              ? `Go shopping · ${need} in ${trolley.length} ${trolley.length === 1 ? 'aisle' : 'aisles'}`
-              : 'Go shopping'}
+            title={need ? `Go shopping (${need})` : 'Go shopping'}
             onPress={() => setInShop(true)}
             disabled={need === 0}
           />
         </View>
-        <Button tone="ghost" title="Insights" onPress={() => setInsight(true)} />
-        <Button tone="ghost" title="Standard" onPress={() => router.push('/shop-template')} />
+        <IconButton label="What you actually buy" glyph="chart.bar"
+          fallback="◍" onPress={() => setInsight(true)} />
+        <IconButton label="Edit the standard list" glyph="square.and.pencil"
+          fallback="✎" onPress={() => router.push('/shop-template')} />
       </View>
 
       {missing.length ? (
@@ -282,15 +253,13 @@ function Shopping({ scroller }: { scroller: React.RefObject<ScrollView | null> }
               </Pressable>
             </View>
 
-            {/* Which tick is which, said once per heading. */}
+            {/* One tick here, and it is only ever this question. */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
               borderTopWidth: 1, borderTopColor: t.rule, paddingTop: 5, paddingBottom: 2 }}>
               <Mono style={{ width: 34, textAlign: 'center', fontSize: 8.5, letterSpacing: 0.6,
                 textTransform: 'uppercase', color: t.accent }}>need</Mono>
-              <View style={{ flex: 1 }} />
-              <Mono style={{ width: 34, textAlign: 'center', fontSize: 8.5, letterSpacing: 0.6,
-                textTransform: 'uppercase', color: t.hit }}>got</Mono>
-              <View style={{ width: 15 }} />
+              <Mono style={{ flex: 1, fontSize: 8.5, letterSpacing: 0.6,
+                textTransform: 'uppercase' }}>this week</Mono>
             </View>
 
             <View>
@@ -299,7 +268,6 @@ function Shopping({ scroller }: { scroller: React.RefObject<ScrollView | null> }
                   key={it.id}
                   item={it}
                   onNeed={() => setItem(g.id, it.id, { need: !it.need, done: false })}
-                  onGot={() => setItem(g.id, it.id, { done: !it.done })}
                   onRename={(text) => setItem(g.id, it.id, { text })}
                   onDelete={() => update((d) => {
                     const gg = d.weeks[weekId].shop?.find((x) => x.id === g.id);

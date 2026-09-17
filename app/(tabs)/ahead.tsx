@@ -4,7 +4,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import {
   Body, Button, Chip, CornerMark, DateButton, Empty, Field, Mono, Note, Screen, Section,
-  SectionHead, Tick,
+  SectionHead, Sheet, Tick,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -27,6 +27,8 @@ export default function AheadScreen() {
   const [open, setOpen] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [newTrip, setNewTrip] = useState({ name: '', start: '', end: '', tplId: 'weekend' });
+  const [addingTrip, setAddingTrip] = useState(false);
+  const [addingEvent, setAddingEvent] = useState(false);
   const [newEvent, setNewEvent] = useState({ name: '', date: '' });
 
   const trips = state.trips
@@ -102,11 +104,14 @@ export default function AheadScreen() {
             />
           ))}
 
-          <View style={{ gap: 7, paddingTop: 10 }}>
-            <Mono style={{ letterSpacing: 1.2, textTransform: 'uppercase', color: t.accent }}>
-              Add a trip
-            </Mono>
-            <Field value={newTrip.name} placeholder="Where to?"
+          <Button tone="ghost" title="+ Add a trip" onPress={() => setAddingTrip(true)} />
+
+          <Sheet
+            open={addingTrip}
+            title="Add a trip"
+            onClose={() => setAddingTrip(false)}
+          >
+            <Field value={newTrip.name} placeholder="Where to?" maxLength={40} autoFocus
               onChangeText={(v) => setNewTrip((p) => ({ ...p, name: v }))} />
             <View style={{ flexDirection: 'row', gap: 7 }}>
               <DateButton
@@ -151,13 +156,14 @@ export default function AheadScreen() {
                 d.trips.push({ id, name: name.trim(), tplId, start, end, items: buildTripItems(d, tplId) });
               });
               setOpen(id);
+              setAddingTrip(false);
               setNewTrip({ name: '', start: '', end: '', tplId: 'weekend' });
             }} />
             <Note>
               The type picks the starting checklist. A race trip adds number collection, the course
               map and kit in hand luggage. Everything stays editable per trip.
             </Note>
-          </View>
+          </Sheet>
         </Section>
 
         <Section>
@@ -191,8 +197,10 @@ export default function AheadScreen() {
             );
           })}
 
-          <View style={{ flexDirection: 'row', gap: 7, paddingTop: 7 }}>
-            <Field value={newEvent.name} placeholder="What is it?"
+          <Button tone="ghost" title="+ Add a countdown" onPress={() => setAddingEvent(true)} />
+
+          <Sheet open={addingEvent} title="Add a countdown" onClose={() => setAddingEvent(false)}>
+            <Field value={newEvent.name} placeholder="What is it?" maxLength={40} autoFocus
               onChangeText={(v) => setNewEvent((p) => ({ ...p, name: v }))} />
             <DateButton
               title="When is it?"
@@ -200,15 +208,16 @@ export default function AheadScreen() {
               value={newEvent.date}
               onChange={(v) => setNewEvent((p) => ({ ...p, date: v }))}
             />
-            <Button title="Add" onPress={() => {
+            <Button title="Add countdown" onPress={() => {
               if (!newEvent.name.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(newEvent.date)) return;
               update((d) => {
                 d.events.push({ id: uid('e'), name: newEvent.name.trim(), date: newEvent.date,
                   source: 'added' });
               });
+              setAddingEvent(false);
               setNewEvent({ name: '', date: '' });
             }} />
-          </View>
+          </Sheet>
           <Note>
             All-day entries in your calendar become countdowns automatically and never become tasks.
             Timed events stay where they are, on the day.

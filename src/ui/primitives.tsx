@@ -1,8 +1,9 @@
 import React from 'react';
 import {
-  Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
   type StyleProp, type TextStyle, type ViewStyle,
 } from 'react-native';
+import { SymbolView, type SFSymbol } from 'expo-symbols';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeProvider';
@@ -466,5 +467,37 @@ export function DateButton({ value, placeholder, onChange, title, minimum }: {
         />
       </Sheet>
     </>
+  );
+}
+
+/** A square button carrying a symbol instead of a word, for the things that sit
+ *  beside a main action and should not compete with it for width. */
+export function IconButton({ glyph, fallback, label, onPress }: {
+  glyph: SFSymbol;
+  fallback: string;
+  label: string;
+  onPress: () => void;
+}) {
+  const t = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={{ width: 44, borderWidth: 1, borderColor: t.rule, borderRadius: radius.md,
+        alignItems: 'center', justifyContent: 'center', backgroundColor: t.sheet2 }}
+    >
+      {Platform.OS === 'ios' ? (
+        <SymbolView
+          name={glyph}
+          size={19}
+          tintColor={t.ink2}
+          resizeMode="scaleAspectFit"
+          fallback={<Text style={{ color: t.ink2, fontSize: 16 }}>{fallback}</Text>}
+        />
+      ) : (
+        <Text style={{ color: t.ink2, fontSize: 16 }}>{fallback}</Text>
+      )}
+    </Pressable>
   );
 }
