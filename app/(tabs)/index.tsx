@@ -18,6 +18,7 @@ import { radius } from '../../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES, dayDateIso, isoOf, parseISO } from '../../src/domain/dates';
 import {
   marksOn, moveChoices, moveTask, nudgeTask, orderedTasks, placeTask, sectionsOf, uid,
+  visibleDrop,
 } from '../../src/domain/week';
 import {
   activeHabits, dayOutstanding, fromKg, habitDayStatus, habitDone, habitTarget, pacing,
@@ -56,6 +57,9 @@ export default function DayScreen() {
   const [dragTo, setDragTo] = useState<number | null>(null);
   /** Every row's height, so a drag knows how far a place is. */
   const rowH = useRef<Record<string, number>>({});
+  /** Headings whose finished work is showing. Folded away by default, so a
+   *  day gets shorter as you get through it rather than longer. */
+  const [showDone, setShowDone] = useState<Record<string, boolean>>({});
 
   /** Puts the open composer near the middle of the screen, so what you are
    *  typing is not behind the keyboard. */
@@ -73,6 +77,18 @@ export default function DayScreen() {
   // Where a task can be moved to from the strip: forward only, because there
   // is no sense in rescheduling something into a day that has gone.
   const drawn = useMemo(() => orderedTasks(state, weekId, day), [state, weekId, day]);
+  /** What the day holds but is not showing: finished work under a folded
+   *  heading, and anything filed under a heading this template no longer has.
+   *  A drag has to count the same rows you can see, or the line lies. */
+  const hidden = useMemo(() => {
+    const known = new Set(sections.map((x) => x.id));
+    const out = new Set<string>();
+    for (const x of drawn) {
+      if (!known.has(x.sec)) out.add(x.id);
+      else if (x.state === 'done' && !showDone[x.sec]) out.add(x.id);
+    }
+    return out;
+  }, [drawn, sections, showDone]);
   const choices = useMemo(
     () => (dateIso ? moveChoices(dateIso, isoOf(today)) : []),
     [dateIso, today],
@@ -131,9 +147,12 @@ export default function DayScreen() {
    *  is several times the height of one without. */
   const dropIndex = useCallback((id: string, dy: number) => {
     const flat = orderedTasks(state, weekId, day);
-    const from = flat.findIndex((x) => x.id === id);
-    if (from < 0) return 0;
-    const rest = flat.filter((x) => x.id !== id);
+    const at0 = flat.findIndex((x) => x.id === id);
+    if (at0 < 0) return 0;
+    // Only what is on the screen: a folded-away task takes up no room, so it
+    // must take up none of the distance either.
+    const rest = flat.filter((x) => x.id !== id && !hidden.has(x.id));
+    const from = flat.slice(0, at0).filter((x) => !hidden.has(x.id)).length;
     const h = (x: Task) => rowH.current[x.id] || 44;
 
     // Walk out from where it started until the accumulated height passes dy.
@@ -154,7 +173,13 @@ export default function DayScreen() {
       }
     }
     return Math.max(0, Math.min(rest.length, at));
-  }, [state, weekId, day]);
+  }, [state, weekId, day, hidden]);
+
+  /** A place among the rows you can see, turned into a place in the day. It
+   *  lands above the same task either way, folded work and all. */
+  const fullIndex = useCallback((id: string, seen: number) => visibleDrop(
+    orderedTasks(state, weekId, day), [...hidden], id, seen,
+  ), [state, weekId, day, hidden]);
 
   const onDragMove = useCallback((id: string, dy: number) => {
     setDragId((cur) => (cur === id ? cur : id));
@@ -163,22 +188,22 @@ export default function DayScreen() {
   }, [dropIndex]);
 
   const onDragEnd = useCallback((id: string, dy: number) => {
-    const to = dropIndex(id, dy);
+    const to = fullIndex(id, dropIndex(id, dy));
     setDragId(null);
     setDragTo(null);
-    update((d) => { placeTask(d, weekId, day, id, to); }, 'moving that task');
-  }, [dropIndex, update, weekId, day]);
+    update((d) => { placeTask(d, weekId, day, id, to.at, to.sec); }, 'moving that task');
+  }, [dropIndex, fullIndex, update, weekId, day]);
 
-  /** Each task's position in the day once the dragged one is lifted out of it,
-   *  so a row knows whether the drop line belongs above it. */
+  /** Each visible task's position once the dragged one is lifted out, so a row
+   *  knows whether the drop line belongs above it. */
   const restIndex = useMemo(() => {
     const m = new Map<string, number>();
     if (!dragId) return m;
     orderedTasks(state, weekId, day)
-      .filter((x) => x.id !== dragId)
+      .filter((x) => x.id !== dragId && !hidden.has(x.id))
       .forEach((x, i) => m.set(x.id, i));
     return m;
-  }, [dragId, state, weekId, day]);
+  }, [dragId, state, weekId, day, hidden]);
   const restCount = restIndex.size;
 
   const deleteTask = useCallback((id: string, text: string) => {
@@ -422,48 +447,74 @@ export default function DayScreen() {
         ) : null}
 
         <Section>
-          {sections.map((sc) => {
+          {sections.map((sc, si) => {
             // Straight from the same ordering the drag counts against, so the
             // drop line and the row it points at can never disagree.
-            const inSec = live.filter((x) => x.sec === sc.id);
             const items = drawn.filter((x) => x.sec === sc.id);
-            const done = inSec.filter((x) => x.state === 'done').length;
+            const todo = items.filter((x) => x.state !== 'done');
+            const finished = items.filter((x) => x.state === 'done');
+            const showing = !!showDone[sc.id];
+            const row = (x: Task) => (
+              <React.Fragment key={x.id}>
+                {dragId && dragTo !== null && restIndex.get(x.id) === dragTo ? (
+                  <DropLine />
+                ) : null}
+                <TaskRow
+                  task={x}
+                  open={moveId === x.id}
+                  onToggle={() => setTaskState(x.id, x.state === 'done' ? 'open' : 'done')}
+                  onDelete={() => deleteTask(x.id, x.text)}
+                  onOpenMove={() => { setMoveId(moveId === x.id ? null : x.id); setShowPicker(false); }}
+                  onReorder={(dir) => reorder(x.id, dir)}
+                  onRename={(text) => update((d) => {
+                    const item = (d.weeks[weekId].tasks[day] ?? []).find((y) => y.id === x.id);
+                    if (item) item.text = text;
+                  }, 'renaming that task')}
+                  choices={choices}
+                  onMoveToDate={(iso) => doMove(x.id, iso)}
+                  onPickDate={() => setShowPicker(true)}
+                  onMeasure={(h) => { rowH.current[x.id] = h; }}
+                  onDragMove={(dy) => onDragMove(x.id, dy)}
+                  onDragEnd={(dy) => onDragEnd(x.id, dy)}
+                  dragging={dragId === x.id}
+                />
+              </React.Fragment>
+            );
             return (
               <View key={sc.id}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 13,
-                  paddingBottom: 3 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+                  paddingTop: si === 0 ? 0 : 13, paddingBottom: 3 }}>
                   <Text style={{ flex: 1, fontSize: 12.5, letterSpacing: 1.1,
                     textTransform: 'uppercase', fontWeight: '700', color: t.ink }}>{sc.name}</Text>
-                  <Mono>{`${done}/${items.length}`}</Mono>
+                  <Mono>{`${finished.length}/${items.length}`}</Mono>
                 </View>
 
                 <View style={{ borderTopWidth: 1, borderTopColor: t.rule }}>
-                  {items.length === 0 ? null : items.map((x) => (
-                    <React.Fragment key={x.id}>
-                      {dragId && dragTo !== null && restIndex.get(x.id) === dragTo ? (
-                        <DropLine />
-                      ) : null}
-                    <TaskRow
-                      task={x}
-                      open={moveId === x.id}
-                      onToggle={() => setTaskState(x.id, x.state === 'done' ? 'open' : 'done')}
-                      onDelete={() => deleteTask(x.id, x.text)}
-                      onOpenMove={() => { setMoveId(moveId === x.id ? null : x.id); setShowPicker(false); }}
-                      onReorder={(dir) => reorder(x.id, dir)}
-                      onRename={(text) => update((d) => {
-                        const item = (d.weeks[weekId].tasks[day] ?? []).find((y) => y.id === x.id);
-                        if (item) item.text = text;
-                      }, 'renaming that task')}
-                      choices={choices}
-                      onMoveToDate={(iso) => doMove(x.id, iso)}
-                      onPickDate={() => setShowPicker(true)}
-                      onMeasure={(h) => { rowH.current[x.id] = h; }}
-                      onDragMove={(dy) => onDragMove(x.id, dy)}
-                      onDragEnd={(dy) => onDragEnd(x.id, dy)}
-                      dragging={dragId === x.id}
-                    />
-                    </React.Fragment>
-                  ))}
+                  {todo.map(row)}
+
+                  {/* Finished work folds away, so the heading gets shorter as
+                      you get through it. It is one tap from being back. */}
+                  {finished.length ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: showing }}
+                      accessibilityLabel={showing
+                        ? `Hide ${finished.length} done under ${sc.name}`
+                        : `Show ${finished.length} done under ${sc.name}`}
+                      onPress={() => setShowDone((p) => ({ ...p, [sc.id]: !p[sc.id] }))}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 7,
+                        paddingVertical: 8,
+                        borderBottomWidth: showing ? 1 : 0, borderBottomColor: t.rule2 }}
+                    >
+                      <Glyph name={showing ? 'chevron.down' : 'chevron.right'}
+                        fallback={showing ? '▾' : '▸'} size={10} colour={t.ink3} />
+                      <Text style={{ fontSize: 12, color: t.ink3 }}>
+                        {`${finished.length} done`}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  {showing ? finished.map(row) : null}
+
                   {/* Landing at the very bottom of the day has no row to sit
                       above, so the line goes after the last one. */}
                   {dragId && dragTo !== null && dragTo >= restCount

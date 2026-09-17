@@ -650,6 +650,34 @@ export function orderedTasks(state: AppState, weekId: string, day: number): Task
   return out;
 }
 
+/** A place among the rows actually on screen, turned into a place in the whole
+ *  day. Finished work folds away under its heading, so the list you drag
+ *  through is shorter than the list the day holds — but a drop still has to
+ *  land above the same task either way, folded rows and all.
+ *
+ *  `order` is the drawn order, `hiddenIds` what is folded away, and `seen` a
+ *  place among what is left once the dragged task is lifted out. */
+export function visibleDrop(
+  order: { id: string; sec: string }[],
+  hiddenIds: string[],
+  id: string,
+  seen: number,
+): { at: number; sec: string | null } {
+  const hide = new Set(hiddenIds);
+  const rest = order.filter((x) => x.id !== id);
+  const vis = rest.filter((x) => !hide.has(x.id));
+  const n = Math.max(0, Math.min(vis.length, Math.round(seen)));
+
+  // Land directly under the row you dropped it under, and take that row's
+  // heading — never a folded one's, which is nowhere near your finger.
+  const above = n > 0 ? vis[n - 1] : null;
+  if (above) return { at: rest.findIndex((x) => x.id === above.id) + 1, sec: above.sec };
+
+  const below = vis[n];
+  if (!below) return { at: rest.length, sec: null };
+  return { at: rest.findIndex((x) => x.id === below.id), sec: below.sec };
+}
+
 /** Drops a task at a position in that drawn order, taking the section of
  *  wherever it lands. Dragging something into the middle of Afternoon makes it
  *  an afternoon task; there is no separate step for that.
@@ -658,6 +686,7 @@ export function orderedTasks(state: AppState, weekId: string, day: number): Task
  *  what a list being dragged through actually looks like. */
 export function placeTask(
   state: AppState, weekId: string, day: number, id: string, toIndex: number,
+  intoSec?: string | null,
 ): string | null {
   const w = state.weeks[weekId];
   if (!w) return null;
@@ -675,7 +704,9 @@ export function placeTask(
   // at the very top. With nothing either side, nothing moves sections.
   const above = rest[at - 1];
   const below = rest[at];
-  const sec = above ? above.sec : below ? below.sec : task.sec;
+  // A caller that can see the screen knows better than the neighbours do:
+  // folded-away work sits in the array but not under your finger.
+  const sec = intoSec ?? (above ? above.sec : below ? below.sec : task.sec);
   task.sec = secIds.includes(sec) ? sec : secIds[0];
 
   rest.splice(at, 0, task);
