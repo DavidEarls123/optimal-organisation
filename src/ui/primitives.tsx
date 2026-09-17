@@ -19,16 +19,19 @@ export function Screen({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function Body({ children, onScroll, scrollRef }: {
+export function Body({ children, onScroll, scrollRef, top }: {
   children: React.ReactNode;
   onScroll?: (y: number) => void;
   scrollRef?: React.Ref<ScrollView>;
+  /** Less air at the top, for a screen that already has a heading above it. */
+  top?: number;
 }) {
   return (
     <ScrollView
       ref={scrollRef}
       style={{ flex: 1 }}
-      contentContainerStyle={{ padding: 18, paddingBottom: 48, gap: 22 }}
+      contentContainerStyle={{ padding: 18, paddingTop: top ?? 18,
+        paddingBottom: 48, gap: 22 }}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="interactive"
       scrollEventThrottle={32}

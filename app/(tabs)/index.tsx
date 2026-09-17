@@ -298,8 +298,8 @@ export default function DayScreen() {
 
       {/* The day stays put while the list moves under it, shrinking to a single
           line once you are past the top so it costs almost nothing. */}
-      <View style={{ paddingHorizontal: 18, paddingTop: condensed ? 4 : 10,
-        paddingBottom: condensed ? 6 : 8, borderBottomWidth: 1,
+      <View style={{ paddingHorizontal: 18, paddingTop: condensed ? 4 : 8,
+        paddingBottom: condensed ? 5 : 6, borderBottomWidth: 1,
         borderBottomColor: condensed ? t.rule : 'transparent',
         backgroundColor: t.sheet, flexDirection: 'row', alignItems: 'baseline', gap: 10 }}>
         <Text
@@ -350,7 +350,7 @@ export default function DayScreen() {
         </View>
       ) : null}
 
-      <Body scrollRef={scroller} onScroll={(y) => setCondensed(y > 18)}>
+      <Body top={6} scrollRef={scroller} onScroll={(y) => setCondensed(y > 18)}>
         {off ? (
           <View style={{ backgroundColor: t.sunk, borderRadius: radius.md, padding: 11 }}>
             <Text style={{ fontSize: 12.5, lineHeight: 18, color: t.ink2 }}>
