@@ -1,5 +1,7 @@
-import type { AppState, HabitPlan, PlanEntry, ShopGroup, Task, Week } from './types';
-import { SHOP_TEMPLATE, TEMPLATES } from './catalogue';
+import type { AppState, HabitPlan, PlanEntry, ShopGroup, Task, Week, TripItem } from './types';
+import {
+  SHOP_TEMPLATE, TEMPLATES, TRIP_BASE, TRIP_CATEGORIES, TRIP_TEMPLATES,
+} from './catalogue';
 import { addDays, isoOf, isoWeekId, mondayOf, parseISO, previousWeekId } from './dates';
 
 let seq = 0;
@@ -470,4 +472,49 @@ export function applyTemplate(state: AppState, weekId: string, templateId: strin
     w.tasks[d] = [...fresh, ...keep];
   }
   return true;
+}
+
+/** The standing trip checklist: the things you do for every trip, whatever
+ *  kind it is. Seeded from the built-in list the first time, editable after. */
+export function tripTemplateOf(state: AppState): Record<string, string[]> {
+  if (!state.tripTemplate || typeof state.tripTemplate !== 'object') {
+    state.tripTemplate = Object.fromEntries(
+      TRIP_CATEGORIES.map((cat) => [cat, [...(TRIP_BASE[cat] ?? [])]]),
+    );
+  }
+  for (const cat of TRIP_CATEGORIES) {
+    if (!Array.isArray(state.tripTemplate[cat])) state.tripTemplate[cat] = [];
+  }
+  return state.tripTemplate;
+}
+
+/** A new trip's checklist: your standing list, plus whatever that kind of trip
+ *  adds on top. The kind's extras are not editable — they are the point of
+ *  picking a kind — but nothing stops you deleting them once the trip exists. */
+export function buildTripItems(state: AppState, tplId: string): TripItem[] {
+  const base = tripTemplateOf(state);
+  const kind = TRIP_TEMPLATES[tplId] ?? TRIP_TEMPLATES.weekend;
+  const out: TripItem[] = [];
+  for (const cat of TRIP_CATEGORIES) {
+    const seen = new Set<string>();
+    for (const text of [...(base[cat] ?? []), ...(kind.extra[cat] ?? [])]) {
+      const key = text.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ id: uid('c'), cat, text, done: false });
+    }
+  }
+  return out;
+}
+
+/** Trips and countdowns falling on a given date, for marking up a day. */
+export function marksOn(state: AppState, dateIso: string): {
+  trips: string[]; events: string[];
+} {
+  return {
+    trips: state.trips
+      .filter((x) => x.start <= dateIso && dateIso <= x.end)
+      .map((x) => x.name),
+    events: state.events.filter((x) => x.date === dateIso).map((x) => x.name),
+  };
 }

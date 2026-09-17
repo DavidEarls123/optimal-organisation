@@ -3,6 +3,7 @@ import {
   Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
   type StyleProp, type TextStyle, type ViewStyle,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeProvider';
 import { radius } from '../theme/tokens';
@@ -415,5 +416,55 @@ export function Sheet({ open, title, onClose, children, footer }: {
         </Pressable>
       </Pressable>
     </Modal>
+  );
+}
+
+/** A date you tap rather than type. Typing YYYY-MM-DD by hand is the kind of
+ *  thing a phone should never ask for. */
+export function DateButton({ value, placeholder, onChange, title, minimum }: {
+  value: string;
+  placeholder: string;
+  onChange: (iso: string) => void;
+  title: string;
+  minimum?: Date;
+}) {
+  const t = useTheme();
+  const [open, setOpen] = React.useState(false);
+  const has = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const shown = has
+    ? new Date(Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1, Number(value.slice(8, 10)))
+        .toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+    : placeholder;
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={has ? `${title}: ${shown}. Change it.` : title}
+        onPress={() => setOpen(true)}
+        style={{ flex: 1, minWidth: 0, borderWidth: 1, borderColor: t.rule, borderRadius: radius.md,
+          backgroundColor: t.sheet2, paddingHorizontal: 10, paddingVertical: 10 }}
+      >
+        <Text numberOfLines={1} style={{ fontSize: 14, color: has ? t.ink : t.ink3 }}>{shown}</Text>
+      </Pressable>
+      <Sheet open={open} title={title} onClose={() => setOpen(false)}>
+        <DateTimePicker
+          value={has
+            ? new Date(Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1, Number(value.slice(8, 10)))
+            : new Date()}
+          mode="date"
+          display="inline"
+          minimumDate={minimum}
+          themeVariant={t.dark ? 'dark' : 'light'}
+          accentColor={t.accent}
+          style={{ alignSelf: 'stretch' }}
+          onChange={(_e, picked) => {
+            setOpen(false);
+            if (!picked) return;
+            const p = (n: number) => String(n).padStart(2, '0');
+            onChange(`${picked.getFullYear()}-${p(picked.getMonth() + 1)}-${p(picked.getDate())}`);
+          }}
+        />
+      </Sheet>
+    </>
   );
 }

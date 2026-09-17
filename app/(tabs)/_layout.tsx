@@ -46,7 +46,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="lists"
         options={{ title: 'Lists', tabBarIcon: tab('checklist', 'checklist.checked', '☰') }} />
       <Tabs.Screen name="ahead"
-        options={{ title: 'Ahead', tabBarIcon: tab('airplane', 'airplane', '◷') }} />
+        options={{ title: 'Horizon', tabBarIcon: tab('airplane', 'airplane', '◷') }} />
       <Tabs.Screen name="hub"
         options={{ title: 'Hub', tabBarIcon: tab('chart.bar', 'chart.bar.fill', '◎') }} />
     </Tabs>

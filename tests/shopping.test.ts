@@ -2,8 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState, migrate } from '../src/domain/state';
 import {
-  ensureWeek, resetShopFromTemplate, shopCounts, shopListFor, shopTemplateOf, shoppingList,
+  buildTripItems, ensureWeek, marksOn, resetShopFromTemplate, shopCounts, shopListFor,
+  shopTemplateOf, shoppingList, tripTemplateOf,
 } from '../src/domain/week';
+import { TRIP_CATEGORIES } from '../src/domain/catalogue';
 import type { AppState, ShopGroup } from '../src/domain/types';
 
 const TUE = new Date(2026, 8, 15);
@@ -117,4 +119,49 @@ test('a list saved with one tick is read as needed, not as already bought', () =
   assert.equal(items[0].done, true, 'and what was bought stays bought');
   assert.equal(items[1].need, true, 'everything on the old list was on the list');
   assert.equal(items[1].done, false);
+});
+
+test('the standard trip checklist starts from the built-in one', () => {
+  const s = fresh();
+  const tpl = tripTemplateOf(s);
+  assert.deepEqual(Object.keys(tpl), TRIP_CATEGORIES);
+  assert.ok(tpl.Flights.includes('Check in online'));
+});
+
+test('a trip is built from your checklist plus what that kind adds', () => {
+  const s = fresh();
+  tripTemplateOf(s).Flights.push('Seat booked');
+  const items = buildTripItems(s, 'race');
+  const flights = items.filter((x) => x.cat === 'Flights').map((x) => x.text);
+  assert.ok(flights.includes('Seat booked'), 'yours');
+  assert.ok(flights.includes('Race kit in hand luggage — never the hold'), 'and the kind’s');
+});
+
+test('an item in both your list and the kind is only added once', () => {
+  const s = fresh();
+  tripTemplateOf(s).Flights.push('Race kit in hand luggage — never the hold');
+  const flights = buildTripItems(s, 'race').filter((x) => x.cat === 'Flights');
+  const dupes = flights.filter((x) => x.text.startsWith('Race kit'));
+  assert.equal(dupes.length, 1);
+});
+
+test('removing something from the checklist keeps it off new trips', () => {
+  const s = fresh();
+  const tpl = tripTemplateOf(s);
+  tpl.Flights = tpl.Flights.filter((x) => x !== 'Check in online');
+  const flights = buildTripItems(s, 'weekend').map((x) => x.text);
+  assert.ok(!flights.includes('Check in online'));
+});
+
+test('a day inside a trip is marked, and so is the day a countdown lands on', () => {
+  const s = fresh();
+  s.trips = [{ id: 'tr', name: 'Lisbon', tplId: 'holiday', start: '2026-09-16',
+    end: '2026-09-18', items: [] }];
+  s.events = [{ id: 'e', name: 'Dentist', date: '2026-09-20', source: 'added' }];
+
+  assert.deepEqual(marksOn(s, '2026-09-17'), { trips: ['Lisbon'], events: [] },
+    'the middle of a trip counts, not just the first day');
+  assert.deepEqual(marksOn(s, '2026-09-18'), { trips: ['Lisbon'], events: [] }, 'and the last day');
+  assert.deepEqual(marksOn(s, '2026-09-19'), { trips: [], events: [] });
+  assert.deepEqual(marksOn(s, '2026-09-20'), { trips: [], events: ['Dentist'] });
 });

@@ -1,34 +1,28 @@
 import React, { useState } from 'react';
+import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import {
-  Body, Button, Chip, CornerMark, Empty, Field, Mono, Note, Screen, Section, SectionHead, Tick,
+  Body, Button, Chip, CornerMark, DateButton, Empty, Field, Mono, Note, Screen, Section,
+  SectionHead, Tick,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { daysUntil, parseISO } from '../../src/domain/dates';
-import { TRIP_BASE, TRIP_CATEGORIES, TRIP_TEMPLATES } from '../../src/domain/catalogue';
-import { uid } from '../../src/domain/week';
+import { TRIP_CATEGORIES, TRIP_TEMPLATES } from '../../src/domain/catalogue';
+import { buildTripItems, uid } from '../../src/domain/week';
 import type { Trip, TripItem } from '../../src/domain/types';
 
 const unit = (n: number) => (n === 0 ? 'today' : n === 1 ? 'day' : 'days');
 const fmt = (iso: string) =>
   parseISO(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 
-function buildItems(tplId: string): TripItem[] {
-  const tpl = TRIP_TEMPLATES[tplId] ?? TRIP_TEMPLATES.weekend;
-  const out: TripItem[] = [];
-  for (const cat of TRIP_CATEGORIES) {
-    for (const text of [...(TRIP_BASE[cat] ?? []), ...(tpl.extra[cat] ?? [])]) {
-      out.push({ id: uid('c'), cat, text, done: false });
-    }
-  }
-  return out;
-}
+
 
 export default function AheadScreen() {
   const t = useTheme();
+  const router = useRouter();
   const { state, today, update } = useStore();
   const [open, setOpen] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -53,7 +47,7 @@ export default function AheadScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: -10 }}>
           <CornerMark />
           <Mono style={{ letterSpacing: 1.6, textTransform: 'uppercase', fontSize: 11 }}>
-            Ahead
+            Horizon
           </Mono>
         </View>
         <Section>
@@ -93,6 +87,8 @@ export default function AheadScreen() {
 
         <Section>
           <SectionHead title="Trips" right={`${trips.length} upcoming`} />
+          <Button tone="ghost" title="Edit the standard checklist"
+            onPress={() => router.push('/trip-template')} />
           {trips.length === 0 ? <Empty>No trips booked in.</Empty> : null}
           {trips.map((trip) => (
             <TripCard
@@ -113,10 +109,20 @@ export default function AheadScreen() {
             <Field value={newTrip.name} placeholder="Where to?"
               onChangeText={(v) => setNewTrip((p) => ({ ...p, name: v }))} />
             <View style={{ flexDirection: 'row', gap: 7 }}>
-              <Field value={newTrip.start} placeholder="From  YYYY-MM-DD"
-                onChangeText={(v) => setNewTrip((p) => ({ ...p, start: v }))} />
-              <Field value={newTrip.end} placeholder="To  YYYY-MM-DD"
-                onChangeText={(v) => setNewTrip((p) => ({ ...p, end: v }))} />
+              <DateButton
+                title="Going out"
+                placeholder="From…"
+                value={newTrip.start}
+                onChange={(v) => setNewTrip((p) => ({ ...p, start: v, end: p.end && p.end < v ? v : p.end }))}
+              />
+              <DateButton
+                title="Coming back"
+                placeholder="To…"
+                value={newTrip.end}
+                minimum={/^\d{4}-\d{2}-\d{2}$/.test(newTrip.start)
+                  ? parseISO(newTrip.start) : undefined}
+                onChange={(v) => setNewTrip((p) => ({ ...p, end: v }))}
+              />
             </View>
             <View style={{ flexDirection: 'row', gap: 7, flexWrap: 'wrap' }}>
               {Object.entries(TRIP_TEMPLATES).map(([k, v]) => (
@@ -142,7 +148,7 @@ export default function AheadScreen() {
                 ? newTrip.end : start;
               const id = uid('tr');
               update((d) => {
-                d.trips.push({ id, name: name.trim(), tplId, start, end, items: buildItems(tplId) });
+                d.trips.push({ id, name: name.trim(), tplId, start, end, items: buildTripItems(d, tplId) });
               });
               setOpen(id);
               setNewTrip({ name: '', start: '', end: '', tplId: 'weekend' });
@@ -188,8 +194,12 @@ export default function AheadScreen() {
           <View style={{ flexDirection: 'row', gap: 7, paddingTop: 7 }}>
             <Field value={newEvent.name} placeholder="What is it?"
               onChangeText={(v) => setNewEvent((p) => ({ ...p, name: v }))} />
-            <Field value={newEvent.date} placeholder="YYYY-MM-DD"
-              onChangeText={(v) => setNewEvent((p) => ({ ...p, date: v }))} />
+            <DateButton
+              title="When is it?"
+              placeholder="Pick a date…"
+              value={newEvent.date}
+              onChange={(v) => setNewEvent((p) => ({ ...p, date: v }))}
+            />
             <Button title="Add" onPress={() => {
               if (!newEvent.name.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(newEvent.date)) return;
               update((d) => {

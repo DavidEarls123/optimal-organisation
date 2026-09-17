@@ -6,7 +6,7 @@ import { useStore } from '../store/store';
 import { useTheme } from '../theme/ThemeProvider';
 import { radius } from '../theme/tokens';
 import { DAY_LETTERS, addDays, isoOf, isoWeekId, parseISO, weekNumber } from '../domain/dates';
-import { ensureWeek } from '../domain/week';
+import { ensureWeek, marksOn } from '../domain/week';
 import { dayScore, isCurrentWeek, templateOf, todayIndex } from '../domain/scoring';
 import { CornerMark, Mono } from './primitives';
 
@@ -121,8 +121,18 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
                 fontVariant: ['tabular-nums'] }}>
                 {addDays(parseISO(week.monday), d).getDate()}
               </Text>
-              <View style={{ width: 4, height: 4, borderRadius: 2, marginTop: -2,
-                backgroundColor: d === ti && current ? t.accent : 'transparent' }} />
+              {/* A trip or a countdown on this day, so it shows without going
+                  to Horizon to find it. */}
+              <Text style={{ fontSize: 8, lineHeight: 10, marginTop: -2, height: 10,
+                color: selected ? t.sheet : t.ink2 }}>
+                {(() => {
+                  const m = marksOn(state, isoOf(addDays(parseISO(week.monday), d)));
+                  return m.trips.length ? '✈︎' : m.events.length ? '★' : ' ';
+                })()}
+              </Text>
+              <View style={{ width: 4, height: 4, borderRadius: 2, marginTop: -1,
+                backgroundColor: d === ti && current
+                  ? (selected ? t.sheet : t.accent) : 'transparent' }} />
             </Pressable>
           );
         })}

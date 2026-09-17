@@ -12,7 +12,7 @@ import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES, dayDateIso, isoOf, parseISO } from '../../src/domain/dates';
-import { moveTask, nudgeTask, uid } from '../../src/domain/week';
+import { marksOn, moveTask, nudgeTask, uid } from '../../src/domain/week';
 import {
   activeHabits, dayOutstanding, fromKg, habitDayStatus, habitDone, habitTarget, pacing,
   planLabel, toKg,
@@ -217,6 +217,7 @@ export default function DayScreen() {
   const anyday = acts.filter((h) => habitDayStatus(week, h.id, day) === 'anyday');
   const notToday = acts.filter((h) => habitDayStatus(week, h.id, day) === 'off');
   const watched = week.watched[day] ?? [];
+  const marks = marksOn(state, dateIso);
 
   return (
     <Screen>
@@ -241,6 +242,28 @@ export default function DayScreen() {
           {`${live.filter((x) => x.state === 'done').length}/${live.length}`}
         </Mono>
       </View>
+
+      {marks.trips.length || marks.events.length ? (
+        <View style={{ paddingHorizontal: 18, paddingBottom: 8, flexDirection: 'row',
+          flexWrap: 'wrap', gap: 6, backgroundColor: t.sheet }}>
+          {marks.trips.map((name) => (
+            <View key={`t-${name}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+              borderWidth: 1, borderColor: t.accentLine, backgroundColor: t.accentSoft,
+              borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 4 }}>
+              <Text style={{ fontSize: 11 }}>✈︎</Text>
+              <Text style={{ fontSize: 11.5, fontWeight: '600', color: t.accent }}>{name}</Text>
+            </View>
+          ))}
+          {marks.events.map((name) => (
+            <View key={`e-${name}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+              borderWidth: 1, borderColor: t.rule, backgroundColor: t.sunk,
+              borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 4 }}>
+              <Text style={{ fontSize: 11 }}>★</Text>
+              <Text style={{ fontSize: 11.5, fontWeight: '600', color: t.ink2 }}>{name}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       <Body scrollRef={scroller} onScroll={(y) => setCondensed(y > 18)}>
         {off ? (

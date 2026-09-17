@@ -30,6 +30,8 @@ export default function RootLayout() {
                 options={{ presentation: 'modal', headerShown: true, title: 'Settings' }} />
               <Stack.Screen name="shop-template"
                 options={{ presentation: 'modal', headerShown: true, title: 'Standard list' }} />
+              <Stack.Screen name="trip-template"
+                options={{ presentation: 'modal', headerShown: true, title: 'Standard checklist' }} />
             </Stack>
           </ThemeProvider>
         </StoreProvider>
