@@ -667,3 +667,49 @@ export function sectionsOf(state: AppState, weekId: string): Section[] {
   if (tpl?.sections?.length) return tpl.sections;
   return state.sections;
 }
+
+/** A section's tasks in the order they are drawn: still to do at the top in
+ *  the order you put them, then the done pile with the most recently ticked
+ *  first — so a task you finish drops to the top of what is finished, and the
+ *  first thing you did that day ends up at the very bottom. */
+export function sortForDisplay(tasks: Task[]): Task[] {
+  const open = tasks.filter((x) => x.state !== 'done');
+  const done = tasks
+    .filter((x) => x.state === 'done')
+    .sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0));
+  return [...open, ...done];
+}
+
+/** The days a task can be moved to from the strip: a window around the day it
+ *  is on, with nothing already past offered — there is no point rescheduling
+ *  something into a day that has gone. The date picker can still reach back
+ *  when a past day is genuinely what you want. */
+export function moveChoices(
+  fromDateIso: string, todayIso: string, span = 3, size = 7,
+): { iso: string; day: number; date: number; isFrom: boolean; isToday: boolean }[] {
+  const from = parseISO(fromDateIso);
+  const out: string[] = [];
+  for (let i = -span; i <= span; i += 1) out.push(isoOf(addDays(from, i)));
+
+  // With the whole window behind us, start again at today rather than the day
+  // after it — today is the first day you can still move something to.
+  let kept = out.filter((iso) => iso >= todayIso);
+  if (!kept.length) kept = [todayIso];
+  // Dropping the past shortens the window, so make it up at the far end and
+  // the strip stays the same width whichever day you are on.
+  while (kept.length < size) {
+    kept.push(isoOf(addDays(parseISO(kept[kept.length - 1]), 1)));
+  }
+  kept = kept.slice(0, size);
+
+  return kept.map((iso) => {
+    const d = parseISO(iso);
+    return {
+      iso,
+      day: (d.getDay() + 6) % 7,
+      date: d.getDate(),
+      isFrom: iso === fromDateIso,
+      isToday: iso === todayIso,
+    };
+  });
+}

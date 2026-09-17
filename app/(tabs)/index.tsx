@@ -17,7 +17,8 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES, dayDateIso, isoOf, parseISO } from '../../src/domain/dates';
 import {
-  marksOn, moveTask, nudgeTask, orderedTasks, placeTask, sectionsOf, uid,
+  marksOn, moveChoices, moveTask, nudgeTask, orderedTasks, placeTask, sectionsOf,
+  sortForDisplay, uid,
 } from '../../src/domain/week';
 import {
   activeHabits, dayOutstanding, fromKg, habitDayStatus, habitDone, habitTarget, pacing,
@@ -34,7 +35,7 @@ export const TASK_LIMIT = 120;
 export default function DayScreen() {
   const t = useTheme();
   const router = useRouter();
-  const { state, weekId, day, today, update, setWeekId, setDay } = useStore();
+  const { state, weekId, day, today, update, setWeekId, setDay, undo, undoLabel } = useStore();
   const week = state.weeks[weekId];
   const [moveId, setMoveId] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
@@ -70,6 +71,12 @@ export default function DayScreen() {
   const dateIso = week ? dayDateIso(week.monday, day) : '';
   // Headings come from the week, which took them from its template.
   const sections = useMemo(() => sectionsOf(state, weekId), [state, weekId]);
+  // Where a task can be moved to from the strip: forward only, because there
+  // is no sense in rescheduling something into a day that has gone.
+  const choices = useMemo(
+    () => (dateIso ? moveChoices(dateIso, isoOf(today)) : []),
+    [dateIso, today],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -107,12 +114,16 @@ export default function DayScreen() {
     update((d) => {
       const arr = d.weeks[weekId].tasks[day] ?? [];
       const x = arr.find((y) => y.id === id);
-      if (x) x.state = next;
-    });
+      if (!x) return;
+      x.state = next;
+      // Stamped so the done pile can be ordered by when, not by where it was.
+      if (next === 'done') x.doneAt = Date.now();
+      else delete x.doneAt;
+    }, next === 'done' ? 'ticking that off' : 'unticking that');
   }, [update, weekId, day]);
 
   const reorder = useCallback((id: string, dir: -1 | 1) => {
-    update((d) => { nudgeTask(d, weekId, day, id, dir); });
+    update((d) => { nudgeTask(d, weekId, day, id, dir); }, 'moving that task');
   }, [update, weekId, day]);
 
   /** Where in the day, ignoring the dragged task, the finger currently is.
@@ -155,7 +166,7 @@ export default function DayScreen() {
     const to = dropIndex(id, dy);
     setDragId(null);
     setDragTo(null);
-    update((d) => { placeTask(d, weekId, day, id, to); });
+    update((d) => { placeTask(d, weekId, day, id, to); }, 'moving that task');
   }, [dropIndex, update, weekId, day]);
 
   /** Each task's position in the day once the dragged one is lifted out of it,
@@ -188,7 +199,7 @@ export default function DayScreen() {
               onPress: () => update((d) => {
                 const arr = d.weeks[weekId].tasks[day] ?? [];
                 d.weeks[weekId].tasks[day] = arr.filter((y) => y.id !== id);
-              }),
+              }, `deleting ${text}`),
             }],
          ),
        }],
@@ -197,7 +208,7 @@ export default function DayScreen() {
 
   const doMove = useCallback((id: string, targetIso: string) => {
     let landed: { weekId: string; dayIndex: number; sectionId: string } | null = null;
-    update((d) => { landed = moveTask(d, weekId, day, id, targetIso); });
+    update((d) => { landed = moveTask(d, weekId, day, id, targetIso); }, 'rescheduling that task');
     setMoveId(null);
     setShowPicker(false);
     if (landed) {
@@ -234,7 +245,7 @@ export default function DayScreen() {
           stamps[habitId] = now.getHours() * 60 + now.getMinutes();
         }
       }
-    });
+    }, `that habit tick`);
   }, [state.habits, router, update, weekId, day]);
 
   /** Records a weight, or marks the day as one you did not weigh in. */
@@ -311,6 +322,20 @@ export default function DayScreen() {
         <Mono style={{ fontSize: condensed ? 11 : 12.5 }}>
           {`${live.filter((x) => x.state === 'done').length}/${live.length}`}
         </Mono>
+        {undoLabel ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Undo ${undoLabel}`}
+            onPress={undo}
+            hitSlop={10}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+              borderWidth: 1, borderColor: t.rule, borderRadius: radius.pill,
+              paddingHorizontal: 9, paddingVertical: 3 }}
+          >
+            <Text style={{ fontSize: 12, color: t.ink2 }}>↩</Text>
+            <Text style={{ fontSize: 11.5, color: t.ink2, fontWeight: '600' }}>Undo</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {marks.trips.length || marks.events.length ? (
@@ -409,10 +434,8 @@ export default function DayScreen() {
         <Section>
           {sections.map((sc) => {
             const inSec = live.filter((x) => x.sec === sc.id);
-            // Ticked work sinks, so what is left to do is always at the top.
-            const items = [...inSec.filter((x) => x.state !== 'done'),
-                           ...inSec.filter((x) => x.state === 'done')];
-            const done = inSec.length - items.filter((x) => x.state !== 'done').length;
+            const items = sortForDisplay(inSec);
+            const done = inSec.filter((x) => x.state === 'done').length;
             return (
               <View key={sc.id}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 13,
@@ -438,14 +461,14 @@ export default function DayScreen() {
                       onRename={(text) => update((d) => {
                         const item = (d.weeks[weekId].tasks[day] ?? []).find((y) => y.id === x.id);
                         if (item) item.text = text;
-                      })}
-                      onMoveToDay={(d) => doMove(x.id, dayDateIso(week.monday, d))}
+                      }, 'renaming that task')}
+                      choices={choices}
+                      onMoveToDate={(iso) => doMove(x.id, iso)}
                       onPickDate={() => setShowPicker(true)}
                       onMeasure={(h) => { rowH.current[x.id] = h; }}
                       onDragMove={(dy) => onDragMove(x.id, dy)}
                       onDragEnd={(dy) => onDragEnd(x.id, dy)}
                       dragging={dragId === x.id}
-                      currentDay={day}
                     />
                     </React.Fragment>
                   ))}
@@ -856,13 +879,16 @@ function TagPicker({ value, onChange }: { value: string; onChange: (v: string) =
 }
 
 function TaskRow({
-  task, open, onToggle, onDelete, onOpenMove, onReorder, onMoveToDay, onPickDate, onRename,
-  onMeasure, onDragMove, onDragEnd, dragging, currentDay,
+  task, open, onToggle, onDelete, onOpenMove, onReorder, onPickDate, onRename,
+  choices, onMoveToDate, onMeasure, onDragMove, onDragEnd, dragging,
 }: {
-  task: Task; open: boolean; currentDay: number;
+  task: Task; open: boolean;
   onToggle: () => void; onDelete: () => void; onOpenMove: () => void;
-  onReorder: (dir: -1 | 1) => void; onMoveToDay: (d: number) => void; onPickDate: () => void;
+  onReorder: (dir: -1 | 1) => void; onPickDate: () => void;
   onRename: (text: string) => void;
+  /** Forward days offered in the strip, computed once by the screen. */
+  choices: ReturnType<typeof moveChoices>;
+  onMoveToDate: (iso: string) => void;
   onMeasure: (h: number) => void;
   onDragMove: (dy: number) => void;
   onDragEnd: (dy: number) => void;
@@ -986,19 +1012,31 @@ function TaskRow({
 
       {open ? (
         <View style={{ gap: 7, paddingTop: 9 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Mono style={{ width: 62, letterSpacing: 1, textTransform: 'uppercase' }}>This week</Mono>
-            {DAY_LETTERS.map((l, d) => (
+          <Mono style={{ letterSpacing: 1, textTransform: 'uppercase', fontSize: 10 }}>
+            Move to
+          </Mono>
+          <View style={{ flexDirection: 'row', gap: 4 }}>
+            {choices.map((c) => (
               <Pressable
-                key={d}
-                disabled={d === currentDay}
-                onPress={() => onMoveToDay(d)}
+                key={c.iso}
+                disabled={c.isFrom}
+                onPress={() => onMoveToDate(c.iso)}
                 accessibilityRole="button"
-                accessibilityLabel={DAY_NAMES[d]}
-                style={{ flex: 1, borderWidth: 1, borderColor: t.rule, borderRadius: radius.sm + 1,
-                  paddingVertical: 6, alignItems: 'center', opacity: d === currentDay ? 0.3 : 1 }}
+                accessibilityLabel={`${DAY_NAMES[c.day]} the ${c.date}`}
+                style={{ flex: 1, borderWidth: 1, borderRadius: radius.sm + 1,
+                  paddingVertical: 6, alignItems: 'center', gap: 1,
+                  borderColor: c.isFrom ? t.accent : c.isToday ? t.accentLine : t.rule,
+                  backgroundColor: c.isFrom ? t.accentSoft : 'transparent',
+                  opacity: c.isFrom ? 0.55 : 1 }}
               >
-                <Text style={{ fontSize: 11, fontWeight: '600', color: t.ink2 }}>{l}</Text>
+                <Text style={{ fontSize: 9.5, letterSpacing: 0.4,
+                  color: c.isToday ? t.accent : t.ink3 }}>
+                  {DAY_LETTERS[c.day]}
+                </Text>
+                <Text style={{ fontSize: 13, fontWeight: '700',
+                  color: c.isFrom ? t.accent : t.ink, fontVariant: ['tabular-nums'] }}>
+                  {c.date}
+                </Text>
               </Pressable>
             ))}
           </View>

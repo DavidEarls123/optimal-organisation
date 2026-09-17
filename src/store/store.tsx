@@ -12,6 +12,9 @@ import { todayIndex } from '../domain/scoring';
 const KEY = 'optimal-week/state/v1';
 /** One step of undo, so an accidental restore is never the end of it. */
 const PREV_KEY = 'optimal-week/state/previous';
+/** How many steps back Undo reaches. Held in memory only — closing the app
+ *  is a clean slate, because undoing something from last week is not undo. */
+const UNDO_DEPTH = 25;
 /** The last state that was read back successfully. Rotated once per launch,
  *  before anything is written, so a bad write can never reach both copies. */
 const SAFE_KEY = 'optimal-week/state/last-good';
@@ -26,8 +29,13 @@ interface Store {
   today: Date;
   setWeekId: (id: string) => void;
   setDay: (d: number) => void;
-  /** Mutate a draft copy; the result is persisted automatically. */
-  update: (mutator: (draft: AppState) => void) => void;
+  /** Mutate a draft copy; the result is persisted automatically.
+   *  Pass a label to describe the change, which Undo then quotes back. */
+  update: (mutator: (draft: AppState) => void, label?: string) => void;
+  /** Step back through recent changes. */
+  undo: () => void;
+  /** What undoing would put back, or null when there is nothing to undo. */
+  undoLabel: string | null;
   /** Replace everything, keeping one step of undo. Used by Restore. */
   replaceAll: (next: AppState) => void;
   /** Put back whatever was here before the last restore. */
@@ -188,14 +196,44 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     void write(s);
   }, [today, write]);
 
-  const update = useCallback((mutator: (draft: AppState) => void) => {
+  /** Recent states, newest last. Deep copies, which is affordable because the
+   *  whole thing is a few hundred kilobytes of JSON and the cap is small. */
+  const history = useRef<{ state: AppState; label: string }[]>([]);
+  /** Bumped whenever the stack changes, purely to re-render the Undo control.
+   *  The stack itself lives in a ref: it is not drawn, only read. */
+  const [, bumpUndo] = useState(0);
+
+  const update = useCallback((mutator: (draft: AppState) => void, label = 'that change') => {
     setState((prev) => {
       const draft = clone(prev);
       mutator(draft);
+      // Only remember a step that actually changed something, so Undo never
+      // sits there doing nothing. The guard on `prev` also means a double
+      // invocation of this updater cannot push the same step twice.
+      const stack = history.current;
+      if (stack[stack.length - 1]?.state !== prev
+          && JSON.stringify(draft) !== JSON.stringify(prev)) {
+        history.current = [...stack, { state: prev, label }].slice(-UNDO_DEPTH);
+      }
       persist(draft);
       return draft;
     });
+    bumpUndo((n) => n + 1);
   }, [persist]);
+
+  const undo = useCallback(() => {
+    const stack = history.current;
+    if (!stack.length) return;
+    const last = stack[stack.length - 1];
+    history.current = stack.slice(0, -1);
+    setState(last.state);
+    persist(last.state);
+    bumpUndo((n) => n + 1);
+  }, [persist]);
+
+  const undoLabel = history.current.length
+    ? history.current[history.current.length - 1].label
+    : null;
 
   /** Land a restored state: stash the current one first, then switch to it. */
   const replaceAll = useCallback((next: AppState) => {
@@ -244,10 +282,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [today, persist]);
 
   const value = useMemo<Store>(
-    () => ({ state, ready, weekId, day, today, setWeekId, setDay, update,
+    () => ({ state, ready, weekId, day, today, setWeekId, setDay, update, undo, undoLabel,
       replaceAll, undoReplace, canUndo, reset, trouble, startFresh }),
-    [state, ready, weekId, day, today, update, replaceAll, undoReplace, canUndo, reset,
-      trouble, startFresh],
+    [state, ready, weekId, day, today, update, undo, undoLabel, replaceAll, undoReplace,
+      canUndo, reset, trouble, startFresh],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

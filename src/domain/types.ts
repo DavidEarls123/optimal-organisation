@@ -47,6 +47,9 @@ export interface Task {
   /** Trackable id; ticking a tagged task logs a session. */
   track: string | null;
   sec: string;
+  /** When it was ticked, as a count of milliseconds. Only used to order the
+   *  done pile: the one you just finished sits at the top of it. */
+  doneAt?: number;
 }
 
 /** Two ticks, not one. `need` is the weekly decision about what to buy;
