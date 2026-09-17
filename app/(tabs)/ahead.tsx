@@ -47,7 +47,7 @@ export default function AheadScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: -10 }}>
           <CornerMark />
           <Mono style={{ letterSpacing: 1.6, textTransform: 'uppercase', fontSize: 11 }}>
-            Horizon
+            Goals
           </Mono>
         </View>
         <Section>

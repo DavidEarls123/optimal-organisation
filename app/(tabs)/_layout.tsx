@@ -39,16 +39,18 @@ export default function TabsLayout() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
       }}
     >
+      {/* Order matters: Hub sits in the middle because it is the feedback, not
+          an afterthought at the end. */}
       <Tabs.Screen name="index"
         options={{ title: 'Day', tabBarIcon: tab('sun.max', 'sun.max.fill', '◧') }} />
       <Tabs.Screen name="week"
         options={{ title: 'Week', tabBarIcon: tab('calendar', 'calendar', '▦') }} />
+      <Tabs.Screen name="hub"
+        options={{ title: 'Hub', tabBarIcon: tab('chart.bar', 'chart.bar.fill', '◎') }} />
       <Tabs.Screen name="lists"
         options={{ title: 'Lists', tabBarIcon: tab('checklist', 'checklist.checked', '☰') }} />
       <Tabs.Screen name="ahead"
-        options={{ title: 'Horizon', tabBarIcon: tab('airplane', 'airplane', '◷') }} />
-      <Tabs.Screen name="hub"
-        options={{ title: 'Hub', tabBarIcon: tab('chart.bar', 'chart.bar.fill', '◎') }} />
+        options={{ title: 'Goals', tabBarIcon: tab('flag', 'flag.fill', '◷') }} />
     </Tabs>
   );
 }

@@ -22,9 +22,9 @@ export default function TemplateScreen() {
     const lines = [
       c && c.added.length ? `Adds ${c.added.map(name).join(', ')}.` : '',
       c && c.removed.length ? `Stops asking for ${c.removed.map(name).join(', ')}.` : '',
-      c && c.dropped ? `Replaces ${c.dropped} planned task${c.dropped === 1 ? '' : 's'} you have not done.` : '',
+      c && c.adds ? `Adds ${c.adds} suggested task${c.adds === 1 ? '' : 's'} to the week.` : '',
       c && (c.keptDone || c.keptOwn)
-        ? `Keeps everything you have ticked${c.keptOwn ? ' and everything you typed in' : ''}.`
+        ? `Every task already on the week stays — all ${c.keptDone + c.keptOwn} of them.`
         : '',
       'Habits you have already ticked stay ticked and keep counting.',
     ].filter(Boolean);

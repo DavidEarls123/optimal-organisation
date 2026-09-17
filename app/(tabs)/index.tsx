@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Animated, Keyboard, Linking, PanResponder, Pressable, ScrollView, Text, View,
+  Alert, Keyboard, Linking, Pressable, ScrollView, Text, View,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 
@@ -828,31 +830,32 @@ function TaskRow({
   const done = task.state === 'done';
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.text);
-  const lift = useRef(new Animated.Value(0)).current;
-  const held = useRef(false);
+  const lift = useSharedValue(0);
 
-  // Hold the grip, then move. A drag that starts without the hold is the list
-  // scrolling, and has to stay the list scrolling.
-  const pan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_e, g) => held.current && Math.abs(g.dy) > 2,
-      onPanResponderMove: (_e, g) => {
-        lift.setValue(g.dy);
-        onDragMove();
-      },
-      onPanResponderRelease: (_e, g) => {
-        held.current = false;
-        lift.setValue(0);
-        onDragEnd(g.dy);
-      },
-      onPanResponderTerminate: () => {
-        held.current = false;
-        lift.setValue(0);
-        onDragEnd(0);
-      },
-    }),
-  ).current;
+  // Hold, then drag. activateAfterLongPress is the whole trick: until the hold
+  // completes the gesture never activates, so the list scrolls normally.
+  // The hand-rolled PanResponder version of this never fired, because the
+  // Pressable underneath took the responder before the pan could ask for it.
+  const drag = useMemo(
+    () => Gesture.Pan()
+      .activateAfterLongPress(220)
+      .onStart(() => {
+        runOnJS(onDragMove)();
+      })
+      .onUpdate((e) => {
+        lift.value = e.translationY;
+      })
+      .onEnd((e) => {
+        runOnJS(onDragEnd)(e.translationY);
+        lift.value = 0;
+      })
+      .onFinalize(() => {
+        lift.value = 0;
+      }),
+    [lift, onDragMove, onDragEnd],
+  );
+
+  const lifted = useAnimatedStyle(() => ({ transform: [{ translateY: lift.value }] }));
 
   const commit = () => {
     const next = draft.trim().slice(0, TASK_LIMIT);
@@ -863,29 +866,31 @@ function TaskRow({
   return (
     <Animated.View
       onLayout={(e) => onMeasure(e.nativeEvent.layout.height)}
-      style={{
-        borderBottomWidth: 1, borderBottomColor: t.rule2, paddingVertical: 8,
-        transform: [{ translateY: dragging ? lift : 0 }],
-        opacity: dragging ? 0.92 : 1,
-        zIndex: dragging ? 10 : 0,
-        backgroundColor: dragging ? t.sheet2 : 'transparent',
-        borderRadius: dragging ? radius.md : 0,
-      }}
+      style={[
+        {
+          borderBottomWidth: 1, borderBottomColor: t.rule2, paddingVertical: 8,
+          opacity: dragging ? 0.95 : 1,
+          zIndex: dragging ? 10 : 0,
+          elevation: dragging ? 6 : 0,
+          backgroundColor: dragging ? t.sheet2 : 'transparent',
+          borderRadius: dragging ? radius.md : 0,
+        },
+        lifted,
+      ]}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
         {/* The grip. Hold it, then drag. */}
-        <Pressable
-          onLongPress={() => { held.current = true; }}
-          onPressOut={() => { setTimeout(() => { held.current = false; }, 400); }}
-          delayLongPress={180}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={`Hold to move ${task.text}`}
-          {...pan.panHandlers}
-        >
-          <Text style={{ color: dragging ? t.accent : t.ink3, fontSize: 14, lineHeight: 17,
-            paddingHorizontal: 2 }}>⠿</Text>
-        </Pressable>
+        <GestureDetector gesture={drag}>
+          <View
+            accessible
+            accessibilityRole="adjustable"
+            accessibilityLabel={`Hold to move ${task.text}`}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={{ color: dragging ? t.accent : t.ink3, fontSize: 15, lineHeight: 18,
+              paddingHorizontal: 3 }}>⠿</Text>
+          </View>
+        </GestureDetector>
         <Pressable onPress={onToggle} accessibilityRole="checkbox"
           accessibilityState={{ checked: done }} accessibilityLabel={task.text} hitSlop={6}>
           <Tick on={done} />

@@ -58,14 +58,22 @@ test('a ticked scaffold task survives the switch', () => {
   assert.equal(still.state, 'done');
 });
 
-test('scaffold tasks still open are replaced by the new template', () => {
+test('nothing on the week is thrown away, ticked or not', () => {
   const s = fresh('run');
-  const before = tasksOn(s, 1).filter((x) => x.plan && x.state === 'open').map((x) => x.text);
+  const before = tasksOn(s, 1).map((x) => x.text);
+  assert.ok(before.length > 0);
   applyTemplate(s, WEEK, 'deload');
   const after = tasksOn(s, 1).map((x) => x.text);
   for (const text of before) {
-    assert.ok(!after.includes(text), `${text} belonged to the old template`);
+    assert.ok(after.includes(text), `${text} was still a thing you meant to do`);
   }
+});
+
+test('the new template adds its own on top', () => {
+  const s = fresh('deload');
+  const before = tasksOn(s, 1).length;
+  applyTemplate(s, WEEK, 'run');
+  assert.ok(tasksOn(s, 1).length >= before, 'the week grows rather than being rebuilt');
 });
 
 test('tasks typed in by hand are never touched', () => {
@@ -117,8 +125,8 @@ test('the change is described before it happens', () => {
   const c = templateChange(s, WEEK, 'deload');
   assert.ok(c);
   assert.equal(c.keptDone, 1);
-  assert.equal(c.keptOwn, 1);
-  assert.ok(c.dropped > 0);
+  assert.ok(c.keptOwn >= 1);
+  assert.ok(c.adds > 0, 'and says how many it would add');
   assert.deepEqual(c.removedButDone.filter((id) => id === 'guitar'), []);
 });
 

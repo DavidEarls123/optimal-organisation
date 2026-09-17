@@ -77,11 +77,22 @@ export function createWeek(state: AppState, mondayIso: string, templateId: strin
 export function ensureWeek(state: AppState, mondayIso: string): string {
   const id = isoWeekId(parseISO(mondayIso));
   if (!state.weeks[id]) {
-    const earlier = Object.keys(state.weeks).sort().filter((x) => x < id).pop();
-    const templateId = earlier ? state.weeks[earlier].templateId : 'general';
-    state.weeks[id] = createWeek(state, mondayIso, templateId);
+    state.weeks[id] = createWeek(state, mondayIso, latestTemplateId(state));
   }
   return id;
+}
+
+/** The template the newest week is on — the one most recently decided. A week
+ *  made now, whenever it falls, starts from that rather than from whatever
+ *  happened to be running nearest to it in the calendar. It is changeable on
+ *  the week itself either way. */
+export function latestTemplateId(state: AppState): string {
+  const ids = Object.keys(state.weeks).sort();
+  for (let i = ids.length - 1; i >= 0; i -= 1) {
+    const tid = state.weeks[ids[i]]?.templateId;
+    if (tid && state.templates[tid]) return tid;
+  }
+  return state.templateOrder[0] ?? 'general';
 }
 
 export function weekIds(state: AppState): string[] {
@@ -394,11 +405,11 @@ export function nextWeekMonday(mondayIso: string, delta: number): string {
 /** What changing a week's template would do, so it can be said out loud before
  *  it happens rather than discovered afterwards. */
 export interface TemplateChange {
-  /** Scaffold tasks still open, which the new template replaces. */
-  dropped: number;
-  /** Scaffold tasks already ticked, which are kept. */
+  /** Tasks the new template would add that are not already on the week. */
+  adds: number;
+  /** Tasks already ticked. Kept, like everything else. */
   keptDone: number;
-  /** Tasks typed in by hand, which are never touched. */
+  /** Tasks still open. Kept, like everything else. */
   keptOwn: number;
   /** Habits the new plan asks for that the old one did not. */
   added: string[];
@@ -417,20 +428,27 @@ export function templateChange(
   const before = new Set(Object.keys(w.habitPlan));
   const after = new Set(Object.keys(next));
 
-  let dropped = 0;
+  let adds = 0;
   let keptDone = 0;
   let keptOwn = 0;
+  const here = new Set<string>();
   for (let d = 0; d < 7; d += 1) {
     for (const x of w.tasks[d] ?? []) {
-      if (!x.plan) keptOwn += 1;
-      else if (x.state === 'done') keptDone += 1;
-      else dropped += 1;
+      here.add(`${d}:${x.text.trim().toLowerCase()}`);
+      if (x.state === 'done') keptDone += 1;
+      else keptOwn += 1;
+    }
+  }
+  // Nothing is dropped any more; what changes is what gets added.
+  for (let d = 0; d < 7; d += 1) {
+    for (const x of planTasks(state, templateId, d)) {
+      if (!here.has(`${d}:${x.text.trim().toLowerCase()}`)) adds += 1;
     }
   }
 
   const removed = [...before].filter((id) => !after.has(id));
   return {
-    dropped,
+    adds,
     keptDone,
     keptOwn,
     added: [...after].filter((id) => !before.has(id)),
@@ -463,13 +481,13 @@ export function applyTemplate(state: AppState, weekId: string, templateId: strin
 
   for (let d = 0; d < 7; d += 1) {
     const had = w.tasks[d] ?? [];
-    const keep = had.filter((x) => !x.plan || x.state === 'done');
-    const already = new Set(keep.map((x) => x.text.trim().toLowerCase()));
-    // Anything the new template would add that is already sitting there, done,
-    // is not added twice.
+    // Nothing is thrown away. Changing template changes what the week asks of
+    // you, not what is written on it — a task you put there, or one an earlier
+    // template suggested and you kept, is still a thing you meant to do.
+    const already = new Set(had.map((x) => x.text.trim().toLowerCase()));
     const fresh = planTasks(state, templateId, d)
       .filter((x) => !already.has(x.text.trim().toLowerCase()));
-    w.tasks[d] = [...fresh, ...keep];
+    w.tasks[d] = [...fresh, ...had];
   }
   return true;
 }

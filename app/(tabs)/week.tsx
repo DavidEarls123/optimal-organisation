@@ -3,11 +3,13 @@ import { Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
-import { Body, Empty, Mono, Note, Screen, Section, SectionHead } from '../../src/ui/primitives';
+import {
+  Body, Button, Empty, Mono, Note, Screen, Section, SectionHead,
+} from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
-import { DAY_LETTERS, DAY_NAMES, addDays, parseISO } from '../../src/domain/dates';
+import { DAY_LETTERS, DAY_NAMES, addDays, parseISO, weekNumber } from '../../src/domain/dates';
 import {
   activeHabits, habitDone, habitTarget, isCurrentWeek, planLabel, scheduledOn, templateOf, todayIndex,
 } from '../../src/domain/scoring';
@@ -29,15 +31,28 @@ export default function WeekScreen() {
       <WeekHeader compact />
       <Body>
         <Section>
-          <SectionHead
-            title="Habit wall chart"
-            right={
-              <Pressable accessibilityRole="button" onPress={() => router.push('/habits')}>
-                <Text style={{ fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase',
-                  color: t.accent, fontWeight: '600' }}>Edit this week</Text>
-              </Pressable>
-            }
-          />
+          <SectionHead title="This week is a" right={`week ${weekNumber(weekId)}`} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Template: ${tpl.name}. Change it.`}
+            onPress={() => router.push('/template')}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+              borderWidth: 1, borderColor: t.accentLine, backgroundColor: t.accentSoft,
+              borderRadius: radius.md, paddingHorizontal: 13, paddingVertical: 12 }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: t.accent }}>{tpl.name}</Text>
+              <Text style={{ fontSize: 12.5, color: t.ink2, marginTop: 2 }}>{tpl.blurb}</Text>
+            </View>
+            <Text style={{ fontSize: 13, color: t.accent }}>Change ›</Text>
+          </Pressable>
+          {tpl.note ? <Note>{tpl.note}</Note> : null}
+          <Button tone="ghost" title="Edit this week\u2019s habits"
+            onPress={() => router.push('/habits')} />
+        </Section>
+
+        <Section>
+          <SectionHead title="Habit wall chart" right="overview" />
           <View>
             <View style={{ flexDirection: 'row', paddingBottom: 7, alignItems: 'flex-end' }}>
               <View style={{ flex: 1, minWidth: 80 }} />
@@ -71,15 +86,10 @@ export default function WeekScreen() {
                     const offDay = Boolean(week.untracked[d]);
                     const sched = scheduledOn(week, h.id, d);
                     return (
-                      <Pressable
+                      <View
                         key={d}
-                        accessibilityRole="checkbox"
-                        accessibilityState={{ checked: on }}
-                        accessibilityLabel={`${h.name} ${DAY_NAMES[d]}`}
-                        onPress={() => update((s2) => {
-                          const map = (s2.weeks[weekId].habits[d] ??= {});
-                          if (map[h.id]) delete map[h.id]; else map[h.id] = true;
-                        })}
+                        accessible
+                        accessibilityLabel={`${h.name}, ${DAY_NAMES[d]}, ${on ? 'done' : 'not done'}`}
                         style={{ width: 28, height: 32, alignItems: 'center', justifyContent: 'center' }}
                       >
                         <View style={{
@@ -89,7 +99,7 @@ export default function WeekScreen() {
                           backgroundColor: on ? t.hit : offDay ? t.rule2 : 'transparent',
                           opacity: offDay ? 0.5 : sched ? 1 : 0.55,
                         }} />
-                      </Pressable>
+                      </View>
                     );
                   })}
                   <View style={{ width: 36, alignItems: 'flex-end' }}>
@@ -101,44 +111,9 @@ export default function WeekScreen() {
             })}
           </View>
           <Note>
-            {`Solid = planned this week. Dotted = not planned. Struck column = untracked day.`}
-            {tpl.note ? `  ${tpl.name}. ${tpl.note}` : ''}
-          </Note>
-        </Section>
-
-        <Section>
-          <SectionHead title="Untracked days" right="holidays, events" />
-          <View style={{ flexDirection: 'row', gap: 4 }}>
-            {DAY_LETTERS.map((l, d) => {
-              const on = Boolean(week.untracked[d]);
-              return (
-                <Pressable
-                  key={d}
-                  accessibilityRole="switch"
-                  accessibilityState={{ checked: on }}
-                  accessibilityLabel={`${DAY_NAMES[d]} untracked`}
-                  onPress={() => update((s) => {
-                    const w = s.weeks[weekId];
-                    if (w.untracked[d]) delete w.untracked[d];
-                    else { w.untracked[d] = true; delete w.complete[d]; }
-                  })}
-                  style={{ flex: 1, alignItems: 'center', gap: 2, paddingVertical: 8,
-                    borderWidth: 1, borderRadius: radius.md,
-                    borderStyle: on ? 'dashed' : 'solid',
-                    borderColor: t.rule, backgroundColor: on ? t.sunk : 'transparent' }}
-                >
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: on ? t.ink3 : t.ink,
-                    textDecorationLine: on ? 'line-through' : 'none' }}>{l}</Text>
-                  <Mono style={{ fontSize: 10 }}>
-                    {addDays(parseISO(week.monday), d).getDate()}
-                  </Mono>
-                </Pressable>
-              );
-            })}
-          </View>
-          <Note>
-            A day marked untracked asks nothing of you: its habits and tasks drop out of the week&apos;s
-            targets entirely, so a holiday cannot dent your score.
+            An overview, not somewhere to tick: habits are ticked on their day, where the
+            time gets recorded with them. Solid = planned this week. Dotted = not planned.
+            Struck column = untracked day.
           </Note>
         </Section>
 
@@ -193,6 +168,42 @@ export default function WeekScreen() {
           <Note>
             Only tagged sessions appear here. Tag a task with Gym, Run, Recovery and the rest from
             the box beside it on the Day tab; everything else stays on the day it belongs to.
+          </Note>
+        </Section>
+
+        <Section>
+          <SectionHead title="Untracked days" right="holidays, events" />
+          <View style={{ flexDirection: 'row', gap: 4 }}>
+            {DAY_LETTERS.map((l, d) => {
+              const on = Boolean(week.untracked[d]);
+              return (
+                <Pressable
+                  key={d}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: on }}
+                  accessibilityLabel={`${DAY_NAMES[d]} untracked`}
+                  onPress={() => update((s) => {
+                    const w = s.weeks[weekId];
+                    if (w.untracked[d]) delete w.untracked[d];
+                    else { w.untracked[d] = true; delete w.complete[d]; }
+                  })}
+                  style={{ flex: 1, alignItems: 'center', gap: 2, paddingVertical: 8,
+                    borderWidth: 1, borderRadius: radius.md,
+                    borderStyle: on ? 'dashed' : 'solid',
+                    borderColor: t.rule, backgroundColor: on ? t.sunk : 'transparent' }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: on ? t.ink3 : t.ink,
+                    textDecorationLine: on ? 'line-through' : 'none' }}>{l}</Text>
+                  <Mono style={{ fontSize: 10 }}>
+                    {addDays(parseISO(week.monday), d).getDate()}
+                  </Mono>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Note>
+            A day marked untracked asks nothing of you: its habits and tasks drop out of the week&apos;s
+            targets entirely, so a holiday cannot dent your score.
           </Note>
         </Section>
       </Body>

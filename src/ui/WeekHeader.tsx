@@ -49,17 +49,16 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
         <Mono style={{ flex: 1, letterSpacing: 1.6, textTransform: 'uppercase', fontSize: 11 }}>
           {`Week ${weekNumber(weekId)}${current ? ' · this week' : ` · ${weekId.slice(0, 4)}`}`}
         </Mono>
-        <Pressable
-          onPress={() => router.push('/template')}
-          accessibilityRole="button"
-          accessibilityLabel={`Template: ${tpl.name}. Change it.`}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
-            borderWidth: 1, borderColor: t.accentLine, backgroundColor: t.accentSoft,
+        {/* What kind of week this is, stated not offered. It is changed on the
+            Week tab, where the rest of the week is defined. */}
+        <View
+          accessible
+          accessibilityLabel={`This week is a ${tpl.name}`}
+          style={{ borderWidth: 1, borderColor: t.accentLine, backgroundColor: t.accentSoft,
             borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5 }}
         >
           <Text style={{ fontSize: 12, fontWeight: '600', color: t.accent }}>{tpl.name}</Text>
-          <Text style={{ fontSize: 10, color: t.accent }}>▾</Text>
-        </Pressable>
+        </View>
       </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: -4 }}>
@@ -189,7 +188,10 @@ function DayMark({ done, off, score, selected }: {
   // The selected day is now a filled accent chip, so everything drawn on it
   // needs its contrast taken from that fill rather than from the sheet.
   const ground = selected ? t.accent : t.sheet;
-  const quiet = selected ? t.accentLine : t.rule;
+  // On the filled chip, accentLine is nearly the fill itself — the ring
+  // disappeared. The unfilled part of the track is the paper colour held back,
+  // which reads on either ground.
+  const quiet = selected ? (t.dark ? t.paper : t.sheet) : t.rule;
 
   if (off) {
     return (
@@ -212,9 +214,9 @@ function DayMark({ done, off, score, selected }: {
     <ProgressRing
       progress={score}
       size={size}
-      thickness={3}
+      thickness={selected ? 3.5 : 3}
       track={quiet}
-      fill={t.hit}
+      fill={selected ? t.sheet : t.hit}
       hole={ground}
     />
   );
