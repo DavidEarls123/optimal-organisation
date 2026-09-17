@@ -177,33 +177,41 @@ function Shopping({ scroller }: { scroller: React.RefObject<ScrollView | null> }
 
   // ---- shopping mode: the short list, and only the tick that matters in a shop
   if (inShop) {
-    // One list, in the order it is written down. Which heading a thing came
-    // from is a way of organising the week, not of walking round a shop.
-    const walk = trolley.flatMap((g) => g.items.map((it) => ({ it, groupId: g.id })));
+    // Still under the heading each thing was filed under — you know what you
+    // are looking at. Just no counting by aisle; the only sums that matter in
+    // a shop are what is needed and what is got.
     return (
       <Section>
         <SectionHead title="At the shop" right={`${got}/${need}`} />
         <Button title="← Back to the whole list" onPress={() => setInShop(false)} />
-        {walk.length === 0 ? (
+        {trolley.length === 0 ? (
           <Empty>Nothing marked as needed this week.</Empty>
         ) : null}
-        <View style={{ borderTopWidth: walk.length ? 1 : 0, borderTopColor: t.rule }}>
-          {walk.map(({ it, groupId }) => (
-            <Pressable
-              key={it.id}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: it.done }}
-              accessibilityLabel={it.text}
-              onPress={() => setItem(groupId, it.id, { done: !it.done })}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
-                paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: t.rule2 }}
-            >
-              <Tick on={it.done} size={22} tone="hit" />
-              <Text style={{ flex: 1, fontSize: 16, color: it.done ? t.ink3 : t.ink,
-                textDecorationLine: it.done ? 'line-through' : 'none' }}>{it.text}</Text>
-            </Pressable>
-          ))}
-        </View>
+        {trolley.map((g) => (
+          <View key={g.id}>
+            <Text style={{ fontSize: 11.5, letterSpacing: 1.1, textTransform: 'uppercase',
+              fontWeight: '700', color: t.ink3, paddingTop: 15, paddingBottom: 5 }}>
+              {g.name}
+            </Text>
+            <View style={{ borderTopWidth: 1, borderTopColor: t.rule }}>
+              {g.items.map((it) => (
+                <Pressable
+                  key={it.id}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: it.done }}
+                  accessibilityLabel={`${it.text}, ${g.name}`}
+                  onPress={() => setItem(g.id, it.id, { done: !it.done })}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+                    paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: t.rule2 }}
+                >
+                  <Tick on={it.done} size={22} tone="hit" />
+                  <Text style={{ flex: 1, fontSize: 16, color: it.done ? t.ink3 : t.ink,
+                    textDecorationLine: it.done ? 'line-through' : 'none' }}>{it.text}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ))}
         {got === need && need > 0 ? (
           <Note>That is everything. Nothing left on the list.</Note>
         ) : null}
