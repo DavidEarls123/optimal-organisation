@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState, migrate } from '../src/domain/state';
-import { nudgeTask } from '../src/domain/week';
+import { nudgeTask, orderedTasks, placeTask } from '../src/domain/week';
 import type { AppState, Task } from '../src/domain/types';
 
 const TUE = new Date(2026, 8, 15);
@@ -110,4 +110,72 @@ test('a task state that means nothing now is read as open, not dropped silently'
   ] as unknown as Task[];
   const back = migrate(JSON.parse(JSON.stringify(s)));
   assert.equal(back?.weeks[WEEK].tasks[DAY]?.[0].state, 'open');
+});
+
+test('dragging a task down two places lands it there', () => {
+  const { s } = laid();
+  placeTask(s, WEEK, DAY, 'a', 2);
+  assert.equal(order(s), 'bcad');
+});
+
+test('dragging to the top of the day makes it the first task', () => {
+  const { s, secs } = laid();
+  placeTask(s, WEEK, DAY, 'd', 0);
+  assert.equal(order(s), 'dabc');
+  assert.equal(secOf(s, 'd'), secs[0], 'and it belongs to the section it landed in');
+});
+
+test('dragging into another section changes its heading', () => {
+  const { s, secs } = laid();
+  placeTask(s, WEEK, DAY, 'a', 2);          // between c and d
+  assert.equal(secOf(s, 'a'), secs[1], 'takes the section of the task above it');
+});
+
+test('dragging to the very bottom takes the last section', () => {
+  const { s, secs } = laid();
+  placeTask(s, WEEK, DAY, 'a', 3);
+  assert.equal(order(s), 'bcda');
+  assert.equal(secOf(s, 'a'), secs[2]);
+});
+
+test('an index past the end is clamped rather than losing the task', () => {
+  const { s } = laid();
+  placeTask(s, WEEK, DAY, 'a', 99);
+  assert.equal(order(s), 'bcda');
+  assert.equal((s.weeks[WEEK].tasks[DAY] ?? []).length, 4);
+});
+
+test('a negative index is clamped to the top', () => {
+  const { s } = laid();
+  placeTask(s, WEEK, DAY, 'c', -4);
+  assert.equal(order(s), 'cabd');
+});
+
+test('dropping a task where it already is changes nothing', () => {
+  const { s, secs } = laid();
+  placeTask(s, WEEK, DAY, 'b', 1);
+  assert.equal(order(s), 'abcd');
+  assert.equal(secOf(s, 'b'), secs[0]);
+});
+
+test('dragging the only task in the day leaves it alone', () => {
+  const { s, secs } = laid();
+  s.weeks[WEEK].tasks[DAY] = [(s.weeks[WEEK].tasks[DAY] ?? [])[0]];
+  placeTask(s, WEEK, DAY, 'a', 0);
+  assert.equal(order(s), 'a');
+  assert.equal(secOf(s, 'a'), secs[0]);
+});
+
+test('an unknown task id is refused', () => {
+  const { s } = laid();
+  assert.equal(placeTask(s, WEEK, DAY, 'nope', 1), null);
+  assert.equal(order(s), 'abcd');
+});
+
+test('the drawn order is section by section, whatever the array says', () => {
+  const { s, secs } = laid();
+  const arr = s.weeks[WEEK].tasks[DAY] ?? [];
+  s.weeks[WEEK].tasks[DAY] = [arr[3], arr[1], arr[2], arr[0]];   // d b c a
+  assert.deepEqual(orderedTasks(s, WEEK, DAY).map((t) => t.id), ['b', 'a', 'c', 'd']);
+  assert.equal(secs.length, 3);
 });

@@ -518,3 +518,48 @@ export function marksOn(state: AppState, dateIso: string): {
     events: state.events.filter((x) => x.date === dateIso).map((x) => x.name),
   };
 }
+
+/** The day read the way it is drawn: section by section, in order. */
+export function orderedTasks(state: AppState, weekId: string, day: number): Task[] {
+  const w = state.weeks[weekId];
+  if (!w) return [];
+  const secIds = state.sections.map((x) => x.id);
+  const rank = (t: Task) => {
+    const i = secIds.indexOf(t.sec);
+    return i < 0 ? 0 : i;
+  };
+  return [...(w.tasks[day] ?? [])].sort((a, b) => rank(a) - rank(b));
+}
+
+/** Drops a task at a position in that drawn order, taking the section of
+ *  wherever it lands. Dragging something into the middle of Afternoon makes it
+ *  an afternoon task; there is no separate step for that.
+ *
+ *  `toIndex` is an index into the order *without* the dragged task, which is
+ *  what a list being dragged through actually looks like. */
+export function placeTask(
+  state: AppState, weekId: string, day: number, id: string, toIndex: number,
+): string | null {
+  const w = state.weeks[weekId];
+  if (!w) return null;
+  const secIds = state.sections.map((x) => x.id);
+  if (!secIds.length) return null;
+
+  const flat = orderedTasks(state, weekId, day);
+  const task = flat.find((t) => t.id === id);
+  if (!task) return null;
+
+  const rest = flat.filter((t) => t !== task);
+  const at = Math.max(0, Math.min(rest.length, Math.round(toIndex)));
+
+  // Take the section of the neighbour above, or of the one below when landing
+  // at the very top. With nothing either side, nothing moves sections.
+  const above = rest[at - 1];
+  const below = rest[at];
+  const sec = above ? above.sec : below ? below.sec : task.sec;
+  task.sec = secIds.includes(sec) ? sec : secIds[0];
+
+  rest.splice(at, 0, task);
+  w.tasks[day] = rest;
+  return task.sec;
+}

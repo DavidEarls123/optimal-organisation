@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Keyboard, Linking, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  Alert, Animated, Keyboard, Linking, PanResponder, Pressable, ScrollView, Text, View,
+} from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 
@@ -12,7 +14,7 @@ import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES, dayDateIso, isoOf, parseISO } from '../../src/domain/dates';
-import { marksOn, moveTask, nudgeTask, uid } from '../../src/domain/week';
+import { marksOn, moveTask, nudgeTask, orderedTasks, placeTask, uid } from '../../src/domain/week';
 import {
   activeHabits, dayOutstanding, fromKg, habitDayStatus, habitDone, habitTarget, pacing,
   planLabel, toKg,
@@ -44,6 +46,10 @@ export default function DayScreen() {
   const composerY = useRef(0);
   /** The habit currently asking for a weight, if any. */
   const [weighing, setWeighing] = useState<string | null>(null);
+  /** The task being dragged, and where it would land. */
+  const [dragId, setDragId] = useState<string | null>(null);
+  /** Every row's height, so a drag knows how far a place is. */
+  const rowH = useRef<Record<string, number>>({});
 
   /** Puts the open composer near the middle of the screen, so what you are
    *  typing is not behind the keyboard. */
@@ -100,6 +106,46 @@ export default function DayScreen() {
   const reorder = useCallback((id: string, dir: -1 | 1) => {
     update((d) => { nudgeTask(d, weekId, day, id, dir); });
   }, [update, weekId, day]);
+
+  /** Where in the day, ignoring the dragged task, the finger currently is.
+   *  Rows are measured rather than assumed, because a row with its panel open
+   *  is several times the height of one without. */
+  const dropIndex = useCallback((id: string, dy: number) => {
+    const flat = orderedTasks(state, weekId, day);
+    const from = flat.findIndex((x) => x.id === id);
+    if (from < 0) return 0;
+    const rest = flat.filter((x) => x.id !== id);
+    const h = (x: Task) => rowH.current[x.id] || 44;
+
+    // Walk out from where it started until the accumulated height passes dy.
+    let at = from;
+    if (dy > 0) {
+      let run = 0;
+      for (let i = from; i < rest.length; i += 1) {
+        run += h(rest[i]);
+        if (run > dy) break;
+        at = i + 1;
+      }
+    } else {
+      let run = 0;
+      for (let i = from - 1; i >= 0; i -= 1) {
+        run += h(rest[i]);
+        if (run > -dy) break;
+        at = i;
+      }
+    }
+    return Math.max(0, Math.min(rest.length, at));
+  }, [state, weekId, day]);
+
+  const onDragMove = useCallback((id: string) => {
+    setDragId((cur) => (cur === id ? cur : id));
+  }, []);
+
+  const onDragEnd = useCallback((id: string, dy: number) => {
+    const to = dropIndex(id, dy);
+    setDragId(null);
+    update((d) => { placeTask(d, weekId, day, id, to); });
+  }, [dropIndex, update, weekId, day]);
 
   const deleteTask = useCallback((id: string, text: string) => {
     Alert.alert(
@@ -368,6 +414,10 @@ export default function DayScreen() {
                       })}
                       onMoveToDay={(d) => doMove(x.id, dayDateIso(week.monday, d))}
                       onPickDate={() => setShowPicker(true)}
+                      onMeasure={(h) => { rowH.current[x.id] = h; }}
+                      onDragMove={() => onDragMove(x.id)}
+                      onDragEnd={(dy) => onDragEnd(x.id, dy)}
+                      dragging={dragId === x.id}
                       currentDay={day}
                     />
                   ))}
@@ -763,17 +813,46 @@ function TagPicker({ value, onChange }: { value: string; onChange: (v: string) =
 
 function TaskRow({
   task, open, onToggle, onDelete, onOpenMove, onReorder, onMoveToDay, onPickDate, onRename,
-  currentDay,
+  onMeasure, onDragMove, onDragEnd, dragging, currentDay,
 }: {
   task: Task; open: boolean; currentDay: number;
   onToggle: () => void; onDelete: () => void; onOpenMove: () => void;
   onReorder: (dir: -1 | 1) => void; onMoveToDay: (d: number) => void; onPickDate: () => void;
   onRename: (text: string) => void;
+  onMeasure: (h: number) => void;
+  onDragMove: () => void;
+  onDragEnd: (dy: number) => void;
+  dragging: boolean;
 }) {
   const t = useTheme();
   const done = task.state === 'done';
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.text);
+  const lift = useRef(new Animated.Value(0)).current;
+  const held = useRef(false);
+
+  // Hold the grip, then move. A drag that starts without the hold is the list
+  // scrolling, and has to stay the list scrolling.
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_e, g) => held.current && Math.abs(g.dy) > 2,
+      onPanResponderMove: (_e, g) => {
+        lift.setValue(g.dy);
+        onDragMove();
+      },
+      onPanResponderRelease: (_e, g) => {
+        held.current = false;
+        lift.setValue(0);
+        onDragEnd(g.dy);
+      },
+      onPanResponderTerminate: () => {
+        held.current = false;
+        lift.setValue(0);
+        onDragEnd(0);
+      },
+    }),
+  ).current;
 
   const commit = () => {
     const next = draft.trim().slice(0, TASK_LIMIT);
@@ -782,8 +861,31 @@ function TaskRow({
   };
 
   return (
-    <View style={{ borderBottomWidth: 1, borderBottomColor: t.rule2, paddingVertical: 8 }}>
+    <Animated.View
+      onLayout={(e) => onMeasure(e.nativeEvent.layout.height)}
+      style={{
+        borderBottomWidth: 1, borderBottomColor: t.rule2, paddingVertical: 8,
+        transform: [{ translateY: dragging ? lift : 0 }],
+        opacity: dragging ? 0.92 : 1,
+        zIndex: dragging ? 10 : 0,
+        backgroundColor: dragging ? t.sheet2 : 'transparent',
+        borderRadius: dragging ? radius.md : 0,
+      }}
+    >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+        {/* The grip. Hold it, then drag. */}
+        <Pressable
+          onLongPress={() => { held.current = true; }}
+          onPressOut={() => { setTimeout(() => { held.current = false; }, 400); }}
+          delayLongPress={180}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`Hold to move ${task.text}`}
+          {...pan.panHandlers}
+        >
+          <Text style={{ color: dragging ? t.accent : t.ink3, fontSize: 14, lineHeight: 17,
+            paddingHorizontal: 2 }}>⠿</Text>
+        </Pressable>
         <Pressable onPress={onToggle} accessibilityRole="checkbox"
           accessibilityState={{ checked: done }} accessibilityLabel={task.text} hitSlop={6}>
           <Tick on={done} />
@@ -866,6 +968,6 @@ function TaskRow({
           />
         </View>
       ) : null}
-    </View>
+    </Animated.View>
   );
 }
