@@ -6,7 +6,7 @@ import { Body, Button, Chip, Field, Mono, Note, Screen, Section, SectionHead } f
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
-import { duplicateTemplate, planFromTemplate, planTasks, templateTraining, uid } from '../src/domain/week';
+import { applyTemplate, duplicateTemplate, templateChange, templateTraining, uid } from '../src/domain/week';
 
 export default function TemplateScreen() {
   const t = useTheme();
@@ -15,16 +15,32 @@ export default function TemplateScreen() {
   const current = state.weeks[weekId]?.templateId;
 
   const apply = (id: string) => {
-    update((d) => {
-      const w = d.weeks[weekId];
-      w.templateId = id;
-      w.habitPlan = planFromTemplate(d, id);
-      for (let day = 0; day < 7; day += 1) {
-        const keep = (w.tasks[day] ?? []).filter((x) => !x.plan);
-        w.tasks[day] = [...planTasks(d, id, day), ...keep];
-      }
-    });
-    router.back();
+    if (id === current) { router.back(); return; }
+    const c = templateChange(state, weekId, id);
+    const name = (h: string) => state.habits.find((x) => x.id === h)?.name ?? h;
+
+    const lines = [
+      c && c.added.length ? `Adds ${c.added.map(name).join(', ')}.` : '',
+      c && c.removed.length ? `Stops asking for ${c.removed.map(name).join(', ')}.` : '',
+      c && c.dropped ? `Replaces ${c.dropped} planned task${c.dropped === 1 ? '' : 's'} you have not done.` : '',
+      c && (c.keptDone || c.keptOwn)
+        ? `Keeps everything you have ticked${c.keptOwn ? ' and everything you typed in' : ''}.`
+        : '',
+      'Habits you have already ticked stay ticked and keep counting.',
+    ].filter(Boolean);
+
+    Alert.alert(
+      `Switch to ${state.templates[id]?.name ?? 'this template'}?`,
+      lines.join('\n\n'),
+      [{ text: 'Cancel', style: 'cancel' },
+       {
+         text: 'Switch',
+         onPress: () => {
+           update((d) => { applyTemplate(d, weekId, id); });
+           router.back();
+         },
+       }],
+    );
   };
 
   return (

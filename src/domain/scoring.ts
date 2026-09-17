@@ -166,9 +166,21 @@ export function weekScore(state: AppState, week: Week, today: Date): WeekScore {
   const tPace = ticked + open ? ticked / (ticked + open) : 1;
   const tBanked = tickedAll + openAll ? tickedAll / (tickedAll + openAll) : 1;
 
+  // A template is allowed to be all habits or all tasks. When a side asks
+  // nothing of you it cannot be scored, so its weight goes to the other side
+  // rather than dragging the week to zero for work that was never set.
+  const anyHabits = target > 0;
+  const anyTasks = tickedAll + openAll > 0;
+  const blend = (h: number, tk: number) => {
+    if (anyHabits && anyTasks) return h * t.weights.habits + tk * t.weights.tasks;
+    if (anyHabits) return h;
+    if (anyTasks) return tk;
+    return 0;
+  };
+
   return {
-    pace: hPace * t.weights.habits + tPace * t.weights.tasks,
-    banked: hBanked * t.weights.habits + tBanked * t.weights.tasks,
+    pace: blend(hPace, tPace),
+    banked: blend(hBanked, tBanked),
     habitsDone: done,
     habitsTarget: target,
     tasksDone: tickedAll,

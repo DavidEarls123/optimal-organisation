@@ -337,3 +337,86 @@ export function deleteTemplate(state: AppState, id: string): boolean {
 export function nextWeekMonday(mondayIso: string, delta: number): string {
   return isoOf(addDays(parseISO(mondayIso), delta * 7));
 }
+
+/** What changing a week's template would do, so it can be said out loud before
+ *  it happens rather than discovered afterwards. */
+export interface TemplateChange {
+  /** Scaffold tasks still open, which the new template replaces. */
+  dropped: number;
+  /** Scaffold tasks already ticked, which are kept. */
+  keptDone: number;
+  /** Tasks typed in by hand, which are never touched. */
+  keptOwn: number;
+  /** Habits the new plan asks for that the old one did not. */
+  added: string[];
+  /** Habits the old plan asked for that the new one does not. */
+  removed: string[];
+  /** Of those, the ones already ticked this week — kept, and still counted. */
+  removedButDone: string[];
+}
+
+export function templateChange(
+  state: AppState, weekId: string, templateId: string,
+): TemplateChange | null {
+  const w = state.weeks[weekId];
+  if (!w) return null;
+  const next = planFromTemplate(state, templateId);
+  const before = new Set(Object.keys(w.habitPlan));
+  const after = new Set(Object.keys(next));
+
+  let dropped = 0;
+  let keptDone = 0;
+  let keptOwn = 0;
+  for (let d = 0; d < 7; d += 1) {
+    for (const x of w.tasks[d] ?? []) {
+      if (!x.plan) keptOwn += 1;
+      else if (x.state === 'done') keptDone += 1;
+      else dropped += 1;
+    }
+  }
+
+  const removed = [...before].filter((id) => !after.has(id));
+  return {
+    dropped,
+    keptDone,
+    keptOwn,
+    added: [...after].filter((id) => !before.has(id)),
+    removed,
+    removedButDone: removed.filter((id) => habitTicks(w, id) > 0),
+  };
+}
+
+function habitTicks(w: Week, habitId: string): number {
+  let n = 0;
+  for (const map of Object.values(w.habits ?? {})) if (map?.[habitId]) n += 1;
+  return n;
+}
+
+/** Puts a week on a different template. The template is a set of presets, not
+ *  a reset: it changes what is asked of you from here, and takes nothing away
+ *  that you have already done.
+ *
+ *  Ticks are never touched — including ticks for habits the new template does
+ *  not ask for. Doing something and then changing your mind about whether it
+ *  was required does not un-do it. Scaffold tasks you have ticked stay for the
+ *  same reason; only the ones still sitting open are swapped for the new
+ *  template's, and anything you typed in yourself is left alone. */
+export function applyTemplate(state: AppState, weekId: string, templateId: string): boolean {
+  const w = state.weeks[weekId];
+  if (!w || !state.templates[templateId]) return false;
+
+  w.templateId = templateId;
+  w.habitPlan = planFromTemplate(state, templateId);
+
+  for (let d = 0; d < 7; d += 1) {
+    const had = w.tasks[d] ?? [];
+    const keep = had.filter((x) => !x.plan || x.state === 'done');
+    const already = new Set(keep.map((x) => x.text.trim().toLowerCase()));
+    // Anything the new template would add that is already sitting there, done,
+    // is not added twice.
+    const fresh = planTasks(state, templateId, d)
+      .filter((x) => !already.has(x.text.trim().toLowerCase()));
+    w.tasks[d] = [...fresh, ...keep];
+  }
+  return true;
+}

@@ -74,7 +74,8 @@ export default function TemplateEditScreen() {
   const habitsPct = Math.round(tpl.weights.habits * 100);
 
   const setWeights = (pct: number) => edit((d) => {
-    const clamped = Math.max(40, Math.min(90, pct));
+    // A template may be all habits or all tasks — some weeks are only one.
+    const clamped = Math.max(0, Math.min(100, pct));
     d.weights = { habits: clamped / 100, tasks: (100 - clamped) / 100 };
   });
 
