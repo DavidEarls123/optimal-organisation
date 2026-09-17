@@ -28,6 +28,8 @@ export default function RootLayout() {
                 options={{ presentation: 'modal', headerShown: true, title: 'What did you watch?' }} />
               <Stack.Screen name="settings"
                 options={{ presentation: 'modal', headerShown: true, title: 'Settings' }} />
+              <Stack.Screen name="shop-template"
+                options={{ presentation: 'modal', headerShown: true, title: 'Standard list' }} />
             </Stack>
           </ThemeProvider>
         </StoreProvider>

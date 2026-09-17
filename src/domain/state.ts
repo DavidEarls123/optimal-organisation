@@ -1,5 +1,5 @@
 import { DEFAULT_PREFS } from './types';
-import type { AppState, WatchItem } from './types';
+import type { AppState, WatchItem, ShopGroup } from './types';
 import { DEFAULT_HABITS, DEFAULT_SECTIONS, DEFAULT_TRACKABLES, TEMPLATES, TEMPLATE_ORDER } from './catalogue';
 import { createWeek } from './week';
 import { isoOf, isoWeekId, mondayOf } from './dates';
@@ -71,6 +71,20 @@ export function migrate(loaded: Partial<AppState> | null): AppState | null {
   s.templateOrder = s.templateOrder.filter((id) => s.templates[id]);
   s.trackables.forEach((t, i) => { if (typeof t.ci !== 'number') t.ci = i % 12; });
 
+  // Shop items gained a second tick. Anything saved with only `done` meant
+  // "on the list", which is what `need` means now — so that is where it goes,
+  // rather than reading as already bought.
+  const fixShop = (groups: ShopGroup[] | undefined) => {
+    if (!Array.isArray(groups)) return;
+    for (const g of groups) {
+      if (!Array.isArray(g?.items)) { g.items = []; continue; }
+      for (const it of g.items) {
+        if (typeof it.need !== 'boolean') { it.need = true; it.done = Boolean(it.done); }
+      }
+    }
+  };
+  fixShop(s.shopTemplate);
+
   const firstSec = s.sections[0].id;
   for (const w of Object.values(s.weeks)) {
     w.untracked ??= {};
@@ -81,6 +95,7 @@ export function migrate(loaded: Partial<AppState> | null): AppState | null {
     w.habitPlan ??= {};
     w.at ??= {};
     w.readings ??= {};
+    fixShop(w.shop);
     for (const [d, arr] of Object.entries(w.tasks)) {
       if (!Array.isArray(arr)) { w.tasks[Number(d)] = []; continue; }
       // 'dropped' is gone: a task is either live or deleted outright. Anything

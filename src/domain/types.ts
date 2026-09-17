@@ -49,8 +49,15 @@ export interface Task {
   sec: string;
 }
 
-export interface ShopItem { id: string; text: string; done: boolean }
+/** Two ticks, not one. `need` is the weekly decision about what to buy;
+ *  `done` is what happened in the shop. A thing you did not need this week is
+ *  not a thing you failed to buy. */
+export interface ShopItem { id: string; text: string; need: boolean; done: boolean }
 export interface ShopGroup { id: string; name: string; items: ShopItem[] }
+
+/** The standing list every week starts from: the headings, and the things you
+ *  buy often enough to be worth having written down already. */
+export interface ShopTemplate { groups: ShopGroup[] }
 
 export interface WatchItem {
   id: string;
@@ -119,6 +126,10 @@ export interface AppState {
   sample: boolean;
   /** Everything the app remembers about how you want it to behave. */
   prefs: Prefs;
+  /** The standing shopping list new weeks are built from. */
+  shopTemplate?: ShopGroup[];
+  /** The standing checklist new trips are built from, by category. */
+  tripTemplate?: Record<string, string[]>;
   version: number;
 }
 

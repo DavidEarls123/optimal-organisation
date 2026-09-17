@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
 import {
@@ -8,10 +9,10 @@ import {
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
-import { shopListFor, uid } from '../../src/domain/week';
+import { shopCounts, shopListFor, shoppingList, uid } from '../../src/domain/week';
 import { watchCount } from '../../src/domain/scoring';
 import { weekNumber } from '../../src/domain/dates';
-import type { WatchItem } from '../../src/domain/types';
+import type { ShopItem, WatchItem } from '../../src/domain/types';
 
 export default function ListsScreen() {
   const [view, setView] = useState<'shop' | 'fun'>('shop');
@@ -32,120 +33,195 @@ export default function ListsScreen() {
 
 function Shopping() {
   const t = useTheme();
+  const router = useRouter();
   const { state, weekId, update } = useStore();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  /** Shopping mode: only what is needed, and only the got tick. */
+  const [inShop, setInShop] = useState(false);
   const week = state.weeks[weekId];
   if (!week) return null;
 
-  // Reading the list is what copies it forward from last week, once.
+  // Reading the list is what builds it, once.
   if (!Array.isArray(week.shop)) {
     update((d) => { shopListFor(d, weekId); });
     return <Empty>Setting up this week&apos;s list…</Empty>;
   }
   const groups = week.shop;
-  const all = groups.reduce((a, g) => a + g.items.length, 0);
-  const got = groups.reduce((a, g) => a + g.items.filter((i) => i.done).length, 0);
+  const { need, got } = shopCounts(groups);
+  const trolley = shoppingList(groups);
 
+  const setItem = (groupId: string, itemId: string, patch: Partial<ShopItem>) => update((d) => {
+    const item = d.weeks[weekId].shop?.find((x) => x.id === groupId)
+      ?.items.find((y) => y.id === itemId);
+    if (item) Object.assign(item, patch);
+  });
+
+  const addItem = (groupId: string) => {
+    const text = (drafts[groupId] ?? '').trim().slice(0, 60);
+    if (!text) return;
+    update((d) => {
+      d.weeks[weekId].shop?.find((x) => x.id === groupId)
+        // Typing something in is itself saying you need it.
+        ?.items.push({ id: uid('i'), text, need: true, done: false });
+    });
+    setDrafts((p) => ({ ...p, [groupId]: '' }));
+  };
+
+  // ---- shopping mode: the short list, and only the tick that matters in a shop
+  if (inShop) {
+    return (
+      <Section>
+        <SectionHead title="At the shop" right={`${got}/${need}`} />
+        <Button title="← Back to the whole list" onPress={() => setInShop(false)} />
+        {trolley.length === 0 ? (
+          <Empty>Nothing marked as needed this week.</Empty>
+        ) : null}
+        {trolley.map((g) => (
+          <View key={g.id}>
+            <Text style={{ fontSize: 12.5, letterSpacing: 1.1, textTransform: 'uppercase',
+              fontWeight: '700', color: t.ink, paddingTop: 13, paddingBottom: 5 }}>
+              {g.name}
+            </Text>
+            <View style={{ borderTopWidth: 1, borderTopColor: t.rule }}>
+              {g.items.map((it) => (
+                <Pressable
+                  key={it.id}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: it.done }}
+                  accessibilityLabel={it.text}
+                  onPress={() => setItem(g.id, it.id, { done: !it.done })}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+                    paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: t.rule2 }}
+                >
+                  <Tick on={it.done} size={22} />
+                  <Text style={{ flex: 1, fontSize: 16, color: it.done ? t.ink3 : t.ink,
+                    textDecorationLine: it.done ? 'line-through' : 'none' }}>{it.text}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ))}
+        {got === need && need > 0 ? (
+          <Note>That is everything. Nothing left on the list.</Note>
+        ) : null}
+      </Section>
+    );
+  }
+
+  // ---- the whole list: decide what you need this week
   return (
     <Section>
-      <SectionHead title={`Shopping · week ${weekNumber(weekId)}`} right={`${got}/${all}`} />
+      <SectionHead title={`Shopping · week ${weekNumber(weekId)}`} right={`${need} needed`} />
+      <Note>
+        Tick what you need this week on the left. The shop button then gives you just those,
+        with one tick each, so you are not reading past everything you do not need.
+      </Note>
+
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <View style={{ flex: 1 }}>
+          <Button title={`Go shopping · ${need}`} onPress={() => setInShop(true)} />
+        </View>
+        <Button tone="ghost" title="Standard list" onPress={() => router.push('/shop-template')} />
+      </View>
+
       {week.shopCopiedFrom ? (
         <Note>
-          {`Copied from week ${weekNumber(week.shopCopiedFrom)}. Anything you change here stays in this week.`}
+          {`Carried over from week ${weekNumber(week.shopCopiedFrom)}, with nothing marked needed yet.`}
         </Note>
       ) : null}
 
       {groups.length === 0 ? <Empty>Nothing on the list yet.</Empty> : null}
 
-      {groups.map((g) => (
-        <View key={g.id}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 13, paddingBottom: 3 }}>
-            <Field
-              value={g.name}
-              onChangeText={(v) => update((d) => {
-                const gg = d.weeks[weekId].shop?.find((x) => x.id === g.id);
-                if (gg) gg.name = v;
-              })}
-              style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 0, paddingHorizontal: 0,
-                paddingVertical: 2, fontSize: 12.5, letterSpacing: 1.1, textTransform: 'uppercase',
-                fontWeight: '700', color: t.ink }}
-              accessibilityLabel={`Rename ${g.name}`}
-            />
-            <Mono>{`${g.items.filter((i) => i.done).length}/${g.items.length}`}</Mono>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Remove ${g.name}`}
-              onPress={() => update((d) => {
-                const w = d.weeks[weekId];
-                w.shop = (w.shop ?? []).filter((x) => x.id !== g.id);
-              })}
-            >
-              <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
-            </Pressable>
-          </View>
+      {groups.map((g) => {
+        const gNeed = g.items.filter((i) => i.need).length;
+        return (
+          <View key={g.id}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 13, paddingBottom: 3 }}>
+              <Field
+                value={g.name}
+                onChangeText={(v) => update((d) => {
+                  const gg = d.weeks[weekId].shop?.find((x) => x.id === g.id);
+                  if (gg) gg.name = v;
+                })}
+                maxLength={28}
+                style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 0, paddingHorizontal: 0,
+                  paddingVertical: 2, fontSize: 12.5, letterSpacing: 1.1, textTransform: 'uppercase',
+                  fontWeight: '700', color: t.ink }}
+                accessibilityLabel={`Rename ${g.name}`}
+              />
+              <Mono>{gNeed ? `${gNeed} needed` : '—'}</Mono>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${g.name}`}
+                hitSlop={6}
+                onPress={() => update((d) => {
+                  const w = d.weeks[weekId];
+                  w.shop = (w.shop ?? []).filter((x) => x.id !== g.id);
+                })}
+              >
+                <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
+              </Pressable>
+            </View>
 
-          <View style={{ borderTopWidth: 1, borderTopColor: t.rule }}>
-            {g.items.map((it) => (
-              <View key={it.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 9,
-                paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: t.rule2 }}>
-                <Pressable
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: it.done }}
-                  accessibilityLabel={it.text}
-                  hitSlop={6}
-                  onPress={() => update((d) => {
-                    const item = d.weeks[weekId].shop?.find((x) => x.id === g.id)
-                      ?.items.find((y) => y.id === it.id);
-                    if (item) item.done = !item.done;
-                  })}
-                >
-                  <Tick on={it.done} />
-                </Pressable>
-                <Text style={{ flex: 1, fontSize: 13.5, color: it.done ? t.ink3 : t.ink,
-                  textDecorationLine: it.done ? 'line-through' : 'none' }}>{it.text}</Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${it.text}`}
-                  hitSlop={6}
-                  onPress={() => update((d) => {
-                    const gg = d.weeks[weekId].shop?.find((x) => x.id === g.id);
-                    if (gg) gg.items = gg.items.filter((y) => y.id !== it.id);
-                  })}
-                >
-                  <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
-                </Pressable>
-              </View>
-            ))}
-          </View>
+            <View style={{ borderTopWidth: 1, borderTopColor: t.rule }}>
+              {g.items.map((it) => (
+                <View key={it.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 9,
+                  paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: t.rule2 }}>
+                  <Pressable
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: it.need }}
+                    accessibilityLabel={`Need ${it.text}`}
+                    hitSlop={6}
+                    onPress={() => setItem(g.id, it.id, { need: !it.need, done: false })}
+                  >
+                    <Tick on={it.need} tone="accent" />
+                  </Pressable>
+                  <Text style={{ flex: 1, fontSize: 13.5,
+                    color: it.need ? t.ink : t.ink3 }}>{it.text}</Text>
+                  {it.need ? (
+                    <Pressable
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: it.done }}
+                      accessibilityLabel={`Got ${it.text}`}
+                      hitSlop={6}
+                      onPress={() => setItem(g.id, it.id, { done: !it.done })}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
+                    >
+                      <Mono style={{ fontSize: 9.5, letterSpacing: 0.7, textTransform: 'uppercase',
+                        color: it.done ? t.hit : t.ink3 }}>got</Mono>
+                      <Tick on={it.done} tone="hit" />
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${it.text}`}
+                    hitSlop={6}
+                    onPress={() => update((d) => {
+                      const gg = d.weeks[weekId].shop?.find((x) => x.id === g.id);
+                      if (gg) gg.items = gg.items.filter((y) => y.id !== it.id);
+                    })}
+                  >
+                    <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
 
-          <View style={{ flexDirection: 'row', gap: 7, paddingTop: 7 }}>
-            <Field
-              value={drafts[g.id] ?? ''}
-              onChangeText={(v) => setDrafts((p) => ({ ...p, [g.id]: v }))}
-              placeholder={`Add to ${g.name.toLowerCase()}…`}
-              returnKeyType="done"
-              onSubmitEditing={() => {
-                const text = (drafts[g.id] ?? '').trim();
-                if (!text) return;
-                update((d) => {
-                  d.weeks[weekId].shop?.find((x) => x.id === g.id)
-                    ?.items.push({ id: uid('i'), text, done: false });
-                });
-                setDrafts((p) => ({ ...p, [g.id]: '' }));
-              }}
-            />
-            <Button title="Add" onPress={() => {
-              const text = (drafts[g.id] ?? '').trim();
-              if (!text) return;
-              update((d) => {
-                d.weeks[weekId].shop?.find((x) => x.id === g.id)
-                  ?.items.push({ id: uid('i'), text, done: false });
-              });
-              setDrafts((p) => ({ ...p, [g.id]: '' }));
-            }} />
+            <View style={{ flexDirection: 'row', gap: 7, paddingTop: 7 }}>
+              <Field
+                value={drafts[g.id] ?? ''}
+                onChangeText={(v) => setDrafts((p) => ({ ...p, [g.id]: v }))}
+                placeholder={`Add to ${g.name.toLowerCase()}…`}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                maxLength={60}
+                onSubmitEditing={() => addItem(g.id)}
+              />
+              <Button title="Add" onPress={() => addItem(g.id)} />
+            </View>
           </View>
-        </View>
-      ))}
+        );
+      })}
 
       <Pressable
         accessibilityRole="button"

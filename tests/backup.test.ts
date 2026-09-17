@@ -26,7 +26,10 @@ function lived() {
     { id: 't1', text: 'Intervals', state: 'done', plan: true, track: 'run', sec: 's3' },
     { id: 't2', text: 'Typed in', state: 'open', plan: false, track: null, sec: 's1' },
   ];
-  w.shop = [{ id: 'g1', name: 'Breakfast', items: [{ id: 'i1', text: 'Oats', done: true }] }];
+  w.shop = [{ id: 'g1', name: 'Breakfast', items: [
+    { id: 'i1', text: 'Oats', need: true, done: true },
+    { id: 'i2', text: 'Kippers', need: false, done: false },
+  ] }];
   s.watch = [
     { id: 'w1', title: 'Dune: Part Two', kind: 'film', done: true },
     { id: 'w2', title: 'The Bear', kind: 'tv', done: false },
@@ -84,7 +87,9 @@ test('untracked days, ticks and watched entries survive the trip', () => {
   assert.equal(w.complete[0], true);
   assert.deepEqual(w.watched[1], ['w1', 'w2']);
   assert.equal(w.tasks[1].find((t) => t.id === 't2')?.state, 'open');
+  assert.equal(w.shop?.[0].items[0].need, true);
   assert.equal(w.shop?.[0].items[0].done, true);
+  assert.equal(w.shop?.[0].items[1].need, false, 'and what you did not need stays not needed');
 });
 
 test('tick times and weight readings survive the trip', () => {

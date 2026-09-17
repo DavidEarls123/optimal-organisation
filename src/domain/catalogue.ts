@@ -75,6 +75,19 @@ export const HABIT_PRESETS: { group: string; items: Omit<Habit, 'active'>[] }[] 
   },
 ];
 
+/** The headings a shopping list starts with, and a few things under each that
+ *  most weeks want. Every bit of it is editable; this is only the starting
+ *  point so the list is never a blank page. */
+export const SHOP_TEMPLATE: { name: string; items: string[] }[] = [
+  { name: 'Breakfast',     items: ['Porridge oats', 'Eggs', 'Berries', 'Milk'] },
+  { name: 'Lunch',         items: ['Bread', 'Chicken', 'Salad', 'Hummus'] },
+  { name: 'Dinner',        items: ['Mince', 'Pasta', 'Rice', 'Veg'] },
+  { name: 'Snacks',        items: ['Bananas', 'Yoghurt', 'Nuts'] },
+  { name: 'Home',          items: ['Washing up liquid', 'Bin bags', 'Kitchen roll'] },
+  { name: 'Personal',      items: ['Shower gel', 'Toothpaste'] },
+  { name: 'Miscellaneous', items: [] },
+];
+
 export const TEMPLATES: Record<string, WeekTemplate> = {
   strength: {
     id: 'strength', name: 'Strength Block', tag: 'Hypertrophy',

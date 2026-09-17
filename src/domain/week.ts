@@ -1,5 +1,5 @@
 import type { AppState, HabitPlan, PlanEntry, ShopGroup, Task, Week } from './types';
-import { TEMPLATES } from './catalogue';
+import { SHOP_TEMPLATE, TEMPLATES } from './catalogue';
 import { addDays, isoOf, isoWeekId, mondayOf, parseISO, previousWeekId } from './dates';
 
 let seq = 0;
@@ -108,26 +108,77 @@ export function ensurePlanCoverage(state: AppState, weekId: string): boolean {
   return changed;
 }
 
+/** A week's list is a fresh copy: same headings and same things written down,
+ *  but nothing marked needed and nothing bought. Last week's shopping is not
+ *  this week's shopping. */
 function copyShop(groups: ShopGroup[]): ShopGroup[] {
   return groups.map((g) => ({
     id: uid('g'),
     name: g.name,
-    items: g.items.map((it) => ({ id: uid('i'), text: it.text, done: false })),
+    items: g.items.map((it) => ({ id: uid('i'), text: it.text, need: false, done: false })),
   }));
 }
 
-/** The shopping list copies forward from last week the first time you open it.
- *  After that it is this week's list and nothing else touches it. */
+/** The standing list, seeded from the built-in headings the first time. */
+export function shopTemplateOf(state: AppState): ShopGroup[] {
+  if (!Array.isArray(state.shopTemplate)) {
+    state.shopTemplate = SHOP_TEMPLATE.map((g) => ({
+      id: uid('g'),
+      name: g.name,
+      items: g.items.map((text) => ({ id: uid('i'), text, need: false, done: false })),
+    }));
+  }
+  return state.shopTemplate;
+}
+
+/** This week's list. Built from the standing template the first time it is
+ *  opened, or carried over from last week if there is one, so the things you
+ *  always buy are already written down and you only decide what you need. */
 export function shopListFor(state: AppState, weekId: string): ShopGroup[] {
   const w = state.weeks[weekId];
   if (!w) return [];
   if (!Array.isArray(w.shop)) {
     const pid = prevWeekIdOf(state, weekId);
     const prev = pid ? state.weeks[pid] : null;
-    w.shop = prev && Array.isArray(prev.shop) ? copyShop(prev.shop) : [];
-    w.shopCopiedFrom = prev && prev.shop && prev.shop.length ? pid : null;
+    if (prev && Array.isArray(prev.shop) && prev.shop.length) {
+      w.shop = copyShop(prev.shop);
+      w.shopCopiedFrom = pid;
+    } else {
+      w.shop = copyShop(shopTemplateOf(state));
+      w.shopCopiedFrom = null;
+    }
   }
   return w.shop;
+}
+
+/** Puts the standing list back over this week's, keeping anything needed. */
+export function resetShopFromTemplate(state: AppState, weekId: string): boolean {
+  const w = state.weeks[weekId];
+  if (!w) return false;
+  w.shop = copyShop(shopTemplateOf(state));
+  w.shopCopiedFrom = null;
+  return true;
+}
+
+/** Everything marked needed, by heading, with empty headings left out —
+ *  the list you actually walk round the shop with. */
+export function shoppingList(groups: ShopGroup[]): ShopGroup[] {
+  return groups
+    .map((g) => ({ ...g, items: g.items.filter((it) => it.need) }))
+    .filter((g) => g.items.length > 0);
+}
+
+export function shopCounts(groups: ShopGroup[]): { need: number; got: number } {
+  let need = 0;
+  let got = 0;
+  for (const g of groups) {
+    for (const it of g.items) {
+      if (!it.need) continue;
+      need += 1;
+      if (it.done) got += 1;
+    }
+  }
+  return { need, got };
 }
 
 export interface MoveResult {
