@@ -161,7 +161,68 @@ export function shopListFor(state: AppState, weekId: string): ShopGroup[] {
       w.shopCopiedFrom = null;
     }
   }
+  // Whatever it was built from, the standard list is always in it. Adding
+  // something to the standard list should turn up on the week you are on, not
+  // only on weeks you have not opened yet.
+  mergeTemplateInto(w.shop, shopTemplateOf(state));
   return w.shop;
+}
+
+/** Adds anything in the standard list that the week is missing, under the
+ *  right heading, creating the heading if it is not there. Never removes and
+ *  never touches a tick. */
+export function mergeTemplateInto(list: ShopGroup[], template: ShopGroup[]): number {
+  let added = 0;
+  for (const src of template) {
+    const key = src.name.trim().toLowerCase();
+    let into = list.find((g) => g.name.trim().toLowerCase() === key);
+    if (!into) {
+      into = { id: uid('g'), name: src.name, items: [] };
+      list.push(into);
+    }
+    const have = new Set(into.items.map((i) => i.text.trim().toLowerCase()));
+    for (const it of src.items) {
+      const t = it.text.trim().toLowerCase();
+      if (!t || have.has(t)) continue;
+      have.add(t);
+      into.items.push({ id: uid('i'), text: it.text, need: false, done: false });
+      added += 1;
+    }
+  }
+  return added;
+}
+
+/** How often each thing has actually been bought, across every week.
+ *  Counted from the weeks themselves rather than a running total, so it can
+ *  never drift from what happened. */
+export function mostBought(state: AppState, limit = 12): { text: string; n: number }[] {
+  const seen = new Map<string, { text: string; n: number }>();
+  for (const w of Object.values(state.weeks)) {
+    for (const g of w.shop ?? []) {
+      for (const it of g.items ?? []) {
+        if (!it.done) continue;
+        const key = it.text.trim().toLowerCase();
+        if (!key) continue;
+        const row = seen.get(key);
+        if (row) row.n += 1;
+        else seen.set(key, { text: it.text.trim(), n: 1 });
+      }
+    }
+  }
+  return [...seen.values()]
+    .sort((a, b) => b.n - a.n || a.text.localeCompare(b.text))
+    .slice(0, limit);
+}
+
+/** Things bought often that are not on this week's list at all. */
+export function missingRegulars(state: AppState, weekId: string, min = 3): string[] {
+  const list = state.weeks[weekId]?.shop ?? [];
+  const have = new Set<string>();
+  for (const g of list) for (const it of g.items) have.add(it.text.trim().toLowerCase());
+  return mostBought(state, 50)
+    .filter((x) => x.n >= min && !have.has(x.text.toLowerCase()))
+    .slice(0, 6)
+    .map((x) => x.text);
 }
 
 /** Puts the standing list back over this week's, keeping anything needed. */

@@ -212,29 +212,48 @@ test('a week created on demand inherits the previous template', () => {
 test('the shopping list copies forward once, then the weeks are independent', () => {
   const s = fresh();
   s.weeks[WEEK38].shop = [
-    { id: 'g1', name: 'Breakfast', items: [{ id: 'i1', text: 'Oats', done: true }] },
+    { id: 'g1', name: 'Breakfast', items: [{ id: 'i1', text: 'Hot sauce', need: true, done: true }] },
   ];
   ensureWeek(s, '2026-09-21');
   const next = shopListFor(s, '2026-W39');
-  assert.equal(next.length, 1);
-  assert.equal(next[0].name, 'Breakfast');
-  assert.equal(next[0].items[0].text, 'Oats');
-  assert.equal(next[0].items[0].done, false, 'copied items start unticked');
+
+  const carried = next.find((g) => g.name === 'Breakfast')!.items
+    .find((i) => i.text === 'Hot sauce')!;
+  assert.equal(carried.need, false, 'copied items start undecided');
+  assert.equal(carried.done, false);
   assert.equal(s.weeks['2026-W39'].shopCopiedFrom, WEEK38);
 
-  next[0].items[0].text = 'Porridge oats';
-  next.push({ id: 'g2', name: 'Lunch', items: [] });
-  assert.equal(s.weeks[WEEK38].shop![0].items[0].text, 'Oats', 'last week is untouched');
+  carried.text = 'Chilli sauce';
+  next.push({ id: 'g2', name: 'One off', items: [] });
+  assert.equal(s.weeks[WEEK38].shop![0].items[0].text, 'Hot sauce', 'last week is untouched');
   assert.equal(s.weeks[WEEK38].shop!.length, 1);
+});
+
+test('the standard list is merged in even when the week came from last week', () => {
+  const s = fresh();
+  s.weeks[WEEK38].shop = [
+    { id: 'g1', name: 'Breakfast', items: [{ id: 'i1', text: 'Hot sauce', need: true, done: true }] },
+  ];
+  ensureWeek(s, '2026-09-21');
+  const next = shopListFor(s, '2026-W39');
+  assert.ok(next.some((g) => g.name === 'Dinner'), 'headings it never had turn up');
+  assert.ok(next.find((g) => g.name === 'Breakfast')!.items.some((i) => i.text === 'Eggs'),
+    'and so do items under a heading it did have');
 });
 
 test('the shopping list does not re-copy on later reads', () => {
   const s = fresh();
   s.weeks[WEEK38].shop = [{ id: 'g1', name: 'Breakfast', items: [] }];
   ensureWeek(s, '2026-09-21');
-  shopListFor(s, '2026-W39');
-  s.weeks['2026-W39'].shop!.length = 0;
-  assert.equal(shopListFor(s, '2026-W39').length, 0);
+  const first = shopListFor(s, '2026-W39');
+  const n = first.reduce((a, g) => a + g.items.length, 0);
+  first.find((g) => g.name === 'Breakfast')!.items.push(
+    { id: 'mine', text: 'Marmalade', need: true, done: false },
+  );
+  const again = shopListFor(s, '2026-W39');
+  assert.equal(again.reduce((a, g) => a + g.items.length, 0), n + 1,
+    'reading it again neither re-copies nor re-adds');
+  assert.ok(again.find((g) => g.name === 'Breakfast')!.items.some((i) => i.id === 'mine'));
 });
 
 test('watch counts tally a series across days and weeks', () => {

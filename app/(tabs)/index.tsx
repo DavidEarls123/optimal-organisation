@@ -236,7 +236,8 @@ export default function DayScreen() {
 
   const addTask = useCallback((sectionId: string) => {
     const text = (drafts[sectionId] ?? '').trim().slice(0, TASK_LIMIT);
-    if (!text) return;
+    // Nothing typed and you pressed next: that means you are finished.
+    if (!text) { setAdding(null); Keyboard.dismiss(); return; }
     update((d) => {
       const arr = (d.weeks[weekId].tasks[day] ??= []);
       arr.push({ id: uid('n'), text, state: 'open', plan: false,

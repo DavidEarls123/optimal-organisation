@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState, migrate } from '../src/domain/state';
 import {
-  buildTripItems, ensureWeek, marksOn, resetShopFromTemplate, shopCounts, shopListFor,
-  shopTemplateOf, shoppingList, tripTemplateOf,
+  buildTripItems, ensureWeek, marksOn, mergeTemplateInto, missingRegulars, mostBought,
+  resetShopFromTemplate, shopCounts, shopListFor, shopTemplateOf, shoppingList, tripTemplateOf,
 } from '../src/domain/week';
 import { TRIP_CATEGORIES } from '../src/domain/catalogue';
 import type { AppState, ShopGroup } from '../src/domain/types';
@@ -164,4 +164,93 @@ test('a day inside a trip is marked, and so is the day a countdown lands on', ()
   assert.deepEqual(marksOn(s, '2026-09-18'), { trips: ['Lisbon'], events: [] }, 'and the last day');
   assert.deepEqual(marksOn(s, '2026-09-19'), { trips: [], events: [] });
   assert.deepEqual(marksOn(s, '2026-09-20'), { trips: [], events: ['Dentist'] });
+});
+
+test('the standard list is merged into a week that never had it', () => {
+  const s = fresh();
+  s.weeks[WEEK].shop = [{ id: 'g1', name: 'Dinner', items: [
+    { id: 'i1', text: 'Mince', need: true, done: false },
+  ] }];
+  const list = shopListFor(s, WEEK);
+  assert.ok(list.some((g) => g.name === 'Breakfast'), 'missing headings appear');
+  assert.ok(list.find((g) => g.name === 'Dinner')!.items.some((i) => i.id === 'i1'),
+    'and what was already there is untouched');
+  assert.equal(list.find((g) => g.name === 'Dinner')!.items.find((i) => i.id === 'i1')!.need, true,
+    'including its ticks');
+});
+
+test('merging does not duplicate an item the week already has', () => {
+  const s = fresh();
+  const list = shopListFor(s, WEEK);
+  const before = list.reduce((a, g) => a + g.items.length, 0);
+  assert.equal(mergeTemplateInto(list, shopTemplateOf(s)), 0);
+  assert.equal(list.reduce((a, g) => a + g.items.length, 0), before);
+});
+
+test('merging matches a heading however it is capitalised', () => {
+  const s = fresh();
+  s.weeks[WEEK].shop = [{ id: 'g1', name: 'BREAKFAST', items: [] }];
+  const list = shopListFor(s, WEEK);
+  assert.equal(list.filter((g) => g.name.toLowerCase() === 'breakfast').length, 1);
+});
+
+test('most bought counts only what was actually got', () => {
+  const s = fresh();
+  s.weeks[WEEK].shop = [{ id: 'g1', name: 'Dinner', items: [
+    { id: 'i1', text: 'Mince', need: true, done: true },
+    { id: 'i2', text: 'Pasta', need: true, done: false },
+  ] }];
+  const top = mostBought(s);
+  assert.deepEqual(top.map((x) => x.text), ['Mince']);
+  assert.equal(top[0].n, 1);
+});
+
+test('most bought tallies the same thing across weeks, however it is typed', () => {
+  const s = fresh();
+  s.weeks[WEEK].shop = [{ id: 'g1', name: 'Dinner', items: [
+    { id: 'i1', text: 'Mince', need: true, done: true },
+  ] }];
+  const nextId = ensureWeek(s, '2026-09-21');
+  s.weeks[nextId].shop = [{ id: 'g2', name: 'Dinner', items: [
+    { id: 'i2', text: ' mince ', need: true, done: true },
+  ] }];
+  const top = mostBought(s);
+  assert.equal(top.length, 1);
+  assert.equal(top[0].n, 2);
+});
+
+test('regulars missing from this week are only ones bought often enough', () => {
+  const s = fresh();
+  // Three earlier weeks of buying oatcakes; this week's list has neither.
+  // Mondays, all genuinely before week 38 — 14 Sep is week 38's own Monday.
+  const past = [ensureWeek(s, '2026-08-24'), ensureWeek(s, '2026-08-31'),
+    ensureWeek(s, '2026-09-07')];
+  past.forEach((id, i) => {
+    s.weeks[id].shop = [{ id: `g-${id}`, name: 'Snacks', items: [
+      { id: `i-${id}`, text: 'Oatcakes', need: true, done: true },
+      { id: `j-${id}`, text: 'Olives', need: true, done: i === 0 },
+    ] }];
+  });
+  s.weeks[WEEK].shop = [{ id: 'now', name: 'Snacks', items: [] }];
+
+  const missing = missingRegulars(s, WEEK, 3);
+  assert.ok(missing.includes('Oatcakes'), 'bought three times');
+  assert.ok(!missing.includes('Olives'), 'bought once');
+});
+
+test('something already on the list is not offered as missing', () => {
+  const s = fresh();
+  // Mondays, all genuinely before week 38 — 14 Sep is week 38's own Monday.
+  const past = [ensureWeek(s, '2026-08-24'), ensureWeek(s, '2026-08-31'),
+    ensureWeek(s, '2026-09-07')];
+  for (const id of past) {
+    s.weeks[id].shop = [{ id: `g-${id}`, name: 'Snacks', items: [
+      { id: `i-${id}`, text: 'Oatcakes', need: true, done: true },
+    ] }];
+  }
+  s.weeks[WEEK].shop = [{ id: 'now', name: 'Snacks', items: [
+    { id: 'here', text: 'Oatcakes', need: false, done: false },
+  ] }];
+  assert.deepEqual(missingRegulars(s, WEEK, 3), [],
+    'written down is written down, even unticked');
 });
