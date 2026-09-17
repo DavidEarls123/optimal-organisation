@@ -79,6 +79,8 @@ export function migrate(loaded: Partial<AppState> | null): AppState | null {
     w.habits ??= {};
     w.tasks ??= {};
     w.habitPlan ??= {};
+    w.at ??= {};
+    w.readings ??= {};
     for (const [d, arr] of Object.entries(w.tasks)) {
       if (!Array.isArray(arr)) { w.tasks[Number(d)] = []; continue; }
       // 'dropped' is gone: a task is either live or deleted outright. Anything

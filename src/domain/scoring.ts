@@ -1,6 +1,6 @@
 import type { AppState, Habit, Week } from './types';
 import { TEMPLATES } from './catalogue';
-import { DAY_NAMES, dayIndexIn } from './dates';
+import { DAY_NAMES, dayDateIso, dayIndexIn } from './dates';
 import type { WeekTemplate } from './types';
 
 export const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
@@ -211,3 +211,82 @@ export function watchCount(state: AppState, itemId: string): number {
   }
   return n;
 }
+
+/** How a flexible habit is doing against its target, with the week's shape
+ *  taken into account. A "3 times a week" habit on Saturday with none done is
+ *  not merely behind — it is out of room, and the tile should say so. */
+export interface Pacing {
+  done: number;
+  target: number;
+  /** Tracked days still available, today included. */
+  daysLeft: number;
+  /** Still owed. */
+  left: number;
+  /** True when there are fewer days left than sessions owed. */
+  atRisk: boolean;
+  /** True when it cannot be finished any more. */
+  impossible: boolean;
+}
+
+export function pacing(week: Week, habitId: string, today: number): Pacing {
+  const target = habitTarget(week, habitId);
+  const done = habitDone(week, habitId);
+  const left = Math.max(0, target - done);
+  let daysLeft = 0;
+  for (let d = today; d < 7; d += 1) {
+    if (!week.untracked[d] && !(week.habits[d] ?? {})[habitId]) daysLeft += 1;
+  }
+  return {
+    done, target, daysLeft, left,
+    atRisk: left > 0 && left >= daysLeft && daysLeft > 0,
+    impossible: left > daysLeft,
+  };
+}
+
+/** What time of day a habit usually gets done, and how much it moves around.
+ *  Both in minutes past midnight; `spread` is the mean absolute deviation,
+ *  which survives a small number of samples better than a standard deviation. */
+export interface Timing { n: number; mean: number; spread: number; earliest: number; latest: number }
+
+export function timing(weeks: Week[], habitId: string): Timing | null {
+  const mins: number[] = [];
+  for (const w of weeks) {
+    for (const map of Object.values(w.at ?? {})) {
+      const m = map?.[habitId];
+      if (typeof m === 'number' && m >= 0 && m < 1440) mins.push(m);
+    }
+  }
+  if (!mins.length) return null;
+  const mean = mins.reduce((a, b) => a + b, 0) / mins.length;
+  const spread = mins.reduce((a, b) => a + Math.abs(b - mean), 0) / mins.length;
+  return {
+    n: mins.length,
+    mean,
+    spread,
+    earliest: Math.min(...mins),
+    latest: Math.max(...mins),
+  };
+}
+
+export function clockLabel(minutes: number): string {
+  const m = Math.round(minutes);
+  const h = Math.floor(m / 60) % 24;
+  return `${String(h).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/** Every reading for a habit, oldest first, as [ISO date, value in kg]. */
+export function readings(weeks: Week[], habitId: string): [string, number][] {
+  const out: [string, number][] = [];
+  for (const w of weeks) {
+    for (const [day, map] of Object.entries(w.readings ?? {})) {
+      const v = map?.[habitId];
+      if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+      out.push([dayDateIso(w.monday, Number(day)), v]);
+    }
+  }
+  return out.sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+export const KG_PER_LB = 0.45359237;
+export const toKg = (v: number, unit: 'kg' | 'lb') => (unit === 'kg' ? v : v * KG_PER_LB);
+export const fromKg = (kg: number, unit: 'kg' | 'lb') => (unit === 'kg' ? kg : kg / KG_PER_LB);

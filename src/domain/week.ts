@@ -63,6 +63,8 @@ export function createWeek(state: AppState, mondayIso: string, templateId: strin
     untracked: {},
     complete: {},
     watched: {},
+    at: {},
+    readings: {},
   };
   for (let d = 0; d < 7; d += 1) w.tasks[d] = planTasks(state, templateId, d);
   return w;

@@ -74,6 +74,13 @@ export interface Week {
   complete: Record<number, boolean>;
   /** dayIndex -> watchlist item ids picked that evening. */
   watched: Record<number, string[]>;
+  /** dayIndex -> habitId -> minutes past midnight when it was ticked.
+   *  Only what the phone was showing at the time; never backfilled. */
+  at?: Record<number, Record<string, number>>;
+  /** dayIndex -> habitId -> the number the habit asked for, e.g. a weight.
+   *  Stored in kilograms whatever the display unit, so changing units later
+   *  does not silently rewrite history. */
+  readings?: Record<number, Record<string, number>>;
   shop?: ShopGroup[];
   shopCopiedFrom?: string | null;
 }

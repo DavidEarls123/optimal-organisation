@@ -13,7 +13,8 @@ import { APP_BY, APP_NAME } from '../../src/brand';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { bandColour, radius } from '../../src/theme/tokens';
 import {
-  activeHabits, habitDone, habitTarget, planLabel, streak, templateOf, trackWeekCount, weekScore,
+  activeHabits, clockLabel, fromKg, habitDone, habitTarget, planLabel, readings, streak,
+  templateOf, timing, trackWeekCount, weekScore,
 } from '../../src/domain/scoring';
 import { applyUpdate, checkForUpdate, currentVersion, updatesEnabled } from '../../src/services/updates';
 
@@ -214,6 +215,116 @@ function YourData() {
   );
 }
 
+/** A weight over time, drawn from views. The y axis spans only the range the
+ *  readings actually cover, padded a little, because a scale starting at zero
+ *  turns any real change into a flat line. */
+function ReadingGraph({ habitId, name }: { habitId: string; name: string }) {
+  const t = useTheme();
+  const { state } = useStore();
+  const unit = state.prefs.weightUnit;
+  const pts = readings(Object.values(state.weeks), habitId);
+
+  if (pts.length < 2) {
+    return (
+      <Section>
+        <SectionHead title={name} right={pts.length ? '1 reading' : 'no readings'} />
+        <Note>
+          {pts.length
+            ? `Once there is a second reading this becomes a line. Latest: ${
+              (Math.round(fromKg(pts[0][1], unit) * 10) / 10)} ${unit}.`
+            : `Tick ${name} on a day to record one.`}
+        </Note>
+      </Section>
+    );
+  }
+
+  const vals = pts.map(([, kg]) => fromKg(kg, unit));
+  const lo = Math.min(...vals);
+  const hi = Math.max(...vals);
+  const pad = Math.max(0.4, (hi - lo) * 0.18);
+  const top = hi + pad;
+  const bottom = lo - pad;
+  const H = 108;
+  const at = (v: number) => H - ((v - bottom) / (top - bottom)) * H;
+
+  const first = vals[0];
+  const last = vals[vals.length - 1];
+  const change = last - first;
+  const round = (v: number) => Math.round(v * 10) / 10;
+
+  return (
+    <Section>
+      <SectionHead
+        title={name}
+        right={`${round(last)} ${unit}`}
+      />
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <View style={{ justifyContent: 'space-between', height: H, paddingVertical: 1 }}>
+          <Mono style={{ fontSize: 9.5 }}>{round(top)}</Mono>
+          <Mono style={{ fontSize: 9.5 }}>{round(bottom)}</Mono>
+        </View>
+        <View style={{ flex: 1, height: H, borderLeftWidth: 1, borderBottomWidth: 1,
+          borderColor: t.rule, paddingLeft: 2 }}>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'flex-end' }}>
+            {vals.map((v, i) => (
+              <View key={pts[i][0]} style={{ flex: 1, height: '100%', justifyContent: 'flex-start' }}>
+                <View style={{ position: 'absolute', top: at(v) - 3, left: 0, right: 0,
+                  alignItems: 'center' }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3,
+                    backgroundColor: i === vals.length - 1 ? t.accent : t.accentLine }} />
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Mono style={{ fontSize: 10 }}>{pts[0][0].slice(5)}</Mono>
+        <Mono style={{ fontSize: 10, color: change === 0 ? t.ink3 : change < 0 ? t.hit : t.partial }}>
+          {`${change > 0 ? '+' : ''}${round(change)} ${unit} over ${pts.length} readings`}
+        </Mono>
+        <Mono style={{ fontSize: 10 }}>{pts[pts.length - 1][0].slice(5)}</Mono>
+      </View>
+    </Section>
+  );
+}
+
+/** When each habit actually gets done, and how much that moves. */
+function Timings() {
+  const t = useTheme();
+  const { state } = useStore();
+  const weeks = Object.values(state.weeks);
+  const rows = state.habits
+    .filter((h) => h.active)
+    .map((h) => ({ h, t: timing(weeks, h.id) }))
+    .filter((r): r is { h: typeof r.h; t: NonNullable<typeof r.t> } => Boolean(r.t))
+    .sort((a, b) => a.t.mean - b.t.mean);
+
+  if (!rows.length) return null;
+
+  return (
+    <Section>
+      <SectionHead title="When you do things" right={`${rows.length} tracked`} />
+      <Note>
+        Taken from the moment you tick each one, on the day itself. Ticking a past day
+        records no time rather than a wrong one.
+      </Note>
+      <View>
+        {rows.map(({ h, t: tm }) => (
+          <View key={h.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+            paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: t.rule2 }}>
+            <Text style={{ flex: 1, fontSize: 13.5, color: t.ink }}>{h.short || h.name}</Text>
+            <Mono style={{ fontSize: 12.5, color: t.ink }}>{clockLabel(tm.mean)}</Mono>
+            <Mono style={{ fontSize: 10.5, width: 74, textAlign: 'right' }}>
+              {tm.spread < 8 ? 'to the minute' : `±${Math.round(tm.spread)} min`}
+            </Mono>
+          </View>
+        ))}
+      </View>
+    </Section>
+  );
+}
+
 function ThisYear() {
   const t = useTheme();
   const { state, today } = useStore();
@@ -298,6 +409,12 @@ function ThisYear() {
           );
         })}
       </Section>
+
+      {state.habits.filter((h) => h.picks === 'weight' && h.active).map((h) => (
+        <ReadingGraph key={h.id} habitId={h.id} name={h.name} />
+      ))}
+
+      <Timings />
     </>
   );
 }

@@ -19,6 +19,8 @@ function lived() {
   w.untracked[4] = true;
   w.complete[0] = true;
   w.watched[1] = ['w1', 'w2'];
+  w.at = { 0: { tabs_am: 435, calories: 1170 }, 1: { tabs_am: 448 } };
+  w.readings = { 0: { weight: 81.4 }, 3: { weight: 80.9 } };
   w.habitPlan.meditate = { mode: 'days', days: [0, 2, 4, 6], n: 4 };
   w.tasks[1] = [
     { id: 't1', text: 'Intervals', state: 'done', plan: true, track: 'run', sec: 's3' },
@@ -83,6 +85,16 @@ test('untracked days, ticks and watched entries survive the trip', () => {
   assert.deepEqual(w.watched[1], ['w1', 'w2']);
   assert.equal(w.tasks[1].find((t) => t.id === 't2')?.state, 'open');
   assert.equal(w.shop?.[0].items[0].done, true);
+});
+
+test('tick times and weight readings survive the trip', () => {
+  const res = parseBackup(serialise(lived()));
+  assert.ok(res.ok);
+  if (!res.ok) return;
+  const w = res.state.weeks[WEEK38];
+  assert.equal(w.at?.[0].tabs_am, 435);
+  assert.equal(w.at?.[1].tabs_am, 448);
+  assert.equal(w.readings?.[3].weight, 80.9);
 });
 
 test('a disabled habit comes back disabled, with its plan intact', () => {

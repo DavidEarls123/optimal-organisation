@@ -5,7 +5,8 @@ import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
 import {
-  Bar, Body, Button, Chip, Empty, Field, Mono, Note, Screen, Section, SectionHead, Sheet, Tick,
+  Bar, Body, Button, Chip, Empty, Field, Mono, Note, Screen, Section, SectionHead, Segmented,
+  Sheet, Tick,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -13,7 +14,8 @@ import { radius } from '../../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES, dayDateIso, isoOf, parseISO } from '../../src/domain/dates';
 import { moveTask, nudgeTask, uid } from '../../src/domain/week';
 import {
-  activeHabits, dayOutstanding, habitDayStatus, habitDone, habitTarget, planLabel,
+  activeHabits, dayOutstanding, fromKg, habitDayStatus, habitDone, habitTarget, pacing,
+  planLabel, toKg,
 } from '../../src/domain/scoring';
 import type { CalendarEvent, Habit, Task, Week } from '../../src/domain/types';
 import { askForCalendar, calendarAccess, calendarError, eventsForDay, type CalendarAccess }
@@ -40,6 +42,8 @@ export default function DayScreen() {
   const [condensed, setCondensed] = useState(false);
   const scroller = useRef<ScrollView>(null);
   const composerY = useRef(0);
+  /** The habit currently asking for a weight, if any. */
+  const [weighing, setWeighing] = useState<string | null>(null);
 
   /** Puts the open composer near the middle of the screen, so what you are
    *  typing is not behind the keyboard. */
@@ -143,11 +147,44 @@ export default function DayScreen() {
   const toggleHabit = useCallback((habitId: string) => {
     const h = state.habits.find((x) => x.id === habitId);
     if (h?.picks === 'watch') { router.push({ pathname: '/watch', params: { day: String(day) } }); return; }
+    if (h?.picks === 'weight') { setWeighing(habitId); return; }
     update((d) => {
-      const map = (d.weeks[weekId].habits[day] ??= {});
-      if (map[habitId]) delete map[habitId]; else map[habitId] = true;
+      const w = d.weeks[weekId];
+      const map = (w.habits[day] ??= {});
+      const at = (w.at ??= {});
+      const stamps = (at[day] ??= {});
+      if (map[habitId]) {
+        delete map[habitId];
+        delete stamps[habitId];
+      } else {
+        map[habitId] = true;
+        // Only ever the clock at the moment it was ticked. Ticking Monday on
+        // Thursday records nothing rather than a time that never happened.
+        const now = new Date();
+        if (dayDateIso(w.monday, day) === isoOf(now)) {
+          stamps[habitId] = now.getHours() * 60 + now.getMinutes();
+        }
+      }
     });
   }, [state.habits, router, update, weekId, day]);
+
+  /** Records a weight, or marks the day as one you did not weigh in. */
+  const recordWeight = useCallback((habitId: string, kg: number | null) => {
+    update((d) => {
+      const w = d.weeks[weekId];
+      const map = (w.habits[day] ??= {});
+      const readings = (w.readings ??= {});
+      const onDay = (readings[day] ??= {});
+      if (kg === null) {
+        delete map[habitId];
+        delete onDay[habitId];
+      } else {
+        map[habitId] = true;
+        onDay[habitId] = kg;
+      }
+    });
+    setWeighing(null);
+  }, [update, weekId, day]);
 
   const addTask = useCallback((sectionId: string) => {
     const text = (drafts[sectionId] ?? '').trim().slice(0, TASK_LIMIT);
@@ -376,6 +413,7 @@ export default function DayScreen() {
             habits={planned}
             week={week}
             ticked={ticked}
+            today={day}
             tone="today"
             onToggle={toggleHabit}
           />
@@ -387,6 +425,7 @@ export default function DayScreen() {
               habits={anyday}
               week={week}
               ticked={ticked}
+              today={day}
               tone="anyday"
               onToggle={toggleHabit}
             />
@@ -399,6 +438,7 @@ export default function DayScreen() {
               habits={notToday}
               week={week}
               ticked={ticked}
+              today={day}
               tone="off"
               onToggle={toggleHabit}
             />
@@ -445,6 +485,13 @@ export default function DayScreen() {
         </View>
       </Body>
 
+      <WeightSheet
+        habitId={weighing}
+        onClose={() => setWeighing(null)}
+        onSave={recordWeight}
+        current={weighing ? (week.readings?.[day] ?? {})[weighing] : undefined}
+      />
+
       <Sheet
         open={showPicker && Boolean(moveId)}
         title="Move to a date"
@@ -467,14 +514,79 @@ export default function DayScreen() {
   );
 }
 
+/** Asks for a number rather than just a tick. Entered in whichever unit you
+ *  set, stored in kilograms, so switching units later reads the same history
+ *  rather than rewriting it. */
+function WeightSheet({ habitId, current, onClose, onSave }: {
+  habitId: string | null;
+  current?: number;
+  onClose: () => void;
+  onSave: (habitId: string, kg: number | null) => void;
+}) {
+  const t = useTheme();
+  const { state, update } = useStore();
+  const unit = state.prefs.weightUnit;
+  const [text, setText] = useState('');
+
+  useEffect(() => {
+    if (!habitId) return;
+    setText(current === undefined ? '' : String(Math.round(fromKg(current, unit) * 10) / 10));
+  }, [habitId, current, unit]);
+
+  const value = Number(text.replace(',', '.'));
+  const ok = text.trim() !== '' && Number.isFinite(value) && value > 0 && value < 1000;
+
+  return (
+    <Sheet
+      open={Boolean(habitId)}
+      title="Weight"
+      onClose={onClose}
+      footer={
+        <>
+          <View style={{ flex: 1 }}>
+            <Button tone="ghost" title="Not tracked today"
+              onPress={() => habitId && onSave(habitId, null)} />
+          </View>
+          <Button title="Save" disabled={!ok}
+            onPress={() => ok && habitId && onSave(habitId, toKg(value, unit))} />
+        </>
+      }
+    >
+      <Segmented
+        value={unit}
+        onChange={(v) => update((d) => { d.prefs.weightUnit = v; })}
+        options={[{ key: 'kg' as const, label: 'kg' }, { key: 'lb' as const, label: 'lb' }]}
+      />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <Field
+          value={text}
+          onChangeText={setText}
+          keyboardType="decimal-pad"
+          placeholder="0.0"
+          maxLength={6}
+          autoFocus
+          accessibilityLabel={`Weight in ${unit}`}
+          style={{ fontSize: 30, fontWeight: '700', textAlign: 'center', paddingVertical: 14 }}
+        />
+        <Text style={{ fontSize: 17, color: t.ink2, fontWeight: '600', width: 26 }}>{unit}</Text>
+      </View>
+      <Note>
+        Kept for the graph on the Hub. Not tracked leaves the day blank rather than
+        counting it as a miss.
+      </Note>
+    </Sheet>
+  );
+}
+
 /** One band of habits: what today asks, what the week asks, and what it does not. */
-function HabitGroup({ label, hint, habits, week, ticked, tone, onToggle }: {
+function HabitGroup({ label, hint, habits, week, ticked, tone, today, onToggle }: {
   label: string;
   hint?: string;
   habits: Habit[];
   week: Week;
   ticked: Record<string, boolean>;
   tone: 'today' | 'anyday' | 'off';
+  today: number;
   onToggle: (habitId: string) => void;
 }) {
   const t = useTheme();
@@ -495,6 +607,9 @@ function HabitGroup({ label, hint, habits, week, ticked, tone, onToggle }: {
             const on = Boolean(ticked[h.id]);
             const n = habitDone(week, h.id);
             const tg = habitTarget(week, h.id);
+            // Only flexible habits have a race against the week; a pinned one
+            // is simply owed today or not.
+            const pace = tone === 'anyday' && tg > 0 ? pacing(week, h.id, today) : null;
             return (
               <Pressable
                 key={h.id}
@@ -503,15 +618,16 @@ function HabitGroup({ label, hint, habits, week, ticked, tone, onToggle }: {
                 accessibilityLabel={`${h.name}, ${label.toLowerCase()}, ${n} of ${tg} this week`}
                 onPress={() => onToggle(h.id)}
                 style={{
-                  flexBasis: '48%', flexGrow: 0, flexDirection: 'row', alignItems: 'center', gap: 9,
+                  flexBasis: '48%', flexGrow: 0, gap: 7,
                   borderWidth: 1, borderRadius: radius.md, padding: 10,
                   borderStyle: dashed && !on ? 'dashed' : 'solid',
-                  borderColor: on ? fill : t.rule,
+                  borderColor: pace?.impossible && !on ? t.miss : on ? fill : t.rule,
                   backgroundColor: on
                     ? (tone === 'today' ? t.hitSoft : tone === 'anyday' ? t.accentSoft : t.sunk)
                     : 'transparent',
                 }}
               >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
                 <Tick on={on} tone={tone === 'today' ? 'hit' : 'accent'} size={18} />
                 <View style={{ flex: 1 }}>
                   <Text numberOfLines={1} style={{ fontSize: 13.5, fontWeight: '500',
@@ -523,7 +639,31 @@ function HabitGroup({ label, hint, habits, week, ticked, tone, onToggle }: {
                     {planLabel(week, h.id) || 'Not this week'}
                   </Mono>
                 </View>
-                <Mono style={{ color: on ? fill : t.ink3 }}>{`${n}/${tg}`}</Mono>
+                  <Mono style={{ color: on ? fill : t.ink3 }}>{`${n}/${tg}`}</Mono>
+                </View>
+
+                {/* A week's worth of room is not the same as a week's worth of
+                    days left. Three owed on a Saturday is the case this is for. */}
+                {pace ? (
+                  <View style={{ gap: 3 }}>
+                    <View style={{ height: 4, borderRadius: 2, backgroundColor: t.rule2,
+                      overflow: 'hidden', flexDirection: 'row' }}>
+                      <View style={{ flex: Math.max(0, Math.min(1, tg ? n / tg : 0)),
+                        backgroundColor: pace.impossible ? t.miss : pace.atRisk ? t.partial : fill }} />
+                      <View style={{ flex: Math.max(0, 1 - (tg ? n / tg : 0)) }} />
+                    </View>
+                    <Mono style={{ fontSize: 9,
+                      color: pace.impossible ? t.miss : pace.atRisk ? t.partial : t.ink3 }}>
+                      {pace.left === 0
+                        ? 'Done for the week'
+                        : pace.impossible
+                          ? `${pace.left} left · only ${pace.daysLeft} ${pace.daysLeft === 1 ? 'day' : 'days'}`
+                          : pace.atRisk
+                            ? `${pace.left} left · ${pace.daysLeft} ${pace.daysLeft === 1 ? 'day' : 'days'} — every one`
+                            : `${pace.left} left · ${pace.daysLeft} days`}
+                    </Mono>
+                  </View>
+                ) : null}
               </Pressable>
             );
           })}
