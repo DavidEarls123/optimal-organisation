@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  useWindowDimensions,
   type StyleProp, type TextStyle, type ViewStyle,
 } from 'react-native';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
@@ -377,17 +378,21 @@ export function Sheet({ open, title, onClose, children, footer }: {
   footer?: React.ReactNode;
 }) {
   const t = useTheme();
+  const { height } = useWindowDimensions();
+  // Room for the header, the footer and the screen edges, and never so tall
+  // that a long list has nowhere to scroll.
+  const bodyMax = Math.max(160, Math.min(520, height - 260));
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable
-        accessibilityLabel="Close"
-        onPress={onClose}
-        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-          alignItems: 'center', justifyContent: 'center', padding: 22 }}
-      >
-        {/* Swallows taps so pressing inside the card does not close it. */}
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 22 }}>
+        {/* The backdrop sits behind the card rather than around it: wrapping the
+            card in a Pressable let it swallow the drag a long list needs. */}
         <Pressable
-          onPress={() => {}}
+          accessibilityLabel="Close"
+          onPress={onClose}
+          style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }]}
+        />
+        <View
           style={{ width: '100%', maxWidth: 380, backgroundColor: t.sheet,
             borderRadius: radius.lg + 4, borderWidth: 1, borderColor: t.rule,
             overflow: 'hidden' }}
@@ -402,9 +407,11 @@ export function Sheet({ open, title, onClose, children, footer }: {
             </Pressable>
           </View>
           <ScrollView
-            style={{ maxHeight: 420 }}
+            style={{ maxHeight: bodyMax }}
             contentContainerStyle={{ padding: 16, gap: 10 }}
             keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator
+            indicatorStyle={t.dark ? 'white' : 'black'}
           >
             {children}
           </ScrollView>
@@ -414,8 +421,8 @@ export function Sheet({ open, title, onClose, children, footer }: {
               {footer}
             </View>
           ) : null}
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }

@@ -161,7 +161,7 @@ export const DAY_STYLES: { key: DayStyle; name: string; note: string }[] = [
   { key: 'ring', name: 'Halo', note: 'A soft tint with the ring picked out' },
 ];
 
-export const DEFAULT_PREFS: Prefs = { theme: 'system', weightUnit: 'kg', dayStyle: 'outline' };
+export const DEFAULT_PREFS: Prefs = { theme: 'system', weightUnit: 'kg', dayStyle: 'ring' };
 
 /** [text, trackableId | null, sectionIndex] */
 export type PlanEntry = [string, string | null, number];

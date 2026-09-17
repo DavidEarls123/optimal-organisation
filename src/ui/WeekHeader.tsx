@@ -161,23 +161,27 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
                 {letter}
               </Text>
               <DayMark done={done} off={off} score={score} selected={selected} look={look} />
-              <Text style={{ fontSize: 13, fontWeight: selected ? '800' : '600',
-                color: selected ? look.ink : off ? t.ink3 : t.ink,
-                fontVariant: ['tabular-nums'] }}>
-                {addDays(parseISO(week.monday), d).getDate()}
-              </Text>
+              {/* Today is underlined rather than dotted: it reads as clearly
+                  and costs no row of its own. */}
+              <View style={{ alignItems: 'center', gap: 2 }}>
+                <Text style={{ fontSize: 13, fontWeight: selected ? '800' : '600',
+                  color: selected ? look.ink : off ? t.ink3 : t.ink,
+                  fontVariant: ['tabular-nums'] }}>
+                  {addDays(parseISO(week.monday), d).getDate()}
+                </Text>
+                <View style={{ height: 2, width: 15, borderRadius: 1,
+                  backgroundColor: d === ti && current
+                    ? (selected ? look.ink : t.accent) : 'transparent' }} />
+              </View>
               {/* A trip or a countdown on this day, so it shows without going
-                  to Horizon to find it. */}
-              <Text style={{ fontSize: 8, lineHeight: 10, marginTop: -2, height: 10,
-                color: selected ? t.sheet : t.ink2 }}>
+                  to Coming Up to find it. */}
+              <Text style={{ fontSize: 8, lineHeight: 9, marginTop: -3, height: 9,
+                color: selected ? look.ink : t.ink2 }}>
                 {(() => {
                   const m = marksOn(state, isoOf(addDays(parseISO(week.monday), d)));
                   return m.trips.length ? '✈︎' : m.events.length ? '★' : ' ';
                 })()}
               </Text>
-              <View style={{ width: 4, height: 4, borderRadius: 2, marginTop: -1,
-                backgroundColor: d === ti && current
-                  ? (selected ? t.sheet : t.accent) : 'transparent' }} />
             </Pressable>
           );
         })}

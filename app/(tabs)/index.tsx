@@ -1030,8 +1030,16 @@ function TaskRow({
             ))}
           </View>
           <View style={{ flexDirection: 'row', gap: 7 }}>
-            <Button tone="ghost" title="↑ Up" onPress={() => onReorder(-1)} />
-            <Button tone="ghost" title="↓ Down" onPress={() => onReorder(1)} />
+            {/* Up and Down share the width Rename has below; Pick a date lines
+                up with Delete, so the panel reads as two even columns. */}
+            <View style={{ flex: 1, flexDirection: 'row', gap: 7 }}>
+              <View style={{ flex: 1 }}>
+                <Button tone="ghost" title="↑ Up" onPress={() => onReorder(-1)} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Button tone="ghost" title="↓ Down" onPress={() => onReorder(1)} />
+              </View>
+            </View>
             <View style={{ flex: 1 }}>
               <Button title="Pick a date…" onPress={onPickDate} />
             </View>
