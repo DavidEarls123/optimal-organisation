@@ -4,8 +4,8 @@ import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
 import {
-  Body, Button, Chip, Empty, Field, IconButton, Mono, Note, Screen, Section, SectionHead,
-  Segmented, Sheet, Tick,
+  Body, Button, Chip, Empty, Field, Glyph, IconButton, Mono, Note, Screen, Section,
+  SectionHead, Segmented, Sheet, Tick,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -45,6 +45,7 @@ function ShopRow({ item, onNeed, onRename, onDelete }: {
 }) {
   const t = useTheme();
   const [editing, setEditing] = useState(false);
+  const [menu, setMenu] = useState(false);
   const [draft, setDraft] = useState(item.text);
 
   const commit = () => {
@@ -89,19 +90,32 @@ function ShopRow({ item, onNeed, onRename, onDelete }: {
         <Tick on={item.need} tone="accent" />
       </Pressable>
 
-      <Pressable
-        onPress={onNeed}
-        onLongPress={() => { setDraft(item.text); setEditing(true); }}
-        delayLongPress={300}
-        style={{ flex: 1 }}
-      >
+      <Pressable onPress={onNeed} style={{ flex: 1 }}>
         <Text style={{ fontSize: 14, color: item.need ? t.ink : t.ink3 }}>{item.text}</Text>
       </Pressable>
 
-      <Pressable onPress={onDelete} hitSlop={6} accessibilityRole="button"
-        accessibilityLabel={`Remove ${item.text}`}>
-        <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
+      {/* An actual button, rather than a long-press nobody would find. */}
+      <Pressable
+        onPress={() => setMenu(true)}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={`Options for ${item.text}`}
+        style={{ paddingHorizontal: 3 }}
+      >
+        <Glyph name="ellipsis" fallback="···" size={15} colour={t.ink3} />
       </Pressable>
+
+      <Sheet open={menu} title={item.text} onClose={() => setMenu(false)}>
+        <Button
+          title="Rename"
+          onPress={() => { setMenu(false); setDraft(item.text); setEditing(true); }}
+        />
+        <Button
+          tone="ghost"
+          title="Remove from the list"
+          onPress={() => { setMenu(false); onDelete(); }}
+        />
+      </Sheet>
     </View>
   );
 }
@@ -359,6 +373,9 @@ function Entertainment({ scroller }: { scroller: React.RefObject<ScrollView | nu
   const { state, update } = useStore();
   const [draft, setDraft] = useState('');
   const [kind, setKind] = useState<WatchItem['kind']>('tv');
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [rename, setRename] = useState('');
 
   const todo = state.watch.filter((x) => !x.done);
   const seen = state.watch.filter((x) => x.done);
@@ -392,15 +409,18 @@ function Entertainment({ scroller }: { scroller: React.RefObject<ScrollView | nu
         <Chip text={x.kind === 'tv' ? 'Series' : 'Film'} />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Remove ${x.title}`}
-          hitSlop={6}
-          onPress={() => update((d) => { d.watch = d.watch.filter((y) => y.id !== x.id); })}
+          accessibilityLabel={`Options for ${x.title}`}
+          hitSlop={8}
+          onPress={() => setMenuFor(x.id)}
+          style={{ paddingHorizontal: 3 }}
         >
-          <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
+          <Glyph name="ellipsis" fallback="···" size={15} colour={t.ink3} />
         </Pressable>
       </View>
     );
   };
+
+  const menuItem = state.watch.find((x) => x.id === menuFor);
 
   const add = () => {
     const title = draft.trim();
@@ -413,6 +433,63 @@ function Entertainment({ scroller }: { scroller: React.RefObject<ScrollView | nu
     <Section>
       <SectionHead title="Watchlist" right={`${seen.length}/${state.watch.length} watched`} />
       {todo.length ? todo.map(row) : <Empty>Nothing left on the list.</Empty>}
+
+      <Sheet
+        open={Boolean(menuItem)}
+        title={menuItem?.title ?? ''}
+        onClose={() => setMenuFor(null)}
+      >
+        {renaming === menuFor ? (
+          <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
+            <Field
+              value={rename}
+              onChangeText={setRename}
+              maxLength={80}
+              autoFocus
+              returnKeyType="done"
+              accessibilityLabel="Title"
+              onSubmitEditing={() => {
+                const next = rename.trim().slice(0, 80);
+                if (next) {
+                  update((d) => {
+                    const it = d.watch.find((y) => y.id === menuFor);
+                    if (it) it.title = next;
+                  }, 'renaming that');
+                }
+                setRenaming(null);
+                setMenuFor(null);
+              }}
+            />
+          </View>
+        ) : (
+          <>
+            <Button
+              title="Rename"
+              onPress={() => { setRename(menuItem?.title ?? ''); setRenaming(menuFor); }}
+            />
+            <Button
+              tone="ghost"
+              title={menuItem?.done ? 'Put back on the list' : 'Mark complete'}
+              onPress={() => {
+                update((d) => {
+                  const it = d.watch.find((y) => y.id === menuFor);
+                  if (it) it.done = !it.done;
+                }, 'that change');
+                setMenuFor(null);
+              }}
+            />
+            <Button
+              tone="ghost"
+              title="Remove from the list"
+              onPress={() => {
+                update((d) => { d.watch = d.watch.filter((y) => y.id !== menuFor); },
+                  `removing ${menuItem?.title ?? 'that'}`);
+                setMenuFor(null);
+              }}
+            />
+          </>
+        )}
+      </Sheet>
 
       <View
         onLayout={(e) => { rowY.current = e.nativeEvent.layout.y; }}

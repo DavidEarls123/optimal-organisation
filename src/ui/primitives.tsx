@@ -501,3 +501,24 @@ export function IconButton({ glyph, fallback, label, onPress }: {
     </Pressable>
   );
 }
+
+/** A single SF Symbol used as a piece of text would be, with a plain-character
+ *  fallback. Sleeker than an emoji and it takes the theme's ink. */
+export function Glyph({ name, fallback, size = 15, colour }: {
+  name: SFSymbol; fallback: string; size?: number; colour?: string;
+}) {
+  const t = useTheme();
+  const c = colour ?? t.ink2;
+  if (Platform.OS !== 'ios') {
+    return <Text style={{ color: c, fontSize: size, lineHeight: size + 3 }}>{fallback}</Text>;
+  }
+  return (
+    <SymbolView
+      name={name}
+      size={size}
+      tintColor={c}
+      resizeMode="scaleAspectFit"
+      fallback={<Text style={{ color: c, fontSize: size, lineHeight: size + 3 }}>{fallback}</Text>}
+    />
+  );
+}

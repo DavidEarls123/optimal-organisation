@@ -145,9 +145,23 @@ export interface Prefs {
   theme: 'system' | 'light' | 'dark';
   /** What a weight is shown and entered in. */
   weightUnit: 'kg' | 'lb';
+  /** How the selected day is picked out in the week strip. */
+  dayStyle: DayStyle;
 }
 
-export const DEFAULT_PREFS: Prefs = { theme: 'system', weightUnit: 'kg' };
+/** Ways of marking the day you are on. Which reads best depends on the phone
+ *  and the light you are in, so it is a choice rather than a decision. */
+export type DayStyle = 'filled' | 'outline' | 'underline' | 'inverse' | 'ring';
+
+export const DAY_STYLES: { key: DayStyle; name: string; note: string }[] = [
+  { key: 'filled', name: 'Filled', note: 'Solid accent chip, everything reversed out' },
+  { key: 'outline', name: 'Outline', note: 'Heavy accent border, normal colours inside' },
+  { key: 'underline', name: 'Underline', note: 'A thick rule under the day, nothing else' },
+  { key: 'inverse', name: 'Inverse', note: 'Ink chip with paper text — the strongest' },
+  { key: 'ring', name: 'Halo', note: 'A soft tint with the ring picked out' },
+];
+
+export const DEFAULT_PREFS: Prefs = { theme: 'system', weightUnit: 'kg', dayStyle: 'outline' };
 
 /** [text, trackableId | null, sectionIndex] */
 export type PlanEntry = [string, string | null, number];

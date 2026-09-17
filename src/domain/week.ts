@@ -617,11 +617,15 @@ export function orderedTasks(state: AppState, weekId: string, day: number): Task
   const w = state.weeks[weekId];
   if (!w) return [];
   const secIds = sectionsOf(state, weekId).map((x) => x.id);
-  const rank = (t: Task) => {
-    const i = secIds.indexOf(t.sec);
-    return i < 0 ? 0 : i;
-  };
-  return [...(w.tasks[day] ?? [])].sort((a, b) => rank(a) - rank(b));
+  const all = w.tasks[day] ?? [];
+  // Exactly what the day draws, section by section and ticked work sunk
+  // inside each. A drop index counted against any other order points at a
+  // different row than the one under your finger.
+  const out: Task[] = [];
+  for (const id of secIds) out.push(...sortForDisplay(all.filter((x) => x.sec === id)));
+  const known = new Set(secIds);
+  out.push(...sortForDisplay(all.filter((x) => !known.has(x.sec))));
+  return out;
 }
 
 /** Drops a task at a position in that drawn order, taking the section of

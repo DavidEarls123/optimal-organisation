@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 
 import { useStore } from '../store/store';
 import { useTheme } from '../theme/ThemeProvider';
+import type { Theme } from '../theme/tokens';
+import type { DayStyle } from '../domain/types';
 import { radius } from '../theme/tokens';
 import { DAY_LETTERS, addDays, isoOf, isoWeekId, parseISO, weekNumber } from '../domain/dates';
 import { ensureWeek, marksOn } from '../domain/week';
@@ -16,6 +18,35 @@ function rangeLabel(mondayIso: string): string {
   const m = (d: Date) => d.toLocaleDateString('en-GB', { month: 'long' });
   const sameMonth = m(mon) === m(sun);
   return `${mon.getDate()}${sameMonth ? '' : ` ${m(mon)}`} – ${sun.getDate()} ${m(sun)}`;
+}
+
+/** Everything the selected day's chip needs, resolved from one choice. Kept in
+ *  one place so the ring, the tick and the text can never disagree about what
+ *  they are being drawn on. */
+export interface DayLook {
+  fill: string; edge: string; border: number;
+  ink: string; hole: string; track: string; sweep: string;
+}
+
+export function dayLook(t: Theme, style: DayStyle): DayLook {
+  switch (style) {
+    case 'filled':
+      return { fill: t.accent, edge: t.accent, border: 1, ink: t.sheet,
+        hole: t.accent, track: 'rgba(255,255,255,0.34)', sweep: t.sheet };
+    case 'inverse':
+      return { fill: t.ink, edge: t.ink, border: 1, ink: t.sheet,
+        hole: t.ink, track: 'rgba(255,255,255,0.28)', sweep: t.hit };
+    case 'underline':
+      return { fill: 'transparent', edge: 'transparent', border: 1, ink: t.ink,
+        hole: t.sheet, track: t.rule, sweep: t.hit };
+    case 'ring':
+      return { fill: t.accentSoft, edge: t.accent, border: 2, ink: t.accent,
+        hole: t.accentSoft, track: t.accentLine, sweep: t.hit };
+    case 'outline':
+    default:
+      return { fill: 'transparent', edge: t.accent, border: 2, ink: t.ink,
+        hole: t.sheet, track: t.rule, sweep: t.hit };
+  }
 }
 
 /** Week identity, template, and the seven-day strip. Shown above every tab. */
@@ -33,13 +64,17 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
     Object.keys(state.weeks).sort().filter((x) => x < weekId).pop() ?? ''
   ]);
 
+  const style = state.prefs?.dayStyle ?? 'outline';
+  const look = dayLook(t, style);
+
   const shift = (delta: number) => {
     const target = isoOf(addDays(parseISO(week.monday), delta * 7));
     const id = isoWeekId(parseISO(target));
     if (delta > 0) update((d) => { ensureWeek(d, target); });
     else if (!state.weeks[id]) return;
     setWeekId(id);
-    setDay(0);
+    // Stay on the same weekday. Landing on Monday every time means counting
+    // across to Thursday again on every step.
   };
 
   return (
@@ -61,26 +96,35 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
         </View>
       </View>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: -4 }}>
-        <Text style={{ flex: 1, fontSize: 23, fontWeight: '700', color: t.ink, letterSpacing: -0.5 }}>
+      {/* The arrows belong beside the range they move, not on their own row. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: -4 }}>
+        <Pressable
+          onPress={() => hasPrev && shift(-1)}
+          disabled={!hasPrev}
+          accessibilityRole="button"
+          accessibilityLabel="Previous week"
+          hitSlop={8}
+          style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center',
+            opacity: hasPrev ? 1 : 0.25 }}
+        >
+          <Text style={{ color: t.ink2, fontSize: 20, lineHeight: 23 }}>‹</Text>
+        </Pressable>
+        <Text
+          numberOfLines={1}
+          style={{ flex: 1, fontSize: 21, fontWeight: '700', color: t.ink,
+            letterSpacing: -0.4, textAlign: 'center' }}
+        >
           {rangeLabel(week.monday)}
         </Text>
-        <View style={{ flexDirection: 'row', gap: 4 }}>
-          {([['‹', -1, hasPrev], ['›', 1, true]] as const).map(([glyph, delta, enabled]) => (
-            <Pressable
-              key={glyph}
-              onPress={() => enabled && shift(delta)}
-              disabled={!enabled}
-              accessibilityRole="button"
-              accessibilityLabel={delta < 0 ? 'Previous week' : 'Next week'}
-              style={{ width: 30, height: 30, borderRadius: radius.sm + 2, borderWidth: 1,
-                borderColor: t.rule, alignItems: 'center', justifyContent: 'center',
-                opacity: enabled ? 1 : 0.3 }}
-            >
-              <Text style={{ color: t.ink2, fontSize: 16, lineHeight: 19 }}>{glyph}</Text>
-            </Pressable>
-          ))}
-        </View>
+        <Pressable
+          onPress={() => shift(1)}
+          accessibilityRole="button"
+          accessibilityLabel="Next week"
+          hitSlop={8}
+          style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Text style={{ color: t.ink2, fontSize: 20, lineHeight: 23 }}>›</Text>
+        </Pressable>
       </View>
 
       {!compact && week.focus ? (
@@ -105,18 +149,20 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
               accessibilityState={{ selected }}
               accessibilityLabel={`${letter} ${parseISO(week.monday).getDate() + d}`}
               style={{ flex: 1, alignItems: 'center', gap: 5, paddingVertical: 7,
-                borderRadius: radius.md, borderWidth: 1,
-                borderColor: selected ? t.accent : 'transparent',
-                backgroundColor: selected ? t.accent : 'transparent',
+                borderRadius: radius.md, borderWidth: selected ? look.border : 1,
+                borderColor: selected ? look.edge : 'transparent',
+                backgroundColor: selected ? look.fill : 'transparent',
+                borderBottomWidth: selected && style === 'underline' ? 3 : undefined,
+                borderBottomColor: selected && style === 'underline' ? t.accent : undefined,
                 opacity: future && !selected ? 0.55 : 1 }}
             >
               <Text style={{ fontSize: 10, letterSpacing: 1, fontWeight: selected ? '700' : '400',
-                color: selected ? t.sheet : t.ink3 }}>
+                color: selected ? look.ink : t.ink3 }}>
                 {letter}
               </Text>
-              <DayMark done={done} off={off} score={score} selected={selected} />
+              <DayMark done={done} off={off} score={score} selected={selected} look={look} />
               <Text style={{ fontSize: 13, fontWeight: selected ? '800' : '600',
-                color: selected ? t.sheet : off ? t.ink3 : t.ink,
+                color: selected ? look.ink : off ? t.ink3 : t.ink,
                 fontVariant: ['tabular-nums'] }}>
                 {addDays(parseISO(week.monday), d).getDate()}
               </Text>
@@ -176,8 +222,8 @@ function ProgressRing({ progress, size, thickness, track, fill, hole }: {
 }
 
 /** A tick for a completed day, a dash for an untracked one, otherwise the arc. */
-function DayMark({ done, off, score, selected }: {
-  done: boolean; off: boolean; score: number; selected: boolean;
+function DayMark({ done, off, score, selected, look }: {
+  done: boolean; off: boolean; score: number; selected: boolean; look: DayLook;
 }) {
   const t = useTheme();
   const size = 24;
@@ -187,25 +233,24 @@ function DayMark({ done, off, score, selected }: {
   };
   // The selected day is now a filled accent chip, so everything drawn on it
   // needs its contrast taken from that fill rather than from the sheet.
-  const ground = selected ? t.accent : t.sheet;
-  // On the filled chip the track has to be the chip's own colour lightened,
-  // not a palette colour: paper is nearly black in dark mode, so an empty
-  // ring came out as a black disc. Translucent white works on either accent.
-  const quiet = selected ? 'rgba(255,255,255,0.34)' : t.rule;
+  // Everything drawn on the chip takes its contrast from whatever that chip
+  // actually is, which is what the look decides.
+  const ground = selected ? look.hole : t.sheet;
+  const quiet = selected ? look.track : t.rule;
 
   if (off) {
     return (
-      <View style={[base, { borderWidth: 1.5, borderColor: selected ? t.sheet : t.rule,
+      <View style={[base, { borderWidth: 1.5, borderColor: selected ? look.ink : t.rule,
         borderStyle: 'dashed', opacity: selected ? 0.75 : 1 }]}>
         <View style={{ width: 9, height: 1.5, borderRadius: 1,
-          backgroundColor: selected ? t.sheet : t.ink3 }} />
+          backgroundColor: selected ? look.ink : t.ink3 }} />
       </View>
     );
   }
   if (done) {
     return (
       <View style={[base, { backgroundColor: t.hit,
-        borderWidth: selected ? 1.5 : 0, borderColor: t.sheet }]}>
+        borderWidth: selected ? 1.5 : 0, borderColor: look.hole }]}>
         <Text style={{ color: t.sheet, fontSize: 13, fontWeight: '900', lineHeight: 16 }}>✓</Text>
       </View>
     );
@@ -216,7 +261,7 @@ function DayMark({ done, off, score, selected }: {
       size={size}
       thickness={selected ? 3.5 : 3}
       track={quiet}
-      fill={selected ? t.sheet : t.hit}
+      fill={selected ? look.sweep : t.hit}
       hole={ground}
     />
   );

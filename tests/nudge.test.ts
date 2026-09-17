@@ -179,3 +179,41 @@ test('the drawn order is section by section, whatever the array says', () => {
   assert.deepEqual(orderedTasks(s, WEEK, DAY).map((t) => t.id), ['b', 'a', 'c', 'd']);
   assert.equal(secs.length, 3);
 });
+
+test('the drawn order sinks ticked tasks inside each section', () => {
+  const { s, secs } = laid();
+  const arr = s.weeks[WEEK].tasks[DAY] ?? [];
+  arr[0].state = 'done';          // a, first in section one
+  arr[0].doneAt = 100;
+  assert.deepEqual(orderedTasks(s, WEEK, DAY).map((t) => t.id), ['b', 'a', 'c', 'd'],
+    'a sinks below b, but stays in its own section');
+  assert.equal(secs.length, 3);
+});
+
+test('a drop index lands where the same index is drawn', () => {
+  const { s } = laid();
+  const arr = s.weeks[WEEK].tasks[DAY] ?? [];
+  arr[0].state = 'done';
+  arr[0].doneAt = 100;
+  // Drawn: b a c d. Dropping 'd' at index 1 must put it between b and a.
+  placeTask(s, WEEK, DAY, 'd', 1);
+  assert.deepEqual(orderedTasks(s, WEEK, DAY).map((t) => t.id), ['b', 'd', 'a', 'c']);
+});
+
+test('the drawn order is stable, so reading it twice gives the same answer', () => {
+  const { s } = laid();
+  const arr = s.weeks[WEEK].tasks[DAY] ?? [];
+  arr[1].state = 'done';
+  arr[1].doneAt = 50;
+  const once = orderedTasks(s, WEEK, DAY).map((t) => t.id);
+  s.weeks[WEEK].tasks[DAY] = orderedTasks(s, WEEK, DAY);
+  assert.deepEqual(orderedTasks(s, WEEK, DAY).map((t) => t.id), once);
+});
+
+test('a task under a heading that no longer exists is still drawn, at the end', () => {
+  const { s } = laid();
+  (s.weeks[WEEK].tasks[DAY] ?? [])[2].sec = 'gone';
+  const ids = orderedTasks(s, WEEK, DAY).map((t) => t.id);
+  assert.equal(ids.length, 4, 'nothing vanishes');
+  assert.equal(ids[ids.length - 1], 'c');
+});

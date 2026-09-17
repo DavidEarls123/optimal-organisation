@@ -9,16 +9,15 @@ import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
 import {
-  Bar, Body, Button, Chip, Empty, Field, Mono, Note, Screen, Section, SectionHead, Segmented,
-  Sheet, Tick,
+  Bar, Body, Button, Chip, Empty, Field, Glyph, Mono, Note, Screen, Section, SectionHead,
+  Segmented, Sheet, Tick,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES, dayDateIso, isoOf, parseISO } from '../../src/domain/dates';
 import {
-  marksOn, moveChoices, moveTask, nudgeTask, orderedTasks, placeTask, sectionsOf,
-  sortForDisplay, uid,
+  marksOn, moveChoices, moveTask, nudgeTask, orderedTasks, placeTask, sectionsOf, uid,
 } from '../../src/domain/week';
 import {
   activeHabits, dayOutstanding, fromKg, habitDayStatus, habitDone, habitTarget, pacing,
@@ -73,6 +72,7 @@ export default function DayScreen() {
   const sections = useMemo(() => sectionsOf(state, weekId), [state, weekId]);
   // Where a task can be moved to from the strip: forward only, because there
   // is no sense in rescheduling something into a day that has gone.
+  const drawn = useMemo(() => orderedTasks(state, weekId, day), [state, weekId, day]);
   const choices = useMemo(
     () => (dateIso ? moveChoices(dateIso, isoOf(today)) : []),
     [dateIso, today],
@@ -182,26 +182,18 @@ export default function DayScreen() {
   const restCount = restIndex.size;
 
   const deleteTask = useCallback((id: string, text: string) => {
+    // One question, and an honest one: Undo puts it straight back.
     Alert.alert(
       'Delete this task?',
-      `"${text}" is removed from this day.`,
+      `"${text}" is removed from this day. Undo puts it back.`,
       [{ text: 'Cancel', style: 'cancel' },
        {
          text: 'Delete',
          style: 'destructive',
-         onPress: () => Alert.alert(
-           'Delete for good?',
-           'This cannot be undone.',
-           [{ text: 'Keep it', style: 'cancel' },
-            {
-              text: 'Delete',
-              style: 'destructive',
-              onPress: () => update((d) => {
-                const arr = d.weeks[weekId].tasks[day] ?? [];
-                d.weeks[weekId].tasks[day] = arr.filter((y) => y.id !== id);
-              }, `deleting ${text}`),
-            }],
-         ),
+         onPress: () => update((d) => {
+           const arr = d.weeks[weekId].tasks[day] ?? [];
+           d.weeks[weekId].tasks[day] = arr.filter((y) => y.id !== id);
+         }, `deleting ${text}`),
        }],
     );
   }, [update, weekId, day]);
@@ -328,12 +320,10 @@ export default function DayScreen() {
             accessibilityLabel={`Undo ${undoLabel}`}
             onPress={undo}
             hitSlop={10}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
-              borderWidth: 1, borderColor: t.rule, borderRadius: radius.pill,
-              paddingHorizontal: 9, paddingVertical: 3 }}
+            style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center',
+              borderWidth: 1, borderColor: t.rule, borderRadius: 14 }}
           >
-            <Text style={{ fontSize: 12, color: t.ink2 }}>↩</Text>
-            <Text style={{ fontSize: 11.5, color: t.ink2, fontWeight: '600' }}>Undo</Text>
+            <Glyph name="arrow.uturn.backward" fallback="↺" size={14} colour={t.ink2} />
           </Pressable>
         ) : null}
       </View>
@@ -433,8 +423,10 @@ export default function DayScreen() {
 
         <Section>
           {sections.map((sc) => {
+            // Straight from the same ordering the drag counts against, so the
+            // drop line and the row it points at can never disagree.
             const inSec = live.filter((x) => x.sec === sc.id);
-            const items = sortForDisplay(inSec);
+            const items = drawn.filter((x) => x.sec === sc.id);
             const done = inSec.filter((x) => x.state === 'done').length;
             return (
               <View key={sc.id}>
@@ -995,16 +987,13 @@ function TaskRow({
           <>
             {task.track ? <TrackChip trackId={task.track} />
               : task.plan ? <Chip text="Plan" colour={t.accent} /> : null}
-            {/* The arrow turns into a tick while the panel is open, so the same
-                button that opened it is the one that closes it. */}
-            <Pressable onPress={onOpenMove} hitSlop={6} accessibilityRole="button"
-              accessibilityLabel={open ? `Done moving ${task.text}` : `Move ${task.text}`}>
-              <Text style={{ color: open ? t.hit : t.ink3, fontSize: open ? 17 : 15,
-                fontWeight: open ? '800' : '400' }}>{open ? '✓' : '→'}</Text>
-            </Pressable>
-            <Pressable onPress={onDelete} hitSlop={6} accessibilityRole="button"
-              accessibilityLabel={`Delete ${task.text}`}>
-              <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
+            {/* One button for everything you can do to a task: move it,
+                rename it, get rid of it. */}
+            <Pressable onPress={onOpenMove} hitSlop={8} accessibilityRole="button"
+              accessibilityLabel={open ? `Close options for ${task.text}` : `Options for ${task.text}`}
+              style={{ paddingHorizontal: 2 }}>
+              <Glyph name={open ? 'chevron.up' : 'ellipsis'} fallback={open ? '⌃' : '···'}
+                size={15} colour={open ? t.accent : t.ink3} />
             </Pressable>
           </>
         )}
@@ -1047,11 +1036,18 @@ function TaskRow({
               <Button title="Pick a date…" onPress={onPickDate} />
             </View>
           </View>
-          <Button
-            tone="ghost"
-            title="Rename"
-            onPress={() => { setDraft(task.text); setEditing(true); }}
-          />
+          <View style={{ flexDirection: 'row', gap: 7 }}>
+            <View style={{ flex: 1 }}>
+              <Button
+                tone="ghost"
+                title="Rename"
+                onPress={() => { setDraft(task.text); setEditing(true); }}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Button tone="ghost" title="Delete" onPress={onDelete} />
+            </View>
+          </View>
         </View>
       ) : null}
     </Animated.View>

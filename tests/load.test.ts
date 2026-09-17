@@ -85,7 +85,8 @@ test('a state saved before preferences existed gets the defaults', () => {
   delete old.prefs;
   const out = decideLoad(JSON.stringify(old), null);
   assert.equal(out.kind, 'loaded');
-  assert.deepEqual(out.kind === 'loaded' && out.state.prefs, { theme: 'system', weightUnit: 'kg' });
+  assert.deepEqual(out.kind === 'loaded' && out.state.prefs,
+    { theme: 'system', weightUnit: 'kg', dayStyle: 'outline' });
 });
 
 test('preferences already set are kept, and nonsense is replaced', () => {
@@ -94,4 +95,18 @@ test('preferences already set are kept, and nonsense is replaced', () => {
   const out = decideLoad(JSON.stringify(s), null);
   assert.equal(out.kind === 'loaded' && out.state.prefs.theme, 'dark', 'a real choice survives');
   assert.equal(out.kind === 'loaded' && out.state.prefs.weightUnit, 'kg', 'nonsense does not');
+});
+
+test('a day style that means nothing is replaced, and a real one is kept', () => {
+  const a = JSON.parse(good());
+  a.prefs = { theme: 'dark', weightUnit: 'lb', dayStyle: 'sparkles' };
+  const outA = decideLoad(JSON.stringify(a), null);
+  assert.equal(outA.kind === 'loaded' && outA.state.prefs.dayStyle, 'outline');
+  assert.equal(outA.kind === 'loaded' && outA.state.prefs.weightUnit, 'lb',
+    'and the fields either side of it are untouched');
+
+  const b = JSON.parse(good());
+  b.prefs = { theme: 'system', weightUnit: 'kg', dayStyle: 'inverse' };
+  const outB = decideLoad(JSON.stringify(b), null);
+  assert.equal(outB.kind === 'loaded' && outB.state.prefs.dayStyle, 'inverse');
 });

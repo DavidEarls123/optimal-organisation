@@ -11,6 +11,8 @@ import { radius } from '../src/theme/tokens';
 import { HABIT_PRESETS, TRACK_PRESETS, slug } from '../src/domain/catalogue';
 import { uid } from '../src/domain/week';
 import { APP_BY, APP_NAME } from '../src/brand';
+import { dayLook } from '../src/ui/WeekHeader';
+import { DAY_STYLES } from '../src/domain/types';
 
 const NAME_LIMIT = 32;
 
@@ -109,6 +111,66 @@ export default function SettingsScreen() {
               { key: 'dark' as const, label: 'Dark' },
             ]}
           />
+        </Section>
+
+        <Section>
+          <SectionHead title="The day you are on" />
+          <Note>
+            How the day is picked out in the strip at the top. Each is drawn here as it
+            will actually look.
+          </Note>
+          <View style={{ gap: 8 }}>
+            {DAY_STYLES.map((opt) => {
+              const on = state.prefs.dayStyle === opt.key;
+              const look = dayLook(t, opt.key);
+              return (
+                <Pressable
+                  key={opt.key}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  onPress={() => update((d) => { d.prefs.dayStyle = opt.key; }, 'that setting')}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+                    borderWidth: 1, borderRadius: radius.md, padding: 10,
+                    borderColor: on ? t.accent : t.rule,
+                    backgroundColor: on ? t.accentSoft : 'transparent' }}
+                >
+                  {/* Three days, the middle one selected, at the real size. */}
+                  <View style={{ flexDirection: 'row', gap: 3 }}>
+                    {[0, 1, 2].map((i) => {
+                      const sel = i === 1;
+                      return (
+                        <View
+                          key={i}
+                          style={{ width: 34, alignItems: 'center', gap: 4, paddingVertical: 6,
+                            borderRadius: radius.md,
+                            borderWidth: sel ? look.border : 1,
+                            borderColor: sel ? look.edge : 'transparent',
+                            backgroundColor: sel ? look.fill : 'transparent',
+                            borderBottomWidth: sel && opt.key === 'underline' ? 3 : undefined,
+                            borderBottomColor: sel && opt.key === 'underline' ? t.accent : undefined }}
+                        >
+                          <Text style={{ fontSize: 9, letterSpacing: 0.8,
+                            color: sel ? look.ink : t.ink3 }}>{'MTW'[i]}</Text>
+                          <View style={{ width: 18, height: 18, borderRadius: 9,
+                            borderWidth: 2.5, borderColor: sel ? look.track : t.rule,
+                            borderTopColor: sel ? look.sweep : t.hit,
+                            borderRightColor: sel ? look.sweep : t.hit,
+                            backgroundColor: sel ? look.hole : t.sheet }} />
+                          <Text style={{ fontSize: 11, fontWeight: sel ? '800' : '600',
+                            color: sel ? look.ink : t.ink }}>{15 + i}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: on ? '700' : '500',
+                      color: on ? t.accent : t.ink }}>{opt.name}</Text>
+                    <Mono style={{ fontSize: 10, marginTop: 2 }}>{opt.note}</Mono>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
         </Section>
 
         <Section>
