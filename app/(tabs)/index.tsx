@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, Pressable, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Keyboard, Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
 import {
-  Bar, Body, Button, Chip, Empty, Field, Mono, Note, Screen, Section, SectionHead, Tick,
+  Bar, Body, Button, Chip, Empty, Field, Mono, Note, Screen, Section, SectionHead, Sheet, Tick,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -18,6 +18,10 @@ import {
 import type { CalendarEvent, Habit, Task, Week } from '../../src/domain/types';
 import { askForCalendar, calendarAccess, calendarError, eventsForDay, type CalendarAccess }
   from '../../src/services/calendar';
+
+/** A task has to fit a row without pushing the day around. Long enough for a
+ *  real sentence, short enough that nothing below it moves. */
+export const TASK_LIMIT = 120;
 
 export default function DayScreen() {
   const t = useTheme();
@@ -34,6 +38,18 @@ export default function DayScreen() {
   const [adding, setAdding] = useState<string | null>(null);
   /** True once the list has scrolled past the top, so the day bar shrinks. */
   const [condensed, setCondensed] = useState(false);
+  const scroller = useRef<ScrollView>(null);
+  const composerY = useRef(0);
+
+  /** Puts the open composer near the middle of the screen, so what you are
+   *  typing is not behind the keyboard. */
+  const liftComposer = useCallback(() => {
+    const y = composerY.current;
+    if (!y) return;
+    requestAnimationFrame(() => {
+      scroller.current?.scrollTo({ y: Math.max(0, y - 150), animated: true });
+    });
+  }, []);
 
   const dateIso = week ? dayDateIso(week.monday, day) : '';
 
@@ -134,15 +150,24 @@ export default function DayScreen() {
   }, [state.habits, router, update, weekId, day]);
 
   const addTask = useCallback((sectionId: string) => {
-    const text = (drafts[sectionId] ?? '').trim();
+    const text = (drafts[sectionId] ?? '').trim().slice(0, TASK_LIMIT);
     if (!text) return;
     update((d) => {
       const arr = (d.weeks[weekId].tasks[day] ??= []);
       arr.push({ id: uid('n'), text, state: 'open', plan: false,
         track: tagFor[sectionId] || null, sec: sectionId });
     });
+    // Clear both, so the next task starts blank and untagged rather than
+    // quietly inheriting the last one's tag.
     setDrafts((p) => ({ ...p, [sectionId]: '' }));
+    setTagFor((p) => ({ ...p, [sectionId]: '' }));
   }, [drafts, tagFor, update, weekId, day]);
+
+  /** Lifts the composer clear of the keyboard when it opens. */
+  const openComposer = useCallback((sectionId: string) => {
+    setAdding(sectionId);
+    setTagFor((p) => ({ ...p, [sectionId]: '' }));
+  }, []);
 
   if (!week) return <Screen><Body><Empty>Loading…</Empty></Body></Screen>;
 
@@ -180,7 +205,7 @@ export default function DayScreen() {
         </Mono>
       </View>
 
-      <Body onScroll={(y) => setCondensed(y > 18)}>
+      <Body scrollRef={scroller} onScroll={(y) => setCondensed(y > 18)}>
         {off ? (
           <View style={{ backgroundColor: t.sunk, borderRadius: radius.md, padding: 11 }}>
             <Text style={{ fontSize: 12.5, lineHeight: 18, color: t.ink2 }}>
@@ -277,6 +302,10 @@ export default function DayScreen() {
                       onDelete={() => deleteTask(x.id, x.text)}
                       onOpenMove={() => { setMoveId(moveId === x.id ? null : x.id); setShowPicker(false); }}
                       onReorder={(dir) => reorder(x.id, dir)}
+                      onRename={(text) => update((d) => {
+                        const item = (d.weeks[weekId].tasks[day] ?? []).find((y) => y.id === x.id);
+                        if (item) item.text = text;
+                      })}
                       onMoveToDay={(d) => doMove(x.id, dayDateIso(week.monday, d))}
                       onPickDate={() => setShowPicker(true)}
                       currentDay={day}
@@ -285,26 +314,43 @@ export default function DayScreen() {
                 </View>
 
                 {adding === sc.id ? (
-                  <View style={{ flexDirection: 'row', gap: 7, paddingTop: 7, alignItems: 'center' }}>
-                    <Field
-                      value={drafts[sc.id] ?? ''}
-                      onChangeText={(v) => setDrafts((p) => ({ ...p, [sc.id]: v }))}
-                      onSubmitEditing={() => addTask(sc.id)}
-                      placeholder={`Add to ${sc.name.toLowerCase()}…`}
-                      returnKeyType="done"
-                      autoFocus
-                    />
-                    <TagPicker
-                      value={tagFor[sc.id] ?? ''}
-                      onChange={(v) => setTagFor((p) => ({ ...p, [sc.id]: v }))}
-                    />
-                    <Button title="Add" onPress={() => addTask(sc.id)} />
+                  <View
+                    onLayout={(e) => { composerY.current = e.nativeEvent.layout.y; liftComposer(); }}
+                    style={{ gap: 7, paddingTop: 7 }}
+                  >
+                    <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
+                      <Field
+                        value={drafts[sc.id] ?? ''}
+                        onChangeText={(v) => setDrafts((p) => ({ ...p, [sc.id]: v }))}
+                        onSubmitEditing={() => addTask(sc.id)}
+                        placeholder={`Add to ${sc.name.toLowerCase()}…`}
+                        returnKeyType="next"
+                        maxLength={TASK_LIMIT}
+                        // Enter files the task and leaves the field up for the
+                        // next one, rather than closing the whole thing.
+                        blurOnSubmit={false}
+                        autoFocus
+                      />
+                      <TagPicker
+                        value={tagFor[sc.id] ?? ''}
+                        onChange={(v) => setTagFor((p) => ({ ...p, [sc.id]: v }))}
+                      />
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
+                      <Mono style={{ flex: 1, fontSize: 10.5 }}>
+                        {(drafts[sc.id] ?? '').length >= TASK_LIMIT - 20
+                          ? `${TASK_LIMIT - (drafts[sc.id] ?? '').length} left`
+                          : 'Return adds it and keeps going'}
+                      </Mono>
+                      <Button tone="ghost" title="Done" onPress={() => { setAdding(null); Keyboard.dismiss(); }} />
+                      <Button title="Add" onPress={() => addTask(sc.id)} />
+                    </View>
                   </View>
                 ) : (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={`Add to ${sc.name}`}
-                    onPress={() => setAdding(sc.id)}
+                    onPress={() => openComposer(sc.id)}
                     hitSlop={8}
                     style={{ paddingTop: 7, paddingBottom: 2 }}
                   >
@@ -399,17 +445,24 @@ export default function DayScreen() {
         </View>
       </Body>
 
-      {showPicker && moveId ? (
+      <Sheet
+        open={showPicker && Boolean(moveId)}
+        title="Move to a date"
+        onClose={() => setShowPicker(false)}
+      >
         <DateTimePicker
           value={parseISO(dateIso)}
           mode="date"
           display="inline"
+          themeVariant={t.dark ? 'dark' : 'light'}
+          accentColor={t.accent}
+          style={{ alignSelf: 'stretch' }}
           onChange={(_e, picked) => {
             setShowPicker(false);
-            if (picked) doMove(moveId, isoOf(picked));
+            if (picked && moveId) doMove(moveId, isoOf(picked));
           }}
         />
-      ) : null}
+      </Sheet>
     </Screen>
   );
 }
@@ -489,38 +542,82 @@ function TrackChip({ trackId }: { trackId: string }) {
   return <Chip text={tr.name} colour={line} soft={soft} />;
 }
 
+/** Tagging is a choice from a short list, so it is a list you pick from —
+ *  tapping through six options to get back to none was guesswork. */
 function TagPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const t = useTheme();
   const { state } = useStore();
-  const options = ['', ...state.trackables.map((x) => x.id)];
-  const next = () => onChange(options[(options.indexOf(value) + 1) % options.length]);
+  const [open, setOpen] = useState(false);
   const tr = state.trackables.find((x) => x.id === value);
   const [line, soft] = tr ? t.track[tr.ci % t.track.length] : [t.ink3, 'transparent'];
+
+  const row = (id: string, name: string, colour: string, fillSoft: string) => {
+    const on = id === value;
+    return (
+      <Pressable
+        key={id || 'none'}
+        accessibilityRole="button"
+        accessibilityState={{ selected: on }}
+        onPress={() => { onChange(id); setOpen(false); }}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+          borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 11,
+          borderColor: on ? colour : t.rule,
+          backgroundColor: on ? fillSoft : 'transparent' }}
+      >
+        <View style={{ width: 11, height: 11, borderRadius: 3, backgroundColor: colour }} />
+        <Text style={{ flex: 1, fontSize: 14.5, color: t.ink, fontWeight: on ? '600' : '400' }}>
+          {name}
+        </Text>
+        {on ? <Text style={{ color: colour, fontSize: 15, fontWeight: '800' }}>✓</Text> : null}
+      </Pressable>
+    );
+  };
+
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Tag this task as a tracked session"
-      onPress={next}
-      style={{ borderWidth: 1, borderColor: tr ? line : t.rule, backgroundColor: tr ? soft : t.sheet2,
-        borderRadius: radius.md, paddingHorizontal: 9, paddingVertical: 9, minWidth: 56,
-        alignItems: 'center' }}
-    >
-      <Text style={{ fontSize: 11, fontWeight: '600', color: tr ? line : t.ink3 }}>
-        {tr ? tr.name : '— tag'}
-      </Text>
-    </Pressable>
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={tr ? `Tagged ${tr.name}. Change it.` : 'Add a tag'}
+        onPress={() => setOpen(true)}
+        style={{ borderWidth: 1, borderColor: tr ? line : t.rule, backgroundColor: tr ? soft : t.sheet2,
+          borderRadius: radius.md, paddingHorizontal: 9, paddingVertical: 9, minWidth: 56,
+          alignItems: 'center' }}
+      >
+        <Text style={{ fontSize: 11, fontWeight: '600', color: tr ? line : t.ink3 }}>
+          {tr ? tr.name : '—'}
+        </Text>
+      </Pressable>
+      <Sheet open={open} title="Tag this as" onClose={() => setOpen(false)}>
+        {row('', 'No tag', t.ink3, t.sunk)}
+        {state.trackables.map((k) => {
+          const [c, sf] = t.track[k.ci % t.track.length];
+          return row(k.id, k.name, c, sf);
+        })}
+      </Sheet>
+    </>
   );
 }
 
 function TaskRow({
-  task, open, onToggle, onDelete, onOpenMove, onReorder, onMoveToDay, onPickDate, currentDay,
+  task, open, onToggle, onDelete, onOpenMove, onReorder, onMoveToDay, onPickDate, onRename,
+  currentDay,
 }: {
   task: Task; open: boolean; currentDay: number;
   onToggle: () => void; onDelete: () => void; onOpenMove: () => void;
   onReorder: (dir: -1 | 1) => void; onMoveToDay: (d: number) => void; onPickDate: () => void;
+  onRename: (text: string) => void;
 }) {
   const t = useTheme();
   const done = task.state === 'done';
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(task.text);
+
+  const commit = () => {
+    const next = draft.trim().slice(0, TASK_LIMIT);
+    if (next && next !== task.text) onRename(next);
+    setEditing(false);
+  };
+
   return (
     <View style={{ borderBottomWidth: 1, borderBottomColor: t.rule2, paddingVertical: 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
@@ -528,20 +625,50 @@ function TaskRow({
           accessibilityState={{ checked: done }} accessibilityLabel={task.text} hitSlop={6}>
           <Tick on={done} />
         </Pressable>
-        <Pressable onPress={onToggle} style={{ flex: 1 }}>
-          <Text style={{ fontSize: 14.5, lineHeight: 19, color: done ? t.ink3 : t.ink,
-            textDecorationLine: done ? 'line-through' : 'none' }}>{task.text}</Text>
-        </Pressable>
-        {task.track ? <TrackChip trackId={task.track} />
-          : task.plan ? <Chip text="Plan" colour={t.accent} /> : null}
-        <Pressable onPress={onOpenMove} hitSlop={6} accessibilityRole="button"
-          accessibilityLabel={`Reschedule ${task.text}`}>
-          <Text style={{ color: open ? t.accent : t.ink3, fontSize: 15 }}>→</Text>
-        </Pressable>
-        <Pressable onPress={onDelete} hitSlop={6} accessibilityRole="button"
-          accessibilityLabel={`Delete ${task.text}`}>
-          <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
-        </Pressable>
+        {editing ? (
+          <Field
+            value={draft}
+            onChangeText={setDraft}
+            onSubmitEditing={commit}
+            onBlur={commit}
+            maxLength={TASK_LIMIT}
+            returnKeyType="done"
+            autoFocus
+            accessibilityLabel="Task name"
+          />
+        ) : (
+          <Pressable
+            onPress={onToggle}
+            onLongPress={() => { setDraft(task.text); setEditing(true); }}
+            delayLongPress={300}
+            style={{ flex: 1 }}
+          >
+            <Text style={{ fontSize: 14.5, lineHeight: 19, color: done ? t.ink3 : t.ink,
+              textDecorationLine: done ? 'line-through' : 'none' }}>{task.text}</Text>
+          </Pressable>
+        )}
+        {editing ? (
+          <Pressable onPress={commit} hitSlop={6} accessibilityRole="button"
+            accessibilityLabel="Save the name">
+            <Text style={{ color: t.hit, fontSize: 17, fontWeight: '800' }}>✓</Text>
+          </Pressable>
+        ) : (
+          <>
+            {task.track ? <TrackChip trackId={task.track} />
+              : task.plan ? <Chip text="Plan" colour={t.accent} /> : null}
+            {/* The arrow turns into a tick while the panel is open, so the same
+                button that opened it is the one that closes it. */}
+            <Pressable onPress={onOpenMove} hitSlop={6} accessibilityRole="button"
+              accessibilityLabel={open ? `Done moving ${task.text}` : `Move ${task.text}`}>
+              <Text style={{ color: open ? t.hit : t.ink3, fontSize: open ? 17 : 15,
+                fontWeight: open ? '800' : '400' }}>{open ? '✓' : '→'}</Text>
+            </Pressable>
+            <Pressable onPress={onDelete} hitSlop={6} accessibilityRole="button"
+              accessibilityLabel={`Delete ${task.text}`}>
+              <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
+            </Pressable>
+          </>
+        )}
       </View>
 
       {open ? (
@@ -569,6 +696,11 @@ function TaskRow({
               <Button title="Pick a date…" onPress={onPickDate} />
             </View>
           </View>
+          <Button
+            tone="ghost"
+            title="Rename"
+            onPress={() => { setDraft(task.text); setEditing(true); }}
+          />
         </View>
       ) : null}
     </View>

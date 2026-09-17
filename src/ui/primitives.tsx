@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
   type StyleProp, type TextStyle, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -360,5 +360,60 @@ export function Wordmark({ name, by }: { name: string; by?: string }) {
         ) : null}
       </View>
     </View>
+  );
+}
+
+
+/** A centred card over a dimmed screen. Everything that used to appear jammed
+ *  against an edge — the tag list, a date picker, entering a weight — goes in
+ *  one of these, so it lands in the middle where you are already looking. */
+export function Sheet({ open, title, onClose, children, footer }: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  const t = useTheme();
+  return (
+    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable
+        accessibilityLabel="Close"
+        onPress={onClose}
+        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+          alignItems: 'center', justifyContent: 'center', padding: 22 }}
+      >
+        {/* Swallows taps so pressing inside the card does not close it. */}
+        <Pressable
+          onPress={() => {}}
+          style={{ width: '100%', maxWidth: 380, backgroundColor: t.sheet,
+            borderRadius: radius.lg + 4, borderWidth: 1, borderColor: t.rule,
+            overflow: 'hidden' }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+            paddingHorizontal: 16, paddingTop: 14, paddingBottom: 11,
+            borderBottomWidth: 1, borderBottomColor: t.rule }}>
+            <Text style={{ flex: 1, fontSize: 16, fontWeight: '700', color: t.ink }}>{title}</Text>
+            <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button"
+              accessibilityLabel="Close">
+              <Text style={{ fontSize: 17, color: t.ink3, lineHeight: 20 }}>✕</Text>
+            </Pressable>
+          </View>
+          <ScrollView
+            style={{ maxHeight: 420 }}
+            contentContainerStyle={{ padding: 16, gap: 10 }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {children}
+          </ScrollView>
+          {footer ? (
+            <View style={{ flexDirection: 'row', gap: 8, padding: 14,
+              borderTopWidth: 1, borderTopColor: t.rule }}>
+              {footer}
+            </View>
+          ) : null}
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }

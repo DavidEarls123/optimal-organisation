@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { Alert, Pressable, Text, View } from 'react-native';
 
 import { Body, Button, Field, Mono, Note, Screen, SectionHead } from '../src/ui/primitives';
+
+/** A habit name has to fit a tile two-up on a phone. */
+export const HABIT_LIMIT = 32;
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
@@ -56,6 +59,7 @@ export default function HabitsScreen() {
               const x = d.templates[d.weeks[weekId].templateId];
               if (x) x.name = v;
             })}
+            maxLength={40}
             accessibilityLabel="Template name"
             style={{ fontSize: 15, fontWeight: '700', color: t.ink }}
           />
@@ -217,7 +221,8 @@ export default function HabitsScreen() {
               </View>
             ))}
             <View style={{ flexDirection: 'row', gap: 7 }}>
-              <Field value={draft} onChangeText={setDraft} placeholder="New habit…" />
+              <Field value={draft} onChangeText={setDraft} placeholder="New habit…"
+                maxLength={HABIT_LIMIT} />
               <Button title="Add" onPress={() => {
                 const name = draft.trim();
                 if (!name) return;
