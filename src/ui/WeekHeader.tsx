@@ -1,11 +1,11 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { Text } from './type';
 import { useRouter } from 'expo-router';
 
 import { useStore } from '../store/store';
 import { useTheme } from '../theme/ThemeProvider';
 import type { Theme } from '../theme/tokens';
-import type { DayStyle } from '../domain/types';
 import { radius } from '../theme/tokens';
 import { DAY_LETTERS, addDays, isoOf, isoWeekId, parseISO, weekNumber } from '../domain/dates';
 import { ensureWeek, marksOn } from '../domain/week';
@@ -28,25 +28,9 @@ export interface DayLook {
   ink: string; hole: string; track: string; sweep: string;
 }
 
-export function dayLook(t: Theme, style: DayStyle): DayLook {
-  switch (style) {
-    case 'filled':
-      return { fill: t.accent, edge: t.accent, border: 1, ink: t.sheet,
-        hole: t.accent, track: 'rgba(255,255,255,0.34)', sweep: t.sheet };
-    case 'inverse':
-      return { fill: t.ink, edge: t.ink, border: 1, ink: t.sheet,
-        hole: t.ink, track: 'rgba(255,255,255,0.28)', sweep: t.hit };
-    case 'underline':
-      return { fill: 'transparent', edge: 'transparent', border: 1, ink: t.ink,
-        hole: t.sheet, track: t.rule, sweep: t.hit };
-    case 'ring':
-      return { fill: t.accentSoft, edge: t.accent, border: 2, ink: t.accent,
-        hole: t.accentSoft, track: t.accentLine, sweep: t.hit };
-    case 'outline':
-    default:
-      return { fill: 'transparent', edge: t.accent, border: 2, ink: t.ink,
-        hole: t.sheet, track: t.rule, sweep: t.hit };
-  }
+export function dayLook(t: Theme): DayLook {
+  return { fill: t.accentSoft, edge: t.accent, border: 2, ink: t.accent,
+    hole: t.accentSoft, track: t.accentLine, sweep: t.hit };
 }
 
 /** Week identity, template, and the seven-day strip. Shown above every tab. */
@@ -64,8 +48,7 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
     Object.keys(state.weeks).sort().filter((x) => x < weekId).pop() ?? ''
   ]);
 
-  const style = state.prefs?.dayStyle ?? 'outline';
-  const look = dayLook(t, style);
+  const look = dayLook(t);
 
   const shift = (delta: number) => {
     const target = isoOf(addDays(parseISO(week.monday), delta * 7));
@@ -152,8 +135,6 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
                 borderRadius: radius.md, borderWidth: selected ? look.border : 1,
                 borderColor: selected ? look.edge : 'transparent',
                 backgroundColor: selected ? look.fill : 'transparent',
-                borderBottomWidth: selected && style === 'underline' ? 3 : undefined,
-                borderBottomColor: selected && style === 'underline' ? t.accent : undefined,
                 opacity: future && !selected ? 0.55 : 1 }}
             >
               <Text style={{ fontSize: 10, letterSpacing: 1, fontWeight: selected ? '700' : '400',

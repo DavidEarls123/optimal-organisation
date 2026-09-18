@@ -1,5 +1,6 @@
 import React from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
+import { Text } from '../src/ui/type';
 import { useRouter } from 'expo-router';
 
 import { Body, Button, Chip, Note, Screen, Section, SectionHead } from '../src/ui/primitives';

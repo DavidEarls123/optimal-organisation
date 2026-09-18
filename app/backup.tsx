@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Alert, Text, View } from 'react-native';
+import { Alert, View } from 'react-native';
+import { Text } from '../src/ui/type';
 
 import { Body, Button, Empty, Mono, Note, Screen, Section, SectionHead } from '../src/ui/primitives';
 import { useStore } from '../src/store/store';

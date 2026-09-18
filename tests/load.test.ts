@@ -87,7 +87,7 @@ test('a state saved before preferences existed gets the defaults', () => {
   const out = decideLoad(JSON.stringify(old), null);
   assert.equal(out.kind, 'loaded');
   assert.deepEqual(out.kind === 'loaded' && out.state.prefs,
-    { theme: 'system', weightUnit: 'kg', dayStyle: 'ring' });
+    { theme: 'system', weightUnit: 'kg', textSize: 'medium' });
 });
 
 test('preferences already set are kept, and nonsense is replaced', () => {
@@ -98,60 +98,24 @@ test('preferences already set are kept, and nonsense is replaced', () => {
   assert.equal(out.kind === 'loaded' && out.state.prefs.weightUnit, 'kg', 'nonsense does not');
 });
 
-test('a day style that means nothing is replaced, and a real one is kept', () => {
+test('a text size that means nothing is replaced, and a real one is kept', () => {
   const a = JSON.parse(good());
-  a.prefs = { theme: 'dark', weightUnit: 'lb', dayStyle: 'sparkles' };
+  a.prefs = { theme: 'dark', weightUnit: 'lb', textSize: 'enormous' };
   const outA = decideLoad(JSON.stringify(a), null);
-  assert.equal(outA.kind === 'loaded' && outA.state.prefs.dayStyle, 'ring');
+  assert.equal(outA.kind === 'loaded' && outA.state.prefs.textSize, 'medium');
   assert.equal(outA.kind === 'loaded' && outA.state.prefs.weightUnit, 'lb',
     'and the fields either side of it are untouched');
 
   const b = JSON.parse(good());
-  b.prefs = { theme: 'system', weightUnit: 'kg', dayStyle: 'inverse' };
+  b.prefs = { theme: 'system', weightUnit: 'kg', textSize: 'large' };
   const outB = decideLoad(JSON.stringify(b), null);
-  assert.equal(outB.kind === 'loaded' && outB.state.prefs.dayStyle, 'inverse');
+  assert.equal(outB.kind === 'loaded' && outB.state.prefs.textSize, 'large');
 });
 
-test('a note written on a task comes back with it', () => {
+test('the old day-marking choice is cleared out rather than carried forever', () => {
   const s = JSON.parse(good());
-  const day = s.weeks['2026-W38'].tasks[1] ?? [];
-  s.weeks['2026-W38'].tasks[1] = [{
-    id: 'n', text: 'Book the car in', state: 'open', plan: false, track: null,
-    sec: s.sections[0].id, note: 'Ask about the rattle. They shut at 5.',
-  }, ...day];
+  s.prefs = { theme: 'dark', weightUnit: 'kg', textSize: 'small', dayStyle: 'inverse' };
   const out = decideLoad(JSON.stringify(s), null);
-  assert.equal(out.kind === 'loaded' && out.state.weeks['2026-W38'].tasks[1]?.[0].note,
-    'Ask about the rattle. They shut at 5.');
-});
-
-test('a note that is not text is dropped rather than shown as an empty promise', () => {
-  const s = JSON.parse(good());
-  s.weeks['2026-W38'].tasks[1] = [{
-    id: 'n', text: 'A task', state: 'open', plan: false, track: null,
-    sec: s.sections[0].id, note: { something: 'else' },
-  }];
-  const out = decideLoad(JSON.stringify(s), null);
-  assert.equal(out.kind, 'loaded');
-  assert.equal(out.kind === 'loaded' && out.state.weeks['2026-W38'].tasks[1]?.[0].note, undefined);
-});
-
-test('a note of nothing but spaces leaves no dot behind', () => {
-  const s = JSON.parse(good());
-  s.weeks['2026-W38'].tasks[1] = [{
-    id: 'n', text: 'A task', state: 'open', plan: false, track: null,
-    sec: s.sections[0].id, note: '   \n  ',
-  }];
-  const out = decideLoad(JSON.stringify(s), null);
-  assert.equal(out.kind === 'loaded' && out.state.weeks['2026-W38'].tasks[1]?.[0].note, undefined);
-});
-
-test('a note longer than the limit is cut rather than refused', () => {
-  const s = JSON.parse(good());
-  s.weeks['2026-W38'].tasks[1] = [{
-    id: 'n', text: 'A task', state: 'open', plan: false, track: null,
-    sec: s.sections[0].id, note: 'x'.repeat(5000),
-  }];
-  const out = decideLoad(JSON.stringify(s), null);
-  const note = out.kind === 'loaded' ? out.state.weeks['2026-W38'].tasks[1]?.[0].note : '';
-  assert.equal(note?.length, NOTE_LIMIT);
+  const prefs = out.kind === 'loaded' ? out.state.prefs : null;
+  assert.deepEqual(prefs, { theme: 'dark', weightUnit: 'kg', textSize: 'small' });
 });

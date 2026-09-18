@@ -1,5 +1,6 @@
 import React from 'react';
-import { Platform, Text, type ColorValue } from 'react-native';
+import { Platform, type ColorValue } from 'react-native';
+import { Text } from '../../src/ui/type';
 import { Tabs } from 'expo-router';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useTheme } from '../../src/theme/ThemeProvider';

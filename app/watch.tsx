@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { Text } from '../src/ui/type';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { Body, Button, Chip, Empty, Field, Mono, Note, Screen, Tick } from '../src/ui/primitives';

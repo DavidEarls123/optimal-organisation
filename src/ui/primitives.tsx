@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import {
-  Dimensions, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput,
-  View, useWindowDimensions,
-  type StyleProp, type TextStyle, type ViewStyle,
+  Dimensions, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View,
+  useWindowDimensions, type StyleProp, type TextStyle, type ViewStyle,
 } from 'react-native';
+import { Text, scaleType, useTextScale } from './type';
 import { useIsFocused } from 'expo-router';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -209,6 +209,11 @@ export function Segmented<T extends string>({ options, value, onChange }: {
  *  the screen and moves the list by the difference, so it lands in the middle
  *  of whatever the keyboard has left. It works for every field on the screen,
  *  because it follows the focus rather than being wired to one box. */
+/** Roughly where a screen's own heading ends, and how much room to leave under
+ *  a field for whatever sits beneath it. Points, not pixels. */
+const HEADER = 118;
+const BELOW = 78;
+
 export function useKeepVisible() {
   const ref = useRef<ScrollView>(null);
   const at = useRef(0);
@@ -225,9 +230,11 @@ export function useKeepVisible() {
     node.measureInWindow((_x, y, _w, h) => {
       if (!Number.isFinite(y)) return;
       const room = Dimensions.get('window').height - kb.current;
-      // A little above the middle: what you are typing usually has a label or a
-      // row of buttons under it that you want to see as well.
-      const want = Math.max(24, room / 2 - h);
+      // Just above the keyboard rather than up in the middle of the screen: the
+      // band between the keyboard and the day you are on is where you are
+      // already looking, and there is usually a row of buttons under the field
+      // that has to stay in it too.
+      const want = Math.max(HEADER, room - h - BELOW);
       const move = y - want;
       if (Math.abs(move) < 12) return;
       ref.current?.scrollTo({ y: Math.max(0, at.current + move), animated: true });
@@ -252,15 +259,19 @@ export function useKeepVisible() {
 
 export function Field(props: React.ComponentProps<typeof TextInput>) {
   const t = useTheme();
+  const scale = useTextScale();
+  // Flattened first, because what you type in has to come out the same size as
+  // everything around it — including whatever size the caller asked for.
+  const given = scaleType(StyleSheet.flatten(props.style) as TextStyle | undefined, scale);
   return (
     <TextInput
       placeholderTextColor={t.ink3}
       {...props}
       style={[{
-        flex: 1, minWidth: 0, fontSize: 14, color: t.ink, backgroundColor: t.sheet2,
+        flex: 1, minWidth: 0, fontSize: 14 * scale, color: t.ink, backgroundColor: t.sheet2,
         borderWidth: 1, borderColor: t.rule, borderRadius: radius.md,
         paddingHorizontal: 10, paddingVertical: 9,
-      }, props.style]}
+      }, given]}
     />
   );
 }

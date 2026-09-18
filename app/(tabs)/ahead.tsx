@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
+import { Text } from '../../src/ui/type';
 
 import {
   Body, Button, Chip, CornerMark, DateButton, Empty, Field, Mono, Note, Screen, Section,

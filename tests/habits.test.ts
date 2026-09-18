@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState, migrate } from '../src/domain/state';
-import { countPlan, moveHabit } from '../src/domain/week';
+import { countPlan, moveHabit, placeHabit } from '../src/domain/week';
 import {
   clockLabel, fromKg, pacing, readings, timing, toKg,
 } from '../src/domain/scoring';
@@ -174,4 +174,51 @@ test('an order set by hand survives a save and a load', () => {
   const wanted = s.habits.map((h) => h.id);
   const back = migrate(JSON.parse(JSON.stringify(s)));
   assert.deepEqual(back?.habits.map((h) => h.id), wanted);
+});
+
+test('a habit dropped two places down lands there', () => {
+  const s = createInitialState(TUE, 'run');
+  const ids = s.habits.map((h) => h.id);
+  placeHabit(s, ids[0], 2);
+  assert.deepEqual(s.habits.map((h) => h.id),
+    [ids[1], ids[2], ids[0], ...ids.slice(3)]);
+});
+
+test('a habit dropped at the top becomes the first', () => {
+  const s = createInitialState(TUE, 'run');
+  const ids = s.habits.map((h) => h.id);
+  placeHabit(s, ids[3], 0);
+  assert.equal(s.habits[0].id, ids[3]);
+  assert.equal(s.habits.length, ids.length, 'and nothing was lost');
+});
+
+test('a habit dropped past the end is clamped rather than dropped on the floor', () => {
+  const s = createInitialState(TUE, 'run');
+  const ids = s.habits.map((h) => h.id);
+  placeHabit(s, ids[0], 99);
+  assert.equal(s.habits[s.habits.length - 1].id, ids[0]);
+  assert.equal(s.habits.length, ids.length);
+});
+
+test('a habit dropped where it already is changes nothing', () => {
+  const s = createInitialState(TUE, 'run');
+  const ids = s.habits.map((h) => h.id);
+  placeHabit(s, ids[2], 2);
+  assert.deepEqual(s.habits.map((h) => h.id), ids);
+});
+
+test('dropping a habit that is not there is refused', () => {
+  const s = createInitialState(TUE, 'run');
+  const ids = s.habits.map((h) => h.id);
+  assert.equal(placeHabit(s, 'nope', 0), false);
+  assert.deepEqual(s.habits.map((h) => h.id), ids);
+});
+
+test('dragging and the arrows agree on what one step means', () => {
+  const a = createInitialState(TUE, 'run');
+  const b = createInitialState(TUE, 'run');
+  const id = a.habits[1].id;
+  moveHabit(a, id, 1);
+  placeHabit(b, id, 2);
+  assert.deepEqual(a.habits.map((h) => h.id), b.habits.map((h) => h.id));
 });

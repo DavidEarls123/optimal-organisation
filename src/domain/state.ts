@@ -1,4 +1,4 @@
-import { DAY_STYLES, DEFAULT_PREFS, NOTE_LIMIT } from './types';
+import { DEFAULT_PREFS, NOTE_LIMIT, TEXT_SIZES } from './types';
 import type { AppState, WatchItem, ShopGroup } from './types';
 import { DEFAULT_HABITS, DEFAULT_SECTIONS, DEFAULT_TRACKABLES, TEMPLATES, TEMPLATE_ORDER } from './catalogue';
 import { createWeek } from './week';
@@ -52,7 +52,10 @@ export function migrate(loaded: Partial<AppState> | null): AppState | null {
   s.prefs = { ...DEFAULT_PREFS, ...(loaded.prefs ?? {}) };
   if (!['system', 'light', 'dark'].includes(s.prefs.theme)) s.prefs.theme = 'system';
   if (!['kg', 'lb'].includes(s.prefs.weightUnit)) s.prefs.weightUnit = 'kg';
-  if (!DAY_STYLES.some((x) => x.key === s.prefs.dayStyle)) s.prefs.dayStyle = DEFAULT_PREFS.dayStyle;
+  if (!TEXT_SIZES.some((x) => x.key === s.prefs.textSize)) s.prefs.textSize = DEFAULT_PREFS.textSize;
+  // The day used to be markable five different ways. There is one now, so a
+  // stored choice is nothing but clutter.
+  delete (s.prefs as { dayStyle?: unknown }).dayStyle;
 
   for (const h of s.habits) if (h.active === undefined) h.active = true;
   // Renamed to TV. Only touched when it still holds the name it shipped with,

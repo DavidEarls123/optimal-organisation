@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Alert, Keyboard, Linking, Pressable, ScrollView, Text, View,
-} from 'react-native';
+import { Alert, Keyboard, Linking, Pressable, ScrollView, View } from 'react-native';
+import { Text } from '../../src/ui/type';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
+import { DayDone } from '../../src/ui/DayDone';
 import {
   Bar, Body, Button, Chip, Empty, Field, Glyph, Mono, Note, Screen, Section, SectionHead,
   Segmented, Sheet, Tick,
@@ -51,6 +51,8 @@ export default function DayScreen() {
   const [condensed, setCondensed] = useState(false);
   /** The habit currently asking for a weight, if any. */
   const [weighing, setWeighing] = useState<string | null>(null);
+  /** True for the moment after a day is marked complete. */
+  const [cheer, setCheer] = useState(false);
   /** The task being dragged, and where it would land. */
   const [dragId, setDragId] = useState<string | null>(null);
   /** The place it would land if you let go now: which heading, and which row
@@ -622,10 +624,14 @@ export default function DayScreen() {
           {!off ? (
             <Pressable
               accessibilityRole="button"
-              onPress={() => update((d) => {
-                const c = d.weeks[weekId].complete;
-                if (c[day]) delete c[day]; else c[day] = true;
-              })}
+              onPress={() => {
+                const wasOn = complete;
+                update((d) => {
+                  const c = d.weeks[weekId].complete;
+                  if (c[day]) delete c[day]; else c[day] = true;
+                }, wasOn ? 'unmarking the day' : 'marking the day complete');
+                if (!wasOn) setCheer(true);
+              }}
               style={{
                 borderWidth: 1, borderRadius: radius.md, paddingVertical: 13, alignItems: 'center',
                 borderColor: complete ? t.hit : t.accentLine,
@@ -649,6 +655,15 @@ export default function DayScreen() {
           />
         </View>
       </Body>
+
+      <DayDone
+        open={cheer}
+        title={parseISO(dateIso).toLocaleDateString('en-GB',
+          { weekday: 'long', day: 'numeric', month: 'long' })}
+        note={`${live.filter((x) => x.state === 'done').length}/${live.length} tasks`
+          + ` \u00b7 ${planned.filter((h) => ticked[h.id]).length}/${planned.length} habits`}
+        onClose={() => setCheer(false)}
+      />
 
       <WeightSheet
         habitId={weighing}
@@ -1037,9 +1052,14 @@ function TaskRow({
           />
         ) : (
           <Pressable
-            onPress={onToggle}
+            // The name does not tick it off. Ticking something by accident while
+            // reading down a list is worth more than a second tap target, so the
+            // box is the only thing that does it — this opens the panel instead.
+            onPress={onOpenMove}
             onLongPress={() => { setDraft(task.text); setEditing(true); }}
             delayLongPress={300}
+            accessibilityRole="button"
+            accessibilityLabel={open ? `Close options for ${task.text}` : `Options for ${task.text}`}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}
           >
             <Text style={{ flexShrink: 1, fontSize: 14.5, lineHeight: 19,

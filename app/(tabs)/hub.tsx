@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
+import { Text } from '../../src/ui/type';
 import { Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 

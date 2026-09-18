@@ -663,6 +663,20 @@ export function moveHabit(state: AppState, id: string, dir: -1 | 1): boolean {
   return true;
 }
 
+/** Drops a habit at a place in the list. `toIndex` is a place in the list
+ *  *without* the dragged habit, which is what a list being dragged through
+ *  looks like. */
+export function placeHabit(state: AppState, id: string, toIndex: number): boolean {
+  const at = state.habits.findIndex((h) => h.id === id);
+  if (at < 0) return false;
+  const habit = state.habits[at];
+  const rest = state.habits.filter((h) => h.id !== id);
+  const to = Math.max(0, Math.min(rest.length, Math.round(toIndex)));
+  rest.splice(to, 0, habit);
+  state.habits = rest;
+  return true;
+}
+
 /** One place a dragged task can be let go of.
  *
  *  A day is not a flat list: it is headings with rows under them, and finished

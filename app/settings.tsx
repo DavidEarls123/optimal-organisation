@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import { Alert, Pressable, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import { Text } from '../src/ui/type';
 import { useRouter } from 'expo-router';
 
 import {
@@ -9,37 +12,87 @@ import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
 import { HABIT_PRESETS, TRACK_PRESETS, slug } from '../src/domain/catalogue';
-import { moveHabit, uid } from '../src/domain/week';
+import { TEXT_SIZES } from '../src/domain/types';
+import { moveHabit, placeHabit, uid } from '../src/domain/week';
 import { APP_BY, APP_NAME } from '../src/brand';
-import { dayLook } from '../src/ui/WeekHeader';
-import { DAY_STYLES } from '../src/domain/types';
 
 const NAME_LIMIT = 32;
 
 /** One row in a list you can turn on and off. Turning a habit off keeps it —
  *  its history and its identity stay, so turning it back on later carries on
  *  the same habit rather than starting a new one. */
-function Row({ name, note, on, onToggle, onRemove, onMove }: {
+function Row({ name, note, on, onToggle, onRemove, onMove, drag }: {
   name: string; note?: string; on: boolean; onToggle: () => void; onRemove?: () => void;
   /** Up and down the list, when the order is something you can set. */
   onMove?: (dir: -1 | 1) => void;
+  /** Hold and drag, for the same order by hand. */
+  drag?: {
+    onMeasure: (h: number) => void;
+    onMove: (dy: number) => void;
+    onEnd: (dy: number) => void;
+    dragging: boolean;
+  };
 }) {
   const t = useTheme();
+  const lift = useSharedValue(0);
+  const told = useSharedValue(0);
+  const move = drag?.onMove;
+  const end = drag?.onEnd;
+  const pan = useMemo(
+    () => Gesture.Pan()
+      .activateAfterLongPress(220)
+      .onStart((e) => {
+        told.value = e.translationY;
+        if (move) runOnJS(move)(e.translationY);
+      })
+      .onUpdate((e) => {
+        lift.value = e.translationY;
+        if (Math.abs(e.translationY - told.value) < 6) return;
+        told.value = e.translationY;
+        if (move) runOnJS(move)(e.translationY);
+      })
+      .onEnd((e) => {
+        if (end) runOnJS(end)(e.translationY);
+        lift.value = 0;
+      })
+      .onFinalize(() => { lift.value = 0; }),
+    [lift, told, move, end],
+  );
+  const lifted = useAnimatedStyle(() => ({ transform: [{ translateY: lift.value }] }));
   const arrow = (dir: -1 | 1) => (
     <Pressable
       onPress={() => onMove?.(dir)}
       hitSlop={6}
       accessibilityRole="button"
       accessibilityLabel={`Move ${name} ${dir === -1 ? 'up' : 'down'}`}
-      style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center',
+      style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center',
         borderWidth: 1, borderColor: t.rule, borderRadius: radius.sm + 1 }}
     >
       <Text style={{ fontSize: 11, color: t.ink2, lineHeight: 13 }}>{dir === -1 ? '↑' : '↓'}</Text>
     </Pressable>
   );
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-      paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: t.rule2 }}>
+    <Animated.View
+      onLayout={(e) => drag?.onMeasure(e.nativeEvent.layout.height)}
+      style={[{ flexDirection: 'row', alignItems: 'center', gap: 9,
+        paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: t.rule2,
+        zIndex: drag?.dragging ? 10 : 0,
+        backgroundColor: drag?.dragging ? t.sheet2 : 'transparent',
+        borderRadius: drag?.dragging ? radius.md : 0 }, drag ? lifted : null]}
+    >
+      {drag ? (
+        <GestureDetector gesture={pan}>
+          <View
+            accessible
+            accessibilityRole="adjustable"
+            accessibilityLabel={`Hold to move ${name}`}
+            hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+          >
+            <Text style={{ color: drag.dragging ? t.accent : t.ink3, fontSize: 15,
+              lineHeight: 18 }}>⠿</Text>
+          </View>
+        </GestureDetector>
+      ) : null}
       <Pressable
         accessibilityRole="switch"
         accessibilityState={{ checked: on }}
@@ -66,7 +119,15 @@ function Row({ name, note, on, onToggle, onRemove, onMove }: {
           <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
         </Pressable>
       ) : null}
-    </View>
+    </Animated.View>
+  );
+}
+
+/** The line showing where a held row would land. */
+function DropLine() {
+  const t = useTheme();
+  return (
+    <View style={{ height: 2, backgroundColor: t.accent, borderRadius: 1, marginVertical: -1 }} />
   );
 }
 
@@ -78,6 +139,39 @@ export default function SettingsScreen() {
   const [pickTrack, setPickTrack] = useState(false);
   const [newHabit, setNewHabit] = useState('');
   const [newTrack, setNewTrack] = useState('');
+
+  /** Holding a habit and dragging it. Every row is the same height and there is
+   *  nothing between them, so where the finger is really is a count of rows. */
+  const rowH = useRef<Record<string, number>>({});
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropAt, setDropAt] = useState<number | null>(null);
+
+  const landing = (id: string, dy: number) => {
+    const from = state.habits.findIndex((h) => h.id === id);
+    if (from < 0) return 0;
+    const rest = state.habits.filter((h) => h.id !== id);
+    const tall = (hid: string) => rowH.current[hid] || 44;
+    let at = from;
+    if (dy > 0) {
+      let run = 0;
+      for (let i = from; i < rest.length; i += 1) {
+        run += tall(rest[i].id);
+        if (run > dy) break;
+        at = i + 1;
+      }
+    } else {
+      let run = 0;
+      for (let i = from - 1; i >= 0; i -= 1) {
+        run += tall(rest[i].id);
+        if (run > -dy) break;
+        at = i;
+      }
+    }
+    return Math.max(0, Math.min(rest.length, at));
+  };
+
+  const rest = new Map<string, number>();
+  if (dragId) state.habits.filter((h) => h.id !== dragId).forEach((h, i) => rest.set(h.id, i));
 
   const have = new Set(state.habits.map((h) => h.id));
   const haveTracks = new Set(state.trackables.map((x) => x.id));
@@ -131,63 +225,19 @@ export default function SettingsScreen() {
         </Section>
 
         <Section>
-          <SectionHead title="The day you are on" />
+          <SectionHead title="Text size" />
           <Note>
-            How the day is picked out in the strip at the top. Each is drawn here as it
-            will actually look.
+            How big the writing is, everywhere in the app. This page changes with it,
+            so what you see here is what you get.
           </Note>
-          <View style={{ gap: 8 }}>
-            {DAY_STYLES.map((opt) => {
-              const on = state.prefs.dayStyle === opt.key;
-              const look = dayLook(t, opt.key);
-              return (
-                <Pressable
-                  key={opt.key}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                  onPress={() => update((d) => { d.prefs.dayStyle = opt.key; }, 'that setting')}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
-                    borderWidth: 1, borderRadius: radius.md, padding: 10,
-                    borderColor: on ? t.accent : t.rule,
-                    backgroundColor: on ? t.accentSoft : 'transparent' }}
-                >
-                  {/* Three days, the middle one selected, at the real size. */}
-                  <View style={{ flexDirection: 'row', gap: 3 }}>
-                    {[0, 1, 2].map((i) => {
-                      const sel = i === 1;
-                      return (
-                        <View
-                          key={i}
-                          style={{ width: 34, alignItems: 'center', gap: 4, paddingVertical: 6,
-                            borderRadius: radius.md,
-                            borderWidth: sel ? look.border : 1,
-                            borderColor: sel ? look.edge : 'transparent',
-                            backgroundColor: sel ? look.fill : 'transparent',
-                            borderBottomWidth: sel && opt.key === 'underline' ? 3 : undefined,
-                            borderBottomColor: sel && opt.key === 'underline' ? t.accent : undefined }}
-                        >
-                          <Text style={{ fontSize: 9, letterSpacing: 0.8,
-                            color: sel ? look.ink : t.ink3 }}>{'MTW'[i]}</Text>
-                          <View style={{ width: 18, height: 18, borderRadius: 9,
-                            borderWidth: 2.5, borderColor: sel ? look.track : t.rule,
-                            borderTopColor: sel ? look.sweep : t.hit,
-                            borderRightColor: sel ? look.sweep : t.hit,
-                            backgroundColor: sel ? look.hole : t.sheet }} />
-                          <Text style={{ fontSize: 11, fontWeight: sel ? '800' : '600',
-                            color: sel ? look.ink : t.ink }}>{15 + i}</Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14, fontWeight: on ? '700' : '500',
-                      color: on ? t.accent : t.ink }}>{opt.name}</Text>
-                    <Mono style={{ fontSize: 10, marginTop: 2 }}>{opt.note}</Mono>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
+          <Segmented
+            value={state.prefs.textSize}
+            onChange={(k) => update((d) => { d.prefs.textSize = k; }, 'the text size')}
+            options={TEXT_SIZES.map((x) => ({ key: x.key, label: x.name }))}
+          />
+          <Mono style={{ fontSize: 10.5 }}>
+            {TEXT_SIZES.find((x) => x.key === state.prefs.textSize)?.note ?? ''}
+          </Mono>
         </Section>
 
         <Section>
@@ -208,41 +258,61 @@ export default function SettingsScreen() {
             Everything you might tick on a day. Turning one off hides it without losing
             anything — turn it back on and its history is still there. The order here is
             the order the tiles sit in on a day: first one top left, second beside it,
-            third under the first.
+            third under the first. Hold the ⠿ and drag one where you want it, or step it
+            along with the arrows.
           </Note>
           <View>
             {state.habits.map((h) => (
-              <Row
-                key={h.id}
-                name={h.name}
-                note={h.picks === 'weight' ? 'Asks for a number'
-                  : h.picks === 'watch' ? 'Picks from your watchlist' : undefined}
-                on={h.active}
-                onToggle={() => update((d) => {
-                  const x = d.habits.find((y) => y.id === h.id);
-                  if (x) x.active = !x.active;
-                })}
-                onMove={(dir) => update((d) => { moveHabit(d, h.id, dir); },
-                  'moving that habit')}
-                onRemove={() => Alert.alert(
-                  `Delete ${h.name}?`,
-                  'Every tick of it, in every week, goes too. Turning it off instead keeps '
-                  + 'the history and just hides it.',
-                  [{ text: 'Cancel', style: 'cancel' },
-                   {
-                     text: 'Delete',
-                     style: 'destructive',
-                     onPress: () => update((d) => {
-                       d.habits = d.habits.filter((y) => y.id !== h.id);
-                       for (const w of Object.values(d.weeks)) {
-                         delete w.habitPlan[h.id];
-                         for (const map of Object.values(w.habits)) delete map[h.id];
-                       }
-                     }),
-                   }],
-                )}
-              />
+              <React.Fragment key={h.id}>
+                {dragId && rest.get(h.id) === dropAt ? <DropLine /> : null}
+                <Row
+                  name={h.name}
+                  note={h.picks === 'weight' ? 'Asks for a number'
+                    : h.picks === 'watch' ? 'Picks from your watchlist' : undefined}
+                  on={h.active}
+                  onToggle={() => update((d) => {
+                    const x = d.habits.find((y) => y.id === h.id);
+                    if (x) x.active = !x.active;
+                  })}
+                  onMove={(dir) => update((d) => { moveHabit(d, h.id, dir); },
+                    'moving that habit')}
+                  drag={{
+                    dragging: dragId === h.id,
+                    onMeasure: (height) => { rowH.current[h.id] = height; },
+                    onMove: (dy) => {
+                      setDragId((cur) => (cur === h.id ? cur : h.id));
+                      const to = landing(h.id, dy);
+                      setDropAt((cur) => (cur === to ? cur : to));
+                    },
+                    onEnd: (dy) => {
+                      const to = landing(h.id, dy);
+                      setDragId(null);
+                      setDropAt(null);
+                      update((d) => { placeHabit(d, h.id, to); }, 'moving that habit');
+                    },
+                  }}
+                  onRemove={() => Alert.alert(
+                    `Delete ${h.name}?`,
+                    'Every tick of it, in every week, goes too. Turning it off instead keeps '
+                    + 'the history and just hides it.',
+                    [{ text: 'Cancel', style: 'cancel' },
+                     {
+                       text: 'Delete',
+                       style: 'destructive',
+                       onPress: () => update((d) => {
+                         d.habits = d.habits.filter((y) => y.id !== h.id);
+                         for (const w of Object.values(d.weeks)) {
+                           delete w.habitPlan[h.id];
+                           for (const map of Object.values(w.habits)) delete map[h.id];
+                         }
+                       }),
+                     }],
+                  )}
+                />
+              </React.Fragment>
             ))}
+            {/* Landing at the very bottom has no row to sit above. */}
+            {dragId && dropAt !== null && dropAt >= rest.size ? <DropLine /> : null}
           </View>
           <Button title="+ Add a habit" onPress={() => setPickHabit(true)} />
         </Section>

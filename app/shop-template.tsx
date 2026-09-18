@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
+import { Text } from '../src/ui/type';
 
 import {
   Body, Button, Empty, Field, Mono, Note, Screen, Section, SectionHead,
