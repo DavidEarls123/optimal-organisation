@@ -56,9 +56,9 @@ export default function DayScreen() {
   const box = useBoxWidth();
   /** The task being dragged, and where it would land. */
   const [dragId, setDragId] = useState<string | null>(null);
-  /** The place it would land if you let go now: which heading, and which row
-   *  the line sits above. */
-  const [drop, setDrop] = useState<DropSlot | null>(null);
+  /** The place it would land if you let go now, and how far down the list that
+   *  is — the same number the line is drawn at, so the two cannot disagree. */
+  const [drop, setDrop] = useState<(DropSlot & { y: number }) | null>(null);
   /** Every row's height, so a drag knows how far a place is. */
   const rowH = useRef<Record<string, number>>({});
   /** Headings whose finished work is showing. Folded away by default, so a
@@ -438,17 +438,19 @@ export default function DayScreen() {
 
         <Section>
           {sections.map((sc, si) => {
-            // Straight from the same ordering the drag counts against, so the
-            // drop line and the row it points at can never disagree.
+            // Straight from the same ordering the drag counts against.
             const items = drawn.filter((x) => x.sec === sc.id);
             const todo = items.filter((x) => x.state !== 'done');
             const finished = items.filter((x) => x.state === 'done');
             const showing = !!showDone[sc.id];
-            /** Letting go under this heading's last row, rather than above one. */
-            const end = Boolean(drop && drop.sec === sc.id && drop.before === null);
+            /** Where the line goes inside this heading's list, measured from the
+             *  same place the drop itself is worked out from. Null when the
+             *  finger is not over this heading at all. */
+            const end = drop && drop.sec === sc.id
+              ? drop.y - (secY.current[sc.id] ?? 0) - (listY.current[sc.id] ?? 0)
+              : null;
             const row = (x: Task) => (
               <React.Fragment key={x.id}>
-                {drop && drop.sec === x.sec && drop.before === x.id ? <DropLine /> : null}
                 <TaskRow
                   task={x}
                   open={moveId === x.id}
@@ -493,11 +495,6 @@ export default function DayScreen() {
                 >
                   {todo.map(row)}
 
-                  {/* The bottom of the heading is under the last row you can
-                      see, which is the last thing still to do while the
-                      finished work is folded away — not under the fold. */}
-                  {end && !showing ? <DropLine /> : null}
-
                   {/* Finished work folds away, so the heading gets shorter as
                       you get through it. It is one tap from being back. */}
                   {finished.length ? (
@@ -520,7 +517,20 @@ export default function DayScreen() {
                     </Pressable>
                   ) : null}
                   {showing ? finished.map(row) : null}
-                  {end && showing ? <DropLine /> : null}
+
+                  {/* Drawn at the place itself rather than between two rows.
+                      Working the line out from where things sit in the list was
+                      a second opinion about the same question, and the two
+                      could disagree — it drew under folded-away work that it
+                      was never going to land under. There is one answer now,
+                      and the line is it. */}
+                  {end !== null ? (
+                    <View
+                      pointerEvents="none"
+                      style={{ position: 'absolute', left: 0, right: 0, top: end - 1, height: 2,
+                        borderRadius: 1, backgroundColor: t.accent, zIndex: 20 }}
+                    />
+                  ) : null}
                 </View>
 
                 {adding === sc.id ? (
@@ -714,14 +724,6 @@ export default function DayScreen() {
 
 /** Where the task will be when you let go. Drawn where the gap will open,
  *  rather than left to be guessed from how far the row has moved. */
-function DropLine() {
-  const t = useTheme();
-  return (
-    <View style={{ height: 2, marginVertical: 3, borderRadius: 1,
-      backgroundColor: t.accent }} />
-  );
-}
-
 /** Asks for a number rather than just a tick. Entered in whichever unit you
  *  set, stored in kilograms, so switching units later reads the same history
  *  rather than rewriting it. */
