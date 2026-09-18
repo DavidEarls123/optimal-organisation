@@ -27,7 +27,7 @@ export function Body({ children, onScroll, scrollRef, top }: {
   /** Less air at the top, for a screen that already has a heading above it. */
   top?: number;
 }) {
-  const { ref, onScroll: follow } = useKeepVisible();
+  const { ref, onScroll: follow, keep } = useKeepVisible();
   const hold = useCallback((node: ScrollView | null) => {
     (ref as React.MutableRefObject<ScrollView | null>).current = node;
     if (typeof scrollRef === 'function') scrollRef(node);
@@ -43,6 +43,10 @@ export function Body({ children, onScroll, scrollRef, top }: {
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="interactive"
       scrollEventThrottle={16}
+      // Adding a task keeps the composer open and pushes it down the page, and
+      // the keyboard never moved so it never says anything. The list growing is
+      // the signal: look again at whatever is being typed in.
+      onContentSizeChange={keep}
       onScroll={(e) => {
         follow(e.nativeEvent.contentOffset.y);
         onScroll?.(e.nativeEvent.contentOffset.y);

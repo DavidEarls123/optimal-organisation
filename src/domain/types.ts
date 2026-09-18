@@ -158,12 +158,13 @@ export interface Prefs {
 
 /** Three sizes, because a phone in one hand at arm's length is not the same as
  *  a phone on a desk, and neither is anybody's eyesight. */
-export type TextSize = 'small' | 'medium' | 'large';
+export type TextSize = 'small' | 'medium' | 'large' | 'xl';
 
 export const TEXT_SIZES: { key: TextSize; name: string; note: string }[] = [
   { key: 'small', name: 'Small', note: 'More on the screen at once' },
   { key: 'medium', name: 'Medium', note: 'How the app was drawn' },
   { key: 'large', name: 'Large', note: 'Easier to read, less on a page' },
+  { key: 'xl', name: 'XL', note: 'As big as it goes — read it at arm’s length' },
 ];
 
 export const DEFAULT_PREFS: Prefs = { theme: 'system', weightUnit: 'kg', textSize: 'medium' };

@@ -660,8 +660,8 @@ export default function DayScreen() {
         open={cheer}
         title={parseISO(dateIso).toLocaleDateString('en-GB',
           { weekday: 'long', day: 'numeric', month: 'long' })}
-        note={`${live.filter((x) => x.state === 'done').length}/${live.length} tasks`
-          + ` \u00b7 ${planned.filter((h) => ticked[h.id]).length}/${planned.length} habits`}
+        tasks={{ done: live.filter((x) => x.state === 'done').length, total: live.length }}
+        habits={{ done: planned.filter((h) => ticked[h.id]).length, total: planned.length }}
         onClose={() => setCheer(false)}
       />
 

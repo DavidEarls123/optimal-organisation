@@ -4,8 +4,8 @@ import { StyleSheet, Text as Plain, type TextProps, type TextStyle } from 'react
 import type { TextSize } from '../domain/types';
 
 /** How much bigger or smaller than drawn. Small and large are a step either
- *  side rather than a leap: the layout has to survive both. */
-const SCALES: Record<TextSize, number> = { small: 0.92, medium: 1, large: 1.14 };
+ *  side rather than a leap; XL goes further, for reading at arm's length. */
+const SCALES: Record<TextSize, number> = { small: 0.92, medium: 1, large: 1.14, xl: 1.3 };
 
 const ScaleContext = createContext(1);
 
