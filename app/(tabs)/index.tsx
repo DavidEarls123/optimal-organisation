@@ -540,14 +540,25 @@ export default function DayScreen() {
                         onChange={(v) => setTagFor((p) => ({ ...p, [sc.id]: v }))}
                       />
                     </View>
+                    {/* One button, and what it does is whatever there is to do:
+                        write something and it files it, leave it empty and it
+                        closes. Two buttons made you choose between finishing
+                        and finishing. */}
                     <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
                       <Mono style={{ flex: 1, fontSize: 10.5 }}>
                         {(drafts[sc.id] ?? '').length >= TASK_LIMIT - 20
                           ? `${TASK_LIMIT - (drafts[sc.id] ?? '').length} left`
                           : 'Return adds it and keeps going'}
                       </Mono>
-                      <Button tone="ghost" title="Done" onPress={() => { setAdding(null); Keyboard.dismiss(); }} />
-                      <Button title="Add" onPress={() => addTask(sc.id)} />
+                      {(drafts[sc.id] ?? '').trim() ? (
+                        <Button title="Add" onPress={() => addTask(sc.id)} />
+                      ) : (
+                        <Button
+                          tone="ghost"
+                          title="Done"
+                          onPress={() => { setAdding(null); Keyboard.dismiss(); }}
+                        />
+                      )}
                     </View>
                   </View>
                 ) : (

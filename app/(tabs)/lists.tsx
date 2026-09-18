@@ -309,9 +309,14 @@ function Shopping() {
                 />
                 <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
                   <Mono style={{ flex: 1, fontSize: 10.5 }}>Return adds it and keeps going</Mono>
-                  <Button tone="ghost" title="Done"
-                    onPress={() => { setAdding(null); Keyboard.dismiss(); }} />
-                  <Button title="Add" onPress={() => addItem(g.id)} />
+                  {/* The same one button as a task's: it files what you wrote,
+                      or closes if you wrote nothing. */}
+                  {(drafts[g.id] ?? '').trim() ? (
+                    <Button title="Add" onPress={() => addItem(g.id)} />
+                  ) : (
+                    <Button tone="ghost" title="Done"
+                      onPress={() => { setAdding(null); Keyboard.dismiss(); }} />
+                  )}
                 </View>
               </View>
             ) : (
