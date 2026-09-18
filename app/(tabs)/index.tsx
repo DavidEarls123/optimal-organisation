@@ -10,7 +10,7 @@ import { WeekHeader } from '../../src/ui/WeekHeader';
 import { DayDone } from '../../src/ui/DayDone';
 import {
   Bar, Body, Button, Chip, Empty, Field, Glyph, Mono, Note, Screen, Section, SectionHead,
-  Segmented, Sheet, Tick,
+  Segmented, Sheet, Tick, useBoxWidth,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -53,6 +53,7 @@ export default function DayScreen() {
   const [weighing, setWeighing] = useState<string | null>(null);
   /** True for the moment after a day is marked complete. */
   const [cheer, setCheer] = useState(false);
+  const box = useBoxWidth();
   /** The task being dragged, and where it would land. */
   const [dragId, setDragId] = useState<string | null>(null);
   /** The place it would land if you let go now: which heading, and which row
@@ -443,6 +444,8 @@ export default function DayScreen() {
             const todo = items.filter((x) => x.state !== 'done');
             const finished = items.filter((x) => x.state === 'done');
             const showing = !!showDone[sc.id];
+            /** Letting go under this heading's last row, rather than above one. */
+            const end = Boolean(drop && drop.sec === sc.id && drop.before === null);
             const row = (x: Task) => (
               <React.Fragment key={x.id}>
                 {drop && drop.sec === x.sec && drop.before === x.id ? <DropLine /> : null}
@@ -490,6 +493,11 @@ export default function DayScreen() {
                 >
                   {todo.map(row)}
 
+                  {/* The bottom of the heading is under the last row you can
+                      see, which is the last thing still to do while the
+                      finished work is folded away — not under the fold. */}
+                  {end && !showing ? <DropLine /> : null}
+
                   {/* Finished work folds away, so the heading gets shorter as
                       you get through it. It is one tap from being back. */}
                   {finished.length ? (
@@ -512,10 +520,7 @@ export default function DayScreen() {
                     </Pressable>
                   ) : null}
                   {showing ? finished.map(row) : null}
-
-                  {/* Landing under a heading's last row has no row to sit
-                      above, so the line goes after it. */}
-                  {drop && drop.sec === sc.id && drop.before === null ? <DropLine /> : null}
+                  {end && showing ? <DropLine /> : null}
                 </View>
 
                 {adding === sc.id ? (
@@ -550,15 +555,17 @@ export default function DayScreen() {
                           ? `${TASK_LIMIT - (drafts[sc.id] ?? '').length} left`
                           : 'Return adds it and keeps going'}
                       </Mono>
-                      {(drafts[sc.id] ?? '').trim() ? (
-                        <Button title="Add" onPress={() => addTask(sc.id)} />
-                      ) : (
-                        <Button
-                          tone="ghost"
-                          title="Done"
-                          onPress={() => { setAdding(null); Keyboard.dismiss(); }}
-                        />
-                      )}
+                      <View style={{ width: box }}>
+                        {(drafts[sc.id] ?? '').trim() ? (
+                          <Button title="Add" onPress={() => addTask(sc.id)} />
+                        ) : (
+                          <Button
+                            tone="ghost"
+                            title="Done"
+                            onPress={() => { setAdding(null); Keyboard.dismiss(); }}
+                          />
+                        )}
+                      </View>
                     </View>
                   </View>
                 ) : (
@@ -887,6 +894,7 @@ function TrackChip({ trackId }: { trackId: string }) {
  *  tapping through six options to get back to none was guesswork. */
 function TagPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const t = useTheme();
+  const box = useBoxWidth();
   const { state } = useStore();
   const [open, setOpen] = useState(false);
   const tr = state.trackables.find((x) => x.id === value);
@@ -921,10 +929,11 @@ function TagPicker({ value, onChange }: { value: string; onChange: (v: string) =
         accessibilityLabel={tr ? `Tagged ${tr.name}. Change it.` : 'Add a tag'}
         onPress={() => setOpen(true)}
         style={{ borderWidth: 1, borderColor: tr ? line : t.rule, backgroundColor: tr ? soft : t.sheet2,
-          borderRadius: radius.md, paddingHorizontal: 9, paddingVertical: 9, minWidth: 56,
-          alignItems: 'center' }}
+          borderRadius: radius.md, paddingHorizontal: 6, paddingVertical: 9, width: box,
+          alignItems: 'center', justifyContent: 'center' }}
       >
-        <Text style={{ fontSize: 11, fontWeight: '600', color: tr ? line : t.ink3 }}>
+        <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: '600',
+          color: tr ? line : t.ink3 }}>
           {tr ? tr.name : '—'}
         </Text>
       </Pressable>

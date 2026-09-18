@@ -6,7 +6,7 @@ import { useRouter } from 'expo-router';
 import { WeekHeader } from '../../src/ui/WeekHeader';
 import {
   Body, Button, Chip, Empty, Field, Glyph, IconButton, Mono, Note, Screen, Section,
-  SectionHead, Segmented, Sheet, Tick,
+  SectionHead, Segmented, Sheet, Tick, useBoxWidth,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -122,6 +122,7 @@ function ShopRow({ item, onNeed, onRename, onDelete }: {
 
 function Shopping() {
   const t = useTheme();
+  const box = useBoxWidth();
   const router = useRouter();
   const { state, weekId, update } = useStore();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -311,12 +312,14 @@ function Shopping() {
                   <Mono style={{ flex: 1, fontSize: 10.5 }}>Return adds it and keeps going</Mono>
                   {/* The same one button as a task's: it files what you wrote,
                       or closes if you wrote nothing. */}
-                  {(drafts[g.id] ?? '').trim() ? (
-                    <Button title="Add" onPress={() => addItem(g.id)} />
-                  ) : (
-                    <Button tone="ghost" title="Done"
-                      onPress={() => { setAdding(null); Keyboard.dismiss(); }} />
-                  )}
+                  <View style={{ width: box }}>
+                    {(drafts[g.id] ?? '').trim() ? (
+                      <Button title="Add" onPress={() => addItem(g.id)} />
+                    ) : (
+                      <Button tone="ghost" title="Done"
+                        onPress={() => { setAdding(null); Keyboard.dismiss(); }} />
+                    )}
+                  </View>
                 </View>
               </View>
             ) : (

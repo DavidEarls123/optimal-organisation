@@ -261,6 +261,14 @@ export function useKeepVisible() {
   return { ref, onScroll, keep };
 }
 
+/** The width of the small boxes that sit at the end of a row — the one button
+ *  on a composer, the tag beside it. Fixed, so a button does not change size
+ *  with its own label, and shared, so the two line up. It follows the text size
+ *  because everything in them does. */
+export function useBoxWidth(): number {
+  return Math.round(78 * useTextScale());
+}
+
 export function Field(props: React.ComponentProps<typeof TextInput>) {
   const t = useTheme();
   const scale = useTextScale();
