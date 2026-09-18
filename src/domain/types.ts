@@ -50,7 +50,14 @@ export interface Task {
   /** When it was ticked, as a count of milliseconds. Only used to order the
    *  done pile: the one you just finished sits at the top of it. */
   doneAt?: number;
+  /** Anything that did not fit in the name. A task with one is marked on the
+   *  day with a dot, so you can see there is more without it being in the way. */
+  note?: string;
 }
+
+/** How much a task's note can hold. Long enough for an address, a packing list
+ *  or what somebody actually asked for; short enough to stay a note. */
+export const NOTE_LIMIT = 600;
 
 /** Two ticks, not one. `need` is the weekly decision about what to buy;
  *  `done` is what happened in the shop. A thing you did not need this week is

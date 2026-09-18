@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState, migrate } from '../src/domain/state';
-import { nudgeTask, orderedTasks, placeTask, visibleDrop } from '../src/domain/week';
+import { dropSlots, nudgeTask, orderedTasks, placeTask } from '../src/domain/week';
 import type { AppState, Task } from '../src/domain/types';
 
 const TUE = new Date(2026, 8, 15);
@@ -220,56 +220,116 @@ test('a task under a heading that no longer exists is still drawn, at the end', 
 
 /** The drawn order, as ids with the heading each sits under. */
 const rows = (...pairs: [string, string][]) => pairs.map(([id, sec]) => ({ id, sec }));
+const AM_PM = ['am', 'pm'];
 
-test('a drop among the rows on screen lands under the row you dropped it under', () => {
-  // Morning holds a and two finished tasks folded away; afternoon holds d, e.
-  const ord = rows(['a', 'am'], ['b', 'am'], ['c', 'am'], ['d', 'pm'], ['e', 'pm']);
-  const hidden = ['b', 'c'];
-  // Dragging 'a': what is left on screen is d then e.
-  assert.deepEqual(visibleDrop(ord, hidden, 'a', 0), { at: 2, sec: 'pm' },
-    'the visible top is above d, and takes d’s heading — not the folded c’s');
-  assert.deepEqual(visibleDrop(ord, hidden, 'a', 1), { at: 3, sec: 'pm' }, 'under d');
-  assert.deepEqual(visibleDrop(ord, hidden, 'a', 2), { at: 4, sec: 'pm' }, 'under e');
+test('every gap between the rows on screen is a place to drop', () => {
+  const order = rows(['a', 'am'], ['b', 'am'], ['c', 'pm']);
+  const slots = dropSlots(order, AM_PM, [], 'a');
+  assert.deepEqual(slots, [
+    { at: 0, sec: 'am', before: 'b', after: null },
+    { at: 1, sec: 'am', before: null, after: 'b' },
+    { at: 1, sec: 'pm', before: 'c', after: null },
+    { at: 2, sec: 'pm', before: null, after: 'c' },
+  ]);
 });
 
-test('a drop past the end of the visible rows stops under the last one', () => {
-  const ord = rows(['a', 'am'], ['b', 'am'], ['c', 'pm']);
-  assert.deepEqual(visibleDrop(ord, ['b'], 'a', 9), { at: 2, sec: 'pm' });
+test('the top of a heading is its own place, not the bottom of the one above', () => {
+  const order = rows(['a', 'am'], ['b', 'am'], ['c', 'pm']);
+  const slots = dropSlots(order, AM_PM, [], 'a');
+  const under = slots.filter((x) => x.at === 1);
+  assert.equal(under.length, 2, 'the same point in the day, two different places');
+  assert.deepEqual(under.map((x) => x.sec), ['am', 'pm'],
+    'one under morning’s last row, one above afternoon’s first');
 });
 
-test('with nothing folded away, a visible place is just the place', () => {
-  const ord = rows(['a', 's'], ['b', 's'], ['c', 's'], ['d', 's']);
-  for (let i = 0; i <= 3; i += 1) assert.equal(visibleDrop(ord, [], 'a', i).at, i);
+test('a heading with nothing under it can still be dropped into', () => {
+  const order = rows(['a', 'am'], ['b', 'am']);
+  const slots = dropSlots(order, AM_PM, [], 'a');
+  const pm = slots.filter((x) => x.sec === 'pm');
+  assert.deepEqual(pm, [{ at: 1, sec: 'pm', before: null, after: null }]);
 });
 
-test('the dragged task never counts as a row to land under', () => {
-  const ord = rows(['a', 's'], ['b', 's'], ['c', 's']);
-  assert.equal(visibleDrop(ord, [], 'b', 0).at, 0);
-  assert.equal(visibleDrop(ord, [], 'b', 1).at, 1, 'back where it started');
+test('a heading whose work is all folded away is empty for this purpose', () => {
+  const order = rows(['a', 'pm'], ['b', 'am'], ['c', 'am']);
+  const slots = dropSlots(order, AM_PM, ['b', 'c'], 'a');
+  assert.deepEqual(slots.filter((x) => x.sec === 'am'),
+    [{ at: 2, sec: 'am', before: null, after: null }],
+    'one place, and it sits after the folded pair so nothing is stepped over');
 });
 
-test('a day with nothing visible left to land under keeps the task where it is', () => {
-  const ord = rows(['a', 's'], ['b', 's'], ['c', 's']);
-  const out = visibleDrop(ord, ['b', 'c'], 'a', 0);
-  assert.equal(out.at, 2, 'the end of the day');
-  assert.equal(out.sec, null, 'and no heading to take, so the task keeps its own');
+test('folded rows are never something you can land above', () => {
+  const order = rows(['a', 'am'], ['b', 'am'], ['c', 'am'], ['d', 'pm']);
+  const slots = dropSlots(order, AM_PM, ['c'], 'a');
+  assert.deepEqual(slots.map((x) => x.before), ['b', null, 'd', null],
+    'c is folded away, so nothing is offered above it');
+  assert.equal(slots[1].sec, 'am', 'the gap under b still belongs to morning');
 });
 
-test('a visible drop and a plain drop agree when nothing is folded away', () => {
-  const { s } = laid();
-  const ord = orderedTasks(s, WEEK, DAY).map((x) => ({ id: x.id, sec: x.sec }));
-  const out = visibleDrop(ord, [], 'a', 2);
-  placeTask(s, WEEK, DAY, 'a', out.at, out.sec);
-  assert.equal(order(s), 'bcad');
+test('landing beside folded work still draws where you dropped it', () => {
+  // A folded row is finished work, which sinks under whatever is still open —
+  // so landing either side of it in the array draws the same on the screen.
+  const { s, secs } = laid();
+  (s.weeks[WEEK].tasks[DAY] ?? []).forEach((x) => {
+    if (x.id === 'b') { x.state = 'done'; x.doneAt = 10; }
+  });
+  const slots = dropSlots(orderedTasks(s, WEEK, DAY), secs, ['b'], 'd');
+  const end = slots.find((x) => x.sec === secs[0] && x.before === null);
+  assert.ok(end);
+  placeTask(s, WEEK, DAY, 'd', end.at, end.sec);
+  assert.deepEqual(orderedTasks(s, WEEK, DAY).map((x) => x.id), ['a', 'd', 'b', 'c'],
+    'under a, where the finger was, and still above the finished b');
+});
+
+test('the dragged task is not a place to land, and everything after it shifts up', () => {
+  const order = rows(['a', 'am'], ['b', 'am'], ['c', 'am']);
+  const slots = dropSlots(order, ['am'], [], 'b');
+  assert.deepEqual(slots, [
+    { at: 0, sec: 'am', before: 'a', after: null },
+    { at: 1, sec: 'am', before: 'c', after: 'a' },
+    { at: 2, sec: 'am', before: null, after: 'c' },
+  ]);
+});
+
+test('dropping at the top of a heading puts the task under that heading', () => {
+  const { s, secs } = laid();
+  // Drawn: a b (first), c (second), d (third). Aim at the top of the second.
+  const slots = dropSlots(orderedTasks(s, WEEK, DAY), secs, [], 'a');
+  const top = slots.find((x) => x.sec === secs[1] && x.before === 'c');
+  assert.ok(top, 'there is a place above c');
+  placeTask(s, WEEK, DAY, 'a', top.at, top.sec);
+  assert.equal(secOf(s, 'a'), secs[1], 'it joined the heading it was dropped into');
+  assert.deepEqual(orderedTasks(s, WEEK, DAY).map((x) => x.id), ['b', 'a', 'c', 'd']);
+});
+
+test('dropping under a heading’s last row keeps it in that heading', () => {
+  const { s, secs } = laid();
+  const slots = dropSlots(orderedTasks(s, WEEK, DAY), secs, [], 'd');
+  const end = slots.find((x) => x.sec === secs[0] && x.before === null);
+  assert.ok(end);
+  placeTask(s, WEEK, DAY, 'd', end.at, end.sec);
+  assert.equal(secOf(s, 'd'), secs[0]);
+  assert.deepEqual(orderedTasks(s, WEEK, DAY).map((x) => x.id), ['a', 'b', 'd', 'c']);
 });
 
 test('a task dropped below folded work joins the heading it was dropped into', () => {
   const { s, secs } = laid();
-  // b and c finished and folded away; the only row left on screen is d.
-  const ord = orderedTasks(s, WEEK, DAY).map((x) => ({ id: x.id, sec: x.sec }));
-  const out = visibleDrop(ord, ['b', 'c'], 'a', 0);
-  placeTask(s, WEEK, DAY, 'a', out.at, out.sec);
-  assert.equal(secOf(s, 'a'), secs[2], 'it takes d’s heading, not the folded c’s');
-  assert.deepEqual(orderedTasks(s, WEEK, DAY).map((x) => x.id), ['b', 'c', 'a', 'd'],
-    'and sits above d, where the finger was');
+  // b finished and folded; the row on screen under its heading is only a.
+  const slots = dropSlots(orderedTasks(s, WEEK, DAY), secs, ['b'], 'a');
+  const top = slots.find((x) => x.sec === secs[2]);
+  assert.ok(top);
+  placeTask(s, WEEK, DAY, 'a', top.at, top.sec);
+  assert.equal(secOf(s, 'a'), secs[2], 'it takes the heading it landed in');
+});
+
+test('every place lands somewhere real, whatever is folded away', () => {
+  const { s, secs } = laid();
+  for (const hidden of [[], ['b'], ['b', 'c'], ['c', 'd']]) {
+    const before = orderedTasks(s, WEEK, DAY).length;
+    for (const slot of dropSlots(orderedTasks(s, WEEK, DAY), secs, hidden, 'a')) {
+      const copy = JSON.parse(JSON.stringify(s)) as AppState;
+      placeTask(copy, WEEK, DAY, 'a', slot.at, slot.sec);
+      assert.equal((copy.weeks[WEEK].tasks[DAY] ?? []).length, before, 'nothing is lost');
+      assert.equal(secOf(copy, 'a'), slot.sec, 'and it lands under the heading it was aimed at');
+    }
+  }
 });

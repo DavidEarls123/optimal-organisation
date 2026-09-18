@@ -1,4 +1,4 @@
-import { DAY_STYLES, DEFAULT_PREFS } from './types';
+import { DAY_STYLES, DEFAULT_PREFS, NOTE_LIMIT } from './types';
 import type { AppState, WatchItem, ShopGroup } from './types';
 import { DEFAULT_HABITS, DEFAULT_SECTIONS, DEFAULT_TRACKABLES, TEMPLATES, TEMPLATE_ORDER } from './catalogue';
 import { createWeek } from './week';
@@ -107,6 +107,12 @@ export function migrate(loaded: Partial<AppState> | null): AppState | null {
         if (!t.sec || !s.sections.some((x) => x.id === t.sec)) t.sec = firstSec;
         if (t.track === undefined) t.track = null;
         if (t.state !== 'done') t.state = 'open';
+        // A note is text or it is nothing. Anything else came from a bad write
+        // and would only show up as a dot promising something that is not there.
+        if (t.note !== undefined) {
+          const note = typeof t.note === 'string' ? t.note.slice(0, NOTE_LIMIT).trim() : '';
+          if (note) t.note = note; else delete t.note;
+        }
       }
       w.tasks[Number(d)] = live;
     }

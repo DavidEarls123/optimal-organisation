@@ -650,32 +650,74 @@ export function orderedTasks(state: AppState, weekId: string, day: number): Task
   return out;
 }
 
-/** A place among the rows actually on screen, turned into a place in the whole
- *  day. Finished work folds away under its heading, so the list you drag
- *  through is shorter than the list the day holds — but a drop still has to
- *  land above the same task either way, folded rows and all.
+/** Moves a habit one place up or down the list. The order is the order the
+ *  tiles are laid out in on a day — first at the top left, second beside it,
+ *  third under the first — so this is how you say what matters most. */
+export function moveHabit(state: AppState, id: string, dir: -1 | 1): boolean {
+  const at = state.habits.findIndex((h) => h.id === id);
+  if (at < 0) return false;
+  const to = at + dir;
+  if (to < 0 || to >= state.habits.length) return false;
+  const [h] = state.habits.splice(at, 1);
+  state.habits.splice(to, 0, h);
+  return true;
+}
+
+/** One place a dragged task can be let go of.
  *
- *  `order` is the drawn order, `hiddenIds` what is folded away, and `seen` a
- *  place among what is left once the dragged task is lifted out. */
-export function visibleDrop(
+ *  A day is not a flat list: it is headings with rows under them, and finished
+ *  work folded out of sight. So every gap between two rows on the screen is a
+ *  place, and the gap under one heading's last row is a *different* place from
+ *  the gap above the next heading's first row, even though both sit at the same
+ *  point in the array. Without that difference there is no way to drop anything
+ *  at the top of a heading — it always lands in the one above. */
+export interface DropSlot {
+  /** Where in the day, once the dragged task is lifted out of it. */
+  at: number;
+  /** The heading it lands under. */
+  sec: string;
+  /** The row on screen it goes above, if any. */
+  before: string | null;
+  /** The row on screen it goes below, if any. */
+  after: string | null;
+}
+
+/** Every place a dragged task could land, in the order they appear down the
+ *  screen. The caller knows where each row is; this knows what each gap means. */
+export function dropSlots(
   order: { id: string; sec: string }[],
+  sectionIds: string[],
   hiddenIds: string[],
-  id: string,
-  seen: number,
-): { at: number; sec: string | null } {
+  draggedId: string,
+): DropSlot[] {
   const hide = new Set(hiddenIds);
-  const rest = order.filter((x) => x.id !== id);
-  const vis = rest.filter((x) => !hide.has(x.id));
-  const n = Math.max(0, Math.min(vis.length, Math.round(seen)));
+  const rest = order.filter((x) => x.id !== draggedId);
+  const out: DropSlot[] = [];
+  let seen = 0;
 
-  // Land directly under the row you dropped it under, and take that row's
-  // heading — never a folded one's, which is nowhere near your finger.
-  const above = n > 0 ? vis[n - 1] : null;
-  if (above) return { at: rest.findIndex((x) => x.id === above.id) + 1, sec: above.sec };
-
-  const below = vis[n];
-  if (!below) return { at: rest.length, sec: null };
-  return { at: rest.findIndex((x) => x.id === below.id), sec: below.sec };
+  for (const sec of sectionIds) {
+    const all = rest.filter((x) => x.sec === sec);
+    const rows = all.filter((x) => !hide.has(x.id));
+    if (!rows.length) {
+      // Nothing under this heading to aim at, but you can still drop into it.
+      out.push({ at: seen + all.length, sec, before: null, after: null });
+    } else {
+      let prev: string | null = null;
+      for (const r of rows) {
+        out.push({ at: seen + all.findIndex((x) => x.id === r.id), sec, before: r.id, after: prev });
+        prev = r.id;
+      }
+      const last = rows[rows.length - 1];
+      out.push({
+        at: seen + all.findIndex((x) => x.id === last.id) + 1,
+        sec,
+        before: null,
+        after: last.id,
+      });
+    }
+    seen += all.length;
+  }
+  return out;
 }
 
 /** Drops a task at a position in that drawn order, taking the section of

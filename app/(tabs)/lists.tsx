@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { Keyboard, Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Keyboard, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
@@ -20,18 +20,16 @@ import type { ShopItem, WatchItem } from '../../src/domain/types';
 
 export default function ListsScreen() {
   const [view, setView] = useState<'shop' | 'fun'>('shop');
-  // Held here, because the scroller that has to move is this screen's.
-  const scroller = useRef<ScrollView>(null);
   return (
     <Screen>
       <WeekHeader compact />
-      <Body scrollRef={scroller}>
+      <Body>
         <Segmented
           value={view}
           onChange={setView}
           options={[{ key: 'shop', label: 'Shopping' }, { key: 'fun', label: 'Entertainment' }]}
         />
-        {view === 'shop' ? <Shopping scroller={scroller} /> : <Entertainment scroller={scroller} />}
+        {view === 'shop' ? <Shopping /> : <Entertainment />}
       </Body>
     </Screen>
   );
@@ -121,7 +119,7 @@ function ShopRow({ item, onNeed, onRename, onDelete }: {
   );
 }
 
-function Shopping({ scroller }: { scroller: React.RefObject<ScrollView | null> }) {
+function Shopping() {
   const t = useTheme();
   const router = useRouter();
   const { state, weekId, update } = useStore();
@@ -133,7 +131,6 @@ function Shopping({ scroller }: { scroller: React.RefObject<ScrollView | null> }
   const [insight, setInsight] = useState(false);
   const [importing, setImporting] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
-  const composerY = useRef(0);
   const week = state.weeks[weekId];
   if (!week) return null;
 
@@ -148,14 +145,6 @@ function Shopping({ scroller }: { scroller: React.RefObject<ScrollView | null> }
   const bought = mostBought(state);
   const missing = missingRegulars(state, weekId);
   const offer = templateOffer(groups, state.shopTemplate ?? []);
-
-  const lift = () => {
-    const y = composerY.current;
-    if (!y) return;
-    requestAnimationFrame(() => {
-      scroller.current?.scrollTo({ y: Math.max(0, y - 150), animated: true });
-    });
-  };
 
   const setItem = (groupId: string, itemId: string, patch: Partial<ShopItem>) => update((d) => {
     const item = d.weeks[weekId].shop?.find((x) => x.id === groupId)
@@ -306,10 +295,7 @@ function Shopping({ scroller }: { scroller: React.RefObject<ScrollView | null> }
             </View>
 
             {adding === g.id ? (
-              <View
-                onLayout={(e) => { composerY.current = e.nativeEvent.layout.y; lift(); }}
-                style={{ gap: 7, paddingTop: 7 }}
-              >
+              <View style={{ gap: 7, paddingTop: 7 }}>
                 <Field
                   value={drafts[g.id] ?? ''}
                   onChangeText={(v) => setDrafts((p) => ({ ...p, [g.id]: v }))}
@@ -441,9 +427,8 @@ function Shopping({ scroller }: { scroller: React.RefObject<ScrollView | null> }
   );
 }
 
-function Entertainment({ scroller }: { scroller: React.RefObject<ScrollView | null> }) {
+function Entertainment() {
   const t = useTheme();
-  const rowY = useRef(0);
   const { state, update } = useStore();
   const [draft, setDraft] = useState('');
   const [kind, setKind] = useState<WatchItem['kind']>('tv');
@@ -565,10 +550,7 @@ function Entertainment({ scroller }: { scroller: React.RefObject<ScrollView | nu
         )}
       </Sheet>
 
-      <View
-        onLayout={(e) => { rowY.current = e.nativeEvent.layout.y; }}
-        style={{ flexDirection: 'row', gap: 7, paddingTop: 7 }}
-      >
+      <View style={{ flexDirection: 'row', gap: 7, paddingTop: 7 }}>
         <Field
           value={draft}
           onChangeText={setDraft}
@@ -577,9 +559,6 @@ function Entertainment({ scroller }: { scroller: React.RefObject<ScrollView | nu
           blurOnSubmit={false}
           maxLength={80}
           onSubmitEditing={() => { if (!draft.trim()) Keyboard.dismiss(); else add(); }}
-          onFocus={() => requestAnimationFrame(() => {
-            scroller.current?.scrollTo({ y: Math.max(0, rowY.current - 150), animated: true });
-          })}
         />
         <Pressable
           accessibilityRole="button"

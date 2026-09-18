@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createInitialState } from '../src/domain/state';
-import { countPlan } from '../src/domain/week';
+import { createInitialState, migrate } from '../src/domain/state';
+import { countPlan, moveHabit } from '../src/domain/week';
 import {
   clockLabel, fromKg, pacing, readings, timing, toKg,
 } from '../src/domain/scoring';
@@ -129,4 +129,49 @@ test('pounds convert to kilograms and back without drift', () => {
   assert.ok(Math.abs(fromKg(kg, 'lb') - 176) < 1e-9);
   assert.equal(toKg(80, 'kg'), 80);
   assert.equal(fromKg(80, 'kg'), 80);
+});
+
+test('a habit can be moved up the list, which is the order the tiles sit in', () => {
+  const s = createInitialState(TUE, 'run');
+  const [a, b] = s.habits.map((h) => h.id);
+  assert.equal(moveHabit(s, b, -1), true);
+  assert.deepEqual(s.habits.slice(0, 2).map((h) => h.id), [b, a]);
+});
+
+test('a habit can be moved down', () => {
+  const s = createInitialState(TUE, 'run');
+  const [a, b] = s.habits.map((h) => h.id);
+  assert.equal(moveHabit(s, a, 1), true);
+  assert.deepEqual(s.habits.slice(0, 2).map((h) => h.id), [b, a]);
+});
+
+test('the top of the list will not move up, and the bottom will not move down', () => {
+  const s = createInitialState(TUE, 'run');
+  const order = s.habits.map((h) => h.id);
+  assert.equal(moveHabit(s, order[0], -1), false);
+  assert.equal(moveHabit(s, order[order.length - 1], 1), false);
+  assert.deepEqual(s.habits.map((h) => h.id), order, 'and nothing moved');
+});
+
+test('moving a habit that is not there changes nothing', () => {
+  const s = createInitialState(TUE, 'run');
+  const order = s.habits.map((h) => h.id);
+  assert.equal(moveHabit(s, 'nope', 1), false);
+  assert.deepEqual(s.habits.map((h) => h.id), order);
+});
+
+test('every habit survives being walked from the bottom to the top', () => {
+  const s = createInitialState(TUE, 'run');
+  const last = s.habits[s.habits.length - 1].id;
+  for (let i = 0; i < s.habits.length + 3; i += 1) moveHabit(s, last, -1);
+  assert.equal(s.habits[0].id, last);
+  assert.equal(new Set(s.habits.map((h) => h.id)).size, s.habits.length, 'and none were lost');
+});
+
+test('an order set by hand survives a save and a load', () => {
+  const s = createInitialState(TUE, 'run');
+  moveHabit(s, s.habits[2].id, -1);
+  const wanted = s.habits.map((h) => h.id);
+  const back = migrate(JSON.parse(JSON.stringify(s)));
+  assert.deepEqual(back?.habits.map((h) => h.id), wanted);
 });

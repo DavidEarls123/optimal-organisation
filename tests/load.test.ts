@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decideLoad } from '../src/domain/load';
 import { createInitialState } from '../src/domain/state';
+import { NOTE_LIMIT } from '../src/domain/types';
 
 const TUE = new Date(2026, 8, 15);
 const good = () => JSON.stringify(createInitialState(TUE, 'run'));
@@ -109,4 +110,48 @@ test('a day style that means nothing is replaced, and a real one is kept', () =>
   b.prefs = { theme: 'system', weightUnit: 'kg', dayStyle: 'inverse' };
   const outB = decideLoad(JSON.stringify(b), null);
   assert.equal(outB.kind === 'loaded' && outB.state.prefs.dayStyle, 'inverse');
+});
+
+test('a note written on a task comes back with it', () => {
+  const s = JSON.parse(good());
+  const day = s.weeks['2026-W38'].tasks[1] ?? [];
+  s.weeks['2026-W38'].tasks[1] = [{
+    id: 'n', text: 'Book the car in', state: 'open', plan: false, track: null,
+    sec: s.sections[0].id, note: 'Ask about the rattle. They shut at 5.',
+  }, ...day];
+  const out = decideLoad(JSON.stringify(s), null);
+  assert.equal(out.kind === 'loaded' && out.state.weeks['2026-W38'].tasks[1]?.[0].note,
+    'Ask about the rattle. They shut at 5.');
+});
+
+test('a note that is not text is dropped rather than shown as an empty promise', () => {
+  const s = JSON.parse(good());
+  s.weeks['2026-W38'].tasks[1] = [{
+    id: 'n', text: 'A task', state: 'open', plan: false, track: null,
+    sec: s.sections[0].id, note: { something: 'else' },
+  }];
+  const out = decideLoad(JSON.stringify(s), null);
+  assert.equal(out.kind, 'loaded');
+  assert.equal(out.kind === 'loaded' && out.state.weeks['2026-W38'].tasks[1]?.[0].note, undefined);
+});
+
+test('a note of nothing but spaces leaves no dot behind', () => {
+  const s = JSON.parse(good());
+  s.weeks['2026-W38'].tasks[1] = [{
+    id: 'n', text: 'A task', state: 'open', plan: false, track: null,
+    sec: s.sections[0].id, note: '   \n  ',
+  }];
+  const out = decideLoad(JSON.stringify(s), null);
+  assert.equal(out.kind === 'loaded' && out.state.weeks['2026-W38'].tasks[1]?.[0].note, undefined);
+});
+
+test('a note longer than the limit is cut rather than refused', () => {
+  const s = JSON.parse(good());
+  s.weeks['2026-W38'].tasks[1] = [{
+    id: 'n', text: 'A task', state: 'open', plan: false, track: null,
+    sec: s.sections[0].id, note: 'x'.repeat(5000),
+  }];
+  const out = decideLoad(JSON.stringify(s), null);
+  const note = out.kind === 'loaded' ? out.state.weeks['2026-W38'].tasks[1]?.[0].note : '';
+  assert.equal(note?.length, NOTE_LIMIT);
 });

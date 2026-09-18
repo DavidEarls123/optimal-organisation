@@ -17,14 +17,16 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES, dayDateIso, isoOf, parseISO } from '../../src/domain/dates';
 import {
-  marksOn, moveChoices, moveTask, nudgeTask, orderedTasks, placeTask, sectionsOf, uid,
-  visibleDrop,
+  dropSlots, marksOn, moveChoices, moveTask, nudgeTask, orderedTasks, placeTask, sectionsOf,
+  uid,
 } from '../../src/domain/week';
 import {
   activeHabits, dayOutstanding, fromKg, habitDayStatus, habitDone, habitTarget, pacing,
   planLabel, toKg,
 } from '../../src/domain/scoring';
+import { NOTE_LIMIT } from '../../src/domain/types';
 import type { CalendarEvent, Habit, Task, Week } from '../../src/domain/types';
+import type { DropSlot } from '../../src/domain/week';
 import { askForCalendar, calendarAccess, calendarError, eventsForDay, type CalendarAccess }
   from '../../src/services/calendar';
 
@@ -47,29 +49,18 @@ export default function DayScreen() {
   const [adding, setAdding] = useState<string | null>(null);
   /** True once the list has scrolled past the top, so the day bar shrinks. */
   const [condensed, setCondensed] = useState(false);
-  const scroller = useRef<ScrollView>(null);
-  const composerY = useRef(0);
   /** The habit currently asking for a weight, if any. */
   const [weighing, setWeighing] = useState<string | null>(null);
   /** The task being dragged, and where it would land. */
   const [dragId, setDragId] = useState<string | null>(null);
-  /** Where the dragged task would land if you let go now. */
-  const [dragTo, setDragTo] = useState<number | null>(null);
+  /** The place it would land if you let go now: which heading, and which row
+   *  the line sits above. */
+  const [drop, setDrop] = useState<DropSlot | null>(null);
   /** Every row's height, so a drag knows how far a place is. */
   const rowH = useRef<Record<string, number>>({});
   /** Headings whose finished work is showing. Folded away by default, so a
    *  day gets shorter as you get through it rather than longer. */
   const [showDone, setShowDone] = useState<Record<string, boolean>>({});
-
-  /** Puts the open composer near the middle of the screen, so what you are
-   *  typing is not behind the keyboard. */
-  const liftComposer = useCallback(() => {
-    const y = composerY.current;
-    if (!y) return;
-    requestAnimationFrame(() => {
-      scroller.current?.scrollTo({ y: Math.max(0, y - 150), animated: true });
-    });
-  }, []);
 
   const dateIso = week ? dayDateIso(week.monday, day) : '';
   // Headings come from the week, which took them from its template.
@@ -142,69 +133,66 @@ export default function DayScreen() {
     update((d) => { nudgeTask(d, weekId, day, id, dir); }, 'moving that task');
   }, [update, weekId, day]);
 
-  /** Where in the day, ignoring the dragged task, the finger currently is.
-   *  Rows are measured rather than assumed, because a row with its panel open
-   *  is several times the height of one without. */
-  const dropIndex = useCallback((id: string, dy: number) => {
-    const flat = orderedTasks(state, weekId, day);
-    const at0 = flat.findIndex((x) => x.id === id);
-    if (at0 < 0) return 0;
-    // Only what is on the screen: a folded-away task takes up no room, so it
-    // must take up none of the distance either.
-    const rest = flat.filter((x) => x.id !== id && !hidden.has(x.id));
-    const from = flat.slice(0, at0).filter((x) => !hidden.has(x.id)).length;
-    const h = (x: Task) => rowH.current[x.id] || 44;
+  /** Where every row sits on the screen, measured rather than assumed: a row
+   *  with its panel open is several times the height of one without, and a
+   *  folded-away row has no height at all. Three numbers because the layout is
+   *  three deep — the heading block, its list of rows, then the row. */
+  const secY = useRef<Record<string, number>>({});
+  const listY = useRef<Record<string, number>>({});
+  const rowY = useRef<Record<string, number>>({});
 
-    // Walk out from where it started until the accumulated height passes dy.
-    let at = from;
-    if (dy > 0) {
-      let run = 0;
-      for (let i = from; i < rest.length; i += 1) {
-        run += h(rest[i]);
-        if (run > dy) break;
-        at = i + 1;
+  /** Every place the dragged task could land, each with the point down the
+   *  screen it belongs to. The gap under one heading's last row and the gap
+   *  above the next heading's first row are different places, which is what
+   *  makes dropping something at the top of a heading possible at all. */
+  const placesFor = useCallback((id: string) => {
+    const slots = dropSlots(drawn, sections.map((x) => x.id), [...hidden], id);
+    const yOf = (slot: (typeof slots)[number]) => {
+      const base = (secY.current[slot.sec] ?? 0) + (listY.current[slot.sec] ?? 0);
+      if (slot.before) return base + (rowY.current[slot.before] ?? 0);
+      if (slot.after) {
+        return base + (rowY.current[slot.after] ?? 0) + (rowH.current[slot.after] ?? 44);
       }
-    } else {
-      let run = 0;
-      for (let i = from - 1; i >= 0; i -= 1) {
-        run += h(rest[i]);
-        if (run > -dy) break;
-        at = i;
-      }
+      return base;
+    };
+    return slots.map((slot) => ({ ...slot, y: yOf(slot) }));
+  }, [drawn, sections, hidden]);
+
+  /** Where the dragged row's top would be if you let go now, and the place
+   *  nearest to it. The rows below it are still drawn in their old positions,
+   *  so anything past where it started is a row-height too low. */
+  const nearest = useCallback((id: string, dy: number) => {
+    const task = drawn.find((x) => x.id === id);
+    if (!task) return null;
+    const from = (secY.current[task.sec] ?? 0) + (listY.current[task.sec] ?? 0)
+      + (rowY.current[id] ?? 0);
+    const tall = rowH.current[id] ?? 44;
+    const top = from + dy;
+
+    let best: ReturnType<typeof placesFor>[number] | null = null;
+    let gap = Infinity;
+    for (const slot of placesFor(id)) {
+      const y = slot.y > from ? slot.y - tall : slot.y;
+      const d = Math.abs(y - top);
+      if (d < gap) { gap = d; best = slot; }
     }
-    return Math.max(0, Math.min(rest.length, at));
-  }, [state, weekId, day, hidden]);
-
-  /** A place among the rows you can see, turned into a place in the day. It
-   *  lands above the same task either way, folded work and all. */
-  const fullIndex = useCallback((id: string, seen: number) => visibleDrop(
-    orderedTasks(state, weekId, day), [...hidden], id, seen,
-  ), [state, weekId, day, hidden]);
+    return best;
+  }, [drawn, placesFor]);
 
   const onDragMove = useCallback((id: string, dy: number) => {
     setDragId((cur) => (cur === id ? cur : id));
-    const to = dropIndex(id, dy);
-    setDragTo((cur) => (cur === to ? cur : to));
-  }, [dropIndex]);
+    const to = nearest(id, dy);
+    setDrop((cur) => (cur && to && cur.sec === to.sec && cur.before === to.before
+      ? cur : to));
+  }, [nearest]);
 
   const onDragEnd = useCallback((id: string, dy: number) => {
-    const to = fullIndex(id, dropIndex(id, dy));
+    const to = nearest(id, dy);
     setDragId(null);
-    setDragTo(null);
+    setDrop(null);
+    if (!to) return;
     update((d) => { placeTask(d, weekId, day, id, to.at, to.sec); }, 'moving that task');
-  }, [dropIndex, fullIndex, update, weekId, day]);
-
-  /** Each visible task's position once the dragged one is lifted out, so a row
-   *  knows whether the drop line belongs above it. */
-  const restIndex = useMemo(() => {
-    const m = new Map<string, number>();
-    if (!dragId) return m;
-    orderedTasks(state, weekId, day)
-      .filter((x) => x.id !== dragId && !hidden.has(x.id))
-      .forEach((x, i) => m.set(x.id, i));
-    return m;
-  }, [dragId, state, weekId, day, hidden]);
-  const restCount = restIndex.size;
+  }, [nearest, update, weekId, day]);
 
   const deleteTask = useCallback((id: string, text: string) => {
     // One question, and an honest one: Undo puts it straight back.
@@ -298,7 +286,6 @@ export default function DayScreen() {
     setTagFor((p) => ({ ...p, [sectionId]: '' }));
   }, [drafts, tagFor, update, weekId, day]);
 
-  /** Lifts the composer clear of the keyboard when it opens. */
   const openComposer = useCallback((sectionId: string) => {
     setAdding(sectionId);
     setTagFor((p) => ({ ...p, [sectionId]: '' }));
@@ -375,7 +362,7 @@ export default function DayScreen() {
         </View>
       ) : null}
 
-      <Body top={6} scrollRef={scroller} onScroll={(y) => setCondensed(y > 18)}>
+      <Body top={6} onScroll={(y) => setCondensed(y > 18)}>
         {off ? (
           <View style={{ backgroundColor: t.sunk, borderRadius: radius.md, padding: 11 }}>
             <Text style={{ fontSize: 12.5, lineHeight: 18, color: t.ink2 }}>
@@ -456,9 +443,7 @@ export default function DayScreen() {
             const showing = !!showDone[sc.id];
             const row = (x: Task) => (
               <React.Fragment key={x.id}>
-                {dragId && dragTo !== null && restIndex.get(x.id) === dragTo ? (
-                  <DropLine />
-                ) : null}
+                {drop && drop.sec === x.sec && drop.before === x.id ? <DropLine /> : null}
                 <TaskRow
                   task={x}
                   open={moveId === x.id}
@@ -470,10 +455,15 @@ export default function DayScreen() {
                     const item = (d.weeks[weekId].tasks[day] ?? []).find((y) => y.id === x.id);
                     if (item) item.text = text;
                   }, 'renaming that task')}
+                  onNote={(text) => update((d) => {
+                    const item = (d.weeks[weekId].tasks[day] ?? []).find((y) => y.id === x.id);
+                    if (!item) return;
+                    if (text) item.note = text; else delete item.note;
+                  }, text ? 'writing that note' : 'clearing that note')}
                   choices={choices}
                   onMoveToDate={(iso) => doMove(x.id, iso)}
                   onPickDate={() => setShowPicker(true)}
-                  onMeasure={(h) => { rowH.current[x.id] = h; }}
+                  onMeasure={(y, h) => { rowY.current[x.id] = y; rowH.current[x.id] = h; }}
                   onDragMove={(dy) => onDragMove(x.id, dy)}
                   onDragEnd={(dy) => onDragEnd(x.id, dy)}
                   dragging={dragId === x.id}
@@ -481,7 +471,10 @@ export default function DayScreen() {
               </React.Fragment>
             );
             return (
-              <View key={sc.id}>
+              <View
+                key={sc.id}
+                onLayout={(e) => { secY.current[sc.id] = e.nativeEvent.layout.y; }}
+              >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
                   paddingTop: si === 0 ? 0 : 13, paddingBottom: 3 }}>
                   <Text style={{ flex: 1, fontSize: 12.5, letterSpacing: 1.1,
@@ -489,7 +482,10 @@ export default function DayScreen() {
                   <Mono>{`${finished.length}/${items.length}`}</Mono>
                 </View>
 
-                <View style={{ borderTopWidth: 1, borderTopColor: t.rule }}>
+                <View
+                  onLayout={(e) => { listY.current[sc.id] = e.nativeEvent.layout.y; }}
+                  style={{ borderTopWidth: 1, borderTopColor: t.rule }}
+                >
                   {todo.map(row)}
 
                   {/* Finished work folds away, so the heading gets shorter as
@@ -515,17 +511,13 @@ export default function DayScreen() {
                   ) : null}
                   {showing ? finished.map(row) : null}
 
-                  {/* Landing at the very bottom of the day has no row to sit
-                      above, so the line goes after the last one. */}
-                  {dragId && dragTo !== null && dragTo >= restCount
-                    && sc.id === sections[sections.length - 1].id ? (
-                      <DropLine />
-                    ) : null}
+                  {/* Landing under a heading's last row has no row to sit
+                      above, so the line goes after it. */}
+                  {drop && drop.sec === sc.id && drop.before === null ? <DropLine /> : null}
                 </View>
 
                 {adding === sc.id ? (
                   <View
-                    onLayout={(e) => { composerY.current = e.nativeEvent.layout.y; liftComposer(); }}
                     style={{ gap: 7, paddingTop: 7 }}
                   >
                     <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
@@ -922,17 +914,18 @@ function TagPicker({ value, onChange }: { value: string; onChange: (v: string) =
 }
 
 function TaskRow({
-  task, open, onToggle, onDelete, onOpenMove, onReorder, onPickDate, onRename,
+  task, open, onToggle, onDelete, onOpenMove, onReorder, onPickDate, onRename, onNote,
   choices, onMoveToDate, onMeasure, onDragMove, onDragEnd, dragging,
 }: {
   task: Task; open: boolean;
   onToggle: () => void; onDelete: () => void; onOpenMove: () => void;
   onReorder: (dir: -1 | 1) => void; onPickDate: () => void;
   onRename: (text: string) => void;
+  onNote: (text: string) => void;
   /** Forward days offered in the strip, computed once by the screen. */
   choices: ReturnType<typeof moveChoices>;
   onMoveToDate: (iso: string) => void;
-  onMeasure: (h: number) => void;
+  onMeasure: (y: number, h: number) => void;
   onDragMove: (dy: number) => void;
   onDragEnd: (dy: number) => void;
   dragging: boolean;
@@ -941,7 +934,11 @@ function TaskRow({
   const done = task.state === 'done';
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.text);
+  const [note, setNote] = useState(task.note ?? '');
   const lift = useSharedValue(0);
+  /** The last translation the screen was told about, so it is not told again
+   *  for every pixel. */
+  const told = useSharedValue(0);
 
   // Hold, then drag. activateAfterLongPress is the whole trick: until the hold
   // completes the gesture never activates, so the list scrolls normally.
@@ -951,10 +948,17 @@ function TaskRow({
     () => Gesture.Pan()
       .activateAfterLongPress(220)
       .onStart((e) => {
+        told.value = e.translationY;
         runOnJS(onDragMove)(e.translationY);
       })
       .onUpdate((e) => {
+        // The row follows the finger on the UI thread, which is what makes it
+        // feel attached. Working out where it would land is JavaScript, so it
+        // only happens when the finger has actually gone somewhere — every
+        // frame of it was what made the drag stutter.
         lift.value = e.translationY;
+        if (Math.abs(e.translationY - told.value) < 6) return;
+        told.value = e.translationY;
         runOnJS(onDragMove)(e.translationY);
       })
       .onEnd((e) => {
@@ -964,7 +968,7 @@ function TaskRow({
       .onFinalize(() => {
         lift.value = 0;
       }),
-    [lift, onDragMove, onDragEnd],
+    [lift, told, onDragMove, onDragEnd],
   );
 
   const lifted = useAnimatedStyle(() => ({ transform: [{ translateY: lift.value }] }));
@@ -975,9 +979,22 @@ function TaskRow({
     setEditing(false);
   };
 
+  // Saved when you tap away rather than on every letter, so a long note is not
+  // a hundred trips through the store — and a hundred things to undo.
+  const saveNote = () => {
+    const next = note.trim().slice(0, NOTE_LIMIT);
+    if (next !== (task.note ?? '')) onNote(next);
+  };
+  // Closing the panel counts as tapping away, and undoing a note has to be
+  // able to stick rather than being written straight back out of this box.
+  const save = useRef(saveNote);
+  save.current = saveNote;
+  useEffect(() => { if (!open) save.current(); }, [open]);
+  useEffect(() => { setNote(task.note ?? ''); }, [task.note]);
+
   return (
     <Animated.View
-      onLayout={(e) => onMeasure(e.nativeEvent.layout.height)}
+      onLayout={(e) => onMeasure(e.nativeEvent.layout.y, e.nativeEvent.layout.height)}
       style={[
         {
           borderBottomWidth: 1, borderBottomColor: t.rule2, paddingVertical: 8,
@@ -1023,10 +1040,19 @@ function TaskRow({
             onPress={onToggle}
             onLongPress={() => { setDraft(task.text); setEditing(true); }}
             delayLongPress={300}
-            style={{ flex: 1 }}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}
           >
-            <Text style={{ fontSize: 14.5, lineHeight: 19, color: done ? t.ink3 : t.ink,
+            <Text style={{ flexShrink: 1, fontSize: 14.5, lineHeight: 19,
+              color: done ? t.ink3 : t.ink,
               textDecorationLine: done ? 'line-through' : 'none' }}>{task.text}</Text>
+            {/* There is more to this one than its name. */}
+            {task.note ? (
+              <View
+                accessibilityLabel="Has a note"
+                style={{ width: 5, height: 5, borderRadius: 3,
+                  backgroundColor: done ? t.ink3 : t.accent }}
+              />
+            ) : null}
           </Pressable>
         )}
         {editing ? (
@@ -1080,6 +1106,21 @@ function TaskRow({
               </Pressable>
             ))}
           </View>
+          <Mono style={{ letterSpacing: 1, textTransform: 'uppercase', fontSize: 10,
+            paddingTop: 2 }}>
+            Notes
+          </Mono>
+          <Field
+            value={note}
+            onChangeText={setNote}
+            onBlur={saveNote}
+            placeholder="Anything that does not fit in the name…"
+            multiline
+            maxLength={NOTE_LIMIT}
+            accessibilityLabel={`Notes for ${task.text}`}
+            style={{ minHeight: 88, textAlignVertical: 'top', paddingTop: 10, lineHeight: 19 }}
+          />
+
           <View style={{ flexDirection: 'row', gap: 7 }}>
             {/* Up and Down share the width Rename has below; Pick a date lines
                 up with Delete, so the panel reads as two even columns. */}

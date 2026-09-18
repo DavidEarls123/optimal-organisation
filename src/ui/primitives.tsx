@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
-  Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
-  useWindowDimensions,
+  Dimensions, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput,
+  View, useWindowDimensions,
   type StyleProp, type TextStyle, type ViewStyle,
 } from 'react-native';
+import { useIsFocused } from 'expo-router';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,16 +27,26 @@ export function Body({ children, onScroll, scrollRef, top }: {
   /** Less air at the top, for a screen that already has a heading above it. */
   top?: number;
 }) {
+  const { ref, onScroll: follow } = useKeepVisible();
+  const hold = useCallback((node: ScrollView | null) => {
+    (ref as React.MutableRefObject<ScrollView | null>).current = node;
+    if (typeof scrollRef === 'function') scrollRef(node);
+    else if (scrollRef) (scrollRef as React.MutableRefObject<ScrollView | null>).current = node;
+  }, [ref, scrollRef]);
+
   return (
     <ScrollView
-      ref={scrollRef}
+      ref={hold}
       style={{ flex: 1 }}
       contentContainerStyle={{ padding: 18, paddingTop: top ?? 18,
         paddingBottom: 48, gap: 22 }}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="interactive"
-      scrollEventThrottle={32}
-      onScroll={onScroll ? (e) => onScroll(e.nativeEvent.contentOffset.y) : undefined}
+      scrollEventThrottle={16}
+      onScroll={(e) => {
+        follow(e.nativeEvent.contentOffset.y);
+        onScroll?.(e.nativeEvent.contentOffset.y);
+      }}
     >
       {children}
     </ScrollView>
@@ -188,6 +199,55 @@ export function Segmented<T extends string>({ options, value, onChange }: {
       })}
     </View>
   );
+}
+
+/** Keeps whatever you are typing in where you can see it.
+ *
+ *  The old version measured the composer's offset inside its own section and
+ *  scrolled by that, which is a number with no relation to the page — so the
+ *  field stayed behind the keyboard. This asks the field itself where it is on
+ *  the screen and moves the list by the difference, so it lands in the middle
+ *  of whatever the keyboard has left. It works for every field on the screen,
+ *  because it follows the focus rather than being wired to one box. */
+export function useKeepVisible() {
+  const ref = useRef<ScrollView>(null);
+  const at = useRef(0);
+  const kb = useRef(0);
+  // Tabs stay mounted behind the one you are looking at, and the keyboard
+  // shouts at all of them. Only the screen in front of you may move.
+  const here = useIsFocused();
+  const showing = useRef(here);
+  showing.current = here;
+
+  const keep = useCallback(() => {
+    const node = TextInput.State.currentlyFocusedInput();
+    if (!node || !kb.current || !showing.current) return;
+    node.measureInWindow((_x, y, _w, h) => {
+      if (!Number.isFinite(y)) return;
+      const room = Dimensions.get('window').height - kb.current;
+      // A little above the middle: what you are typing usually has a label or a
+      // row of buttons under it that you want to see as well.
+      const want = Math.max(24, room / 2 - h);
+      const move = y - want;
+      if (Math.abs(move) < 12) return;
+      ref.current?.scrollTo({ y: Math.max(0, at.current + move), animated: true });
+    });
+  }, []);
+
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', (e) => {
+      kb.current = e.endCoordinates.height;
+      keep();
+    });
+    const gone = Keyboard.addListener('keyboardDidHide', () => { kb.current = 0; });
+    return () => { shown.remove(); gone.remove(); };
+  }, [keep]);
+
+  /** Body hands this its scroll position, so a move can be worked out from
+   *  where the list already is. */
+  const onScroll = useCallback((y: number) => { at.current = y; }, []);
+
+  return { ref, onScroll, keep };
 }
 
 export function Field(props: React.ComponentProps<typeof TextInput>) {

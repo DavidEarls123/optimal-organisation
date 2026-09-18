@@ -9,7 +9,7 @@ import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
 import { HABIT_PRESETS, TRACK_PRESETS, slug } from '../src/domain/catalogue';
-import { uid } from '../src/domain/week';
+import { moveHabit, uid } from '../src/domain/week';
 import { APP_BY, APP_NAME } from '../src/brand';
 import { dayLook } from '../src/ui/WeekHeader';
 import { DAY_STYLES } from '../src/domain/types';
@@ -19,10 +19,24 @@ const NAME_LIMIT = 32;
 /** One row in a list you can turn on and off. Turning a habit off keeps it —
  *  its history and its identity stay, so turning it back on later carries on
  *  the same habit rather than starting a new one. */
-function Row({ name, note, on, onToggle, onRemove }: {
+function Row({ name, note, on, onToggle, onRemove, onMove }: {
   name: string; note?: string; on: boolean; onToggle: () => void; onRemove?: () => void;
+  /** Up and down the list, when the order is something you can set. */
+  onMove?: (dir: -1 | 1) => void;
 }) {
   const t = useTheme();
+  const arrow = (dir: -1 | 1) => (
+    <Pressable
+      onPress={() => onMove?.(dir)}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={`Move ${name} ${dir === -1 ? 'up' : 'down'}`}
+      style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center',
+        borderWidth: 1, borderColor: t.rule, borderRadius: radius.sm + 1 }}
+    >
+      <Text style={{ fontSize: 11, color: t.ink2, lineHeight: 13 }}>{dir === -1 ? '↑' : '↓'}</Text>
+    </Pressable>
+  );
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
       paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: t.rule2 }}>
@@ -43,6 +57,9 @@ function Row({ name, note, on, onToggle, onRemove }: {
         <Text style={{ fontSize: 14.5, color: on ? t.ink : t.ink3 }}>{name}</Text>
         {note ? <Mono style={{ fontSize: 10.5, marginTop: 1 }}>{note}</Mono> : null}
       </View>
+      {onMove ? (
+        <View style={{ flexDirection: 'row', gap: 4 }}>{arrow(-1)}{arrow(1)}</View>
+      ) : null}
       {onRemove ? (
         <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button"
           accessibilityLabel={`Delete ${name}`}>
@@ -189,7 +206,9 @@ export default function SettingsScreen() {
           <SectionHead title="Habits" right={`${state.habits.filter((h) => h.active).length} on`} />
           <Note>
             Everything you might tick on a day. Turning one off hides it without losing
-            anything — turn it back on and its history is still there.
+            anything — turn it back on and its history is still there. The order here is
+            the order the tiles sit in on a day: first one top left, second beside it,
+            third under the first.
           </Note>
           <View>
             {state.habits.map((h) => (
@@ -203,6 +222,8 @@ export default function SettingsScreen() {
                   const x = d.habits.find((y) => y.id === h.id);
                   if (x) x.active = !x.active;
                 })}
+                onMove={(dir) => update((d) => { moveHabit(d, h.id, dir); },
+                  'moving that habit')}
                 onRemove={() => Alert.alert(
                   `Delete ${h.name}?`,
                   'Every tick of it, in every week, goes too. Turning it off instead keeps '
