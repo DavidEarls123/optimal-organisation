@@ -10,9 +10,13 @@ import { radius } from '../src/theme/tokens';
 import { TEMPLATE_GOALS } from '../src/domain/catalogue';
 import { DAY_LETTERS, DAY_NAMES } from '../src/domain/dates';
 import {
-  clonePlan, countPlan, daysPlan, deleteTemplate, everyPlan, uid,
+  clonePlan, countPlan, daysPlan, deleteTemplate, everyPlan, planFromList, planTaskList, uid,
 } from '../src/domain/week';
+import type { PlanTask } from '../src/domain/week';
 import type { HabitMode, HabitPlan, WeekTemplate } from '../src/domain/types';
+
+/** As long as a task's name can be on a day. */
+const PLAN_LIMIT = 120;
 
 /** What the template asks of a habit, read out of a draft rather than the store. */
 function planIn(draft: WeekTemplate, habit: { id: string; def?: HabitPlan }): HabitPlan {
@@ -42,6 +46,8 @@ export default function TemplateEditScreen() {
   const [draft, setDraft] = useState<WeekTemplate | null>(
     () => (saved ? JSON.parse(JSON.stringify(saved)) : null));
   const [busy, setBusy] = useState(false);
+  const [tasks, setTaskList] = useState<PlanTask[]>(
+    () => (saved ? planTaskList(saved.plan ?? []) : []));
 
   if (!saved || !draft) {
     return <Screen><Body><Note>That template is gone.</Note></Body></Screen>;
@@ -54,6 +60,19 @@ export default function TemplateEditScreen() {
     fn(next);
     return next;
   });
+  /** The scaffold, held the way you write it rather than the way it is stored.
+   *  Kept as its own state so a task can sit there with no days or no name
+   *  while you are still typing it, rather than vanishing mid-word. */
+  /** The headings this template gives a day, which is what a task's place in
+   *  the list refers to. */
+  const secs = tpl.sections ?? state.sections;
+
+  const setTasks = (fn: (list: PlanTask[]) => PlanTask[]) => {
+    const next = fn(tasks);
+    setTaskList(next);
+    edit((d) => { d.plan = planFromList(next); });
+  };
+
   const setPlan = (habitId: string, plan: HabitPlan) => edit((d) => {
     d.plans ??= {};
     d.plans[habitId] = clonePlan(plan);
@@ -178,6 +197,102 @@ export default function TemplateEditScreen() {
               d.sections = [...(d.sections ?? state.sections.map((x) => ({ ...x }))),
                 { id: uid('s'), name: 'New section' }];
             })}
+          />
+        </Section>
+
+        <Section>
+          <SectionHead title="Standard tasks" right={`${tasks.length}`} />
+          <Note>
+            What every week of this kind starts with, so a daily job is written down once
+            rather than seven times. Pick the days each one belongs to, and the heading it
+            sits under. A week takes its own copy when it is built — editing here shapes
+            weeks from now on, and never touches one you have already started.
+          </Note>
+
+          {tasks.map((task, i) => (
+            <View
+              key={`task-${i}`}
+              style={{ gap: 7, borderWidth: 1, borderColor: t.rule, borderRadius: radius.md,
+                padding: 10 }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Field
+                  value={task.text}
+                  onChangeText={(v) => setTasks((list) => list.map((x, j) => (
+                    j === i ? { ...x, text: v.slice(0, PLAN_LIMIT) } : x)))}
+                  placeholder="What it is…"
+                  maxLength={PLAN_LIMIT}
+                  accessibilityLabel={`Task ${i + 1}`}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${task.text || 'this task'}`}
+                  hitSlop={8}
+                  onPress={() => setTasks((list) => list.filter((_, j) => j !== i))}
+                >
+                  <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
+                </Pressable>
+              </View>
+
+              {/* Which days it lands on. All seven is a daily task. */}
+              <View style={{ flexDirection: 'row', gap: 4 }}>
+                {DAY_LETTERS.map((letter, d) => {
+                  const on = task.days.includes(d);
+                  return (
+                    <Pressable
+                      key={d}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: on }}
+                      accessibilityLabel={DAY_NAMES[d]}
+                      onPress={() => setTasks((list) => list.map((x, j) => (j === i ? {
+                        ...x,
+                        days: on ? x.days.filter((y) => y !== d)
+                          : [...x.days, d].sort((a, b) => a - b),
+                      } : x)))}
+                      style={{ flex: 1, paddingVertical: 7, alignItems: 'center',
+                        borderRadius: radius.sm + 1, borderWidth: 1,
+                        borderColor: on ? t.accent : t.rule,
+                        backgroundColor: on ? t.accentSoft : 'transparent' }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: on ? '800' : '500',
+                        color: on ? t.accent : t.ink3 }}>{letter}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                flexWrap: 'wrap' }}>
+                <Mono style={{ fontSize: 10 }}>
+                  {task.days.length === 7 ? 'Every day'
+                    : task.days.length ? `${task.days.length}× a week` : 'No days — not used'}
+                </Mono>
+                <View style={{ flex: 1 }} />
+                {secs.map((sc, si) => (
+                  <Pressable
+                    key={sc.id}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: task.si === si }}
+                    onPress={() => setTasks((list) => list.map((x, j) => (
+                      j === i ? { ...x, si } : x)))}
+                    style={{ borderWidth: 1, borderRadius: radius.pill,
+                      paddingHorizontal: 9, paddingVertical: 4,
+                      borderColor: task.si === si ? t.accentLine : t.rule,
+                      backgroundColor: task.si === si ? t.accentSoft : 'transparent' }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: task.si === si ? '700' : '500',
+                      color: task.si === si ? t.accent : t.ink3 }}>{sc.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ))}
+
+          <Button
+            tone="ghost"
+            title="+ Add a standard task"
+            onPress={() => setTasks((list) => [...list,
+              { text: '', track: null, si: 0, days: [0, 1, 2, 3, 4, 5, 6] }])}
           />
         </Section>
 

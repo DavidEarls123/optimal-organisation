@@ -47,8 +47,19 @@ export default function DayScreen() {
   const [tagFor, setTagFor] = useState<Record<string, string>>({});
   /** Which section has its composer open. Only ever one. */
   const [adding, setAdding] = useState<string | null>(null);
-  /** True once the list has scrolled past the top, so the day bar shrinks. */
-  const [condensed, setCondensed] = useState(false);
+  /** How far the top has been asked to get out of the way: 0 all of it, 1 the
+   *  day strip alone, 2 nothing but the day bar. Each step has a wider band to
+   *  come back through than to go down, so a header cannot flicker between two
+   *  stages while your thumb is still. */
+  const [stage, setStage] = useState<0 | 1 | 2>(0);
+  const scroller = useRef<ScrollView>(null);
+  const onScrolled = useCallback((y: number) => {
+    setStage((cur) => {
+      if (cur === 0) return y > 26 ? 1 : 0;
+      if (cur === 1) return y > 168 ? 2 : y < 10 ? 0 : 1;
+      return y < 130 ? 1 : 2;
+    });
+  }, []);
   /** The habit currently asking for a weight, if any. */
   const [weighing, setWeighing] = useState<string | null>(null);
   /** True for the moment after a day is marked complete. */
@@ -115,7 +126,12 @@ export default function DayScreen() {
     }
   }, [access, dateIso]);
 
-  useEffect(() => { setMoveId(null); setShowPicker(false); setAdding(null); setCondensed(false); }, [day, weekId]);
+  // Changing day puts the top back: you are starting a fresh list, and the
+  // week strip is the thing you just used to get here.
+  useEffect(() => {
+    setMoveId(null); setShowPicker(false); setAdding(null); setStage(0);
+    scroller.current?.scrollTo({ y: 0, animated: false });
+  }, [day, weekId]);
 
   const tasks = useMemo(() => (week?.tasks[day] ?? []), [week, day]);
   const live = tasks;
@@ -309,24 +325,24 @@ export default function DayScreen() {
 
   return (
     <Screen>
-      <WeekHeader />
+      <WeekHeader stage={stage} />
 
       {/* The day stays put while the list moves under it, shrinking to a single
           line once you are past the top so it costs almost nothing. */}
-      <View style={{ paddingHorizontal: 18, paddingTop: condensed ? 4 : 8,
-        paddingBottom: condensed ? 5 : 6, borderBottomWidth: 1,
-        borderBottomColor: condensed ? t.rule : 'transparent',
+      <View style={{ paddingHorizontal: 18, paddingTop: stage ? 4 : 8,
+        paddingBottom: stage ? 5 : 6, borderBottomWidth: 1,
+        borderBottomColor: stage ? t.rule : 'transparent',
         backgroundColor: t.sheet, flexDirection: 'row', alignItems: 'baseline', gap: 10 }}>
         <Text
           numberOfLines={1}
           style={{ flex: 1, fontWeight: '700', color: t.ink,
-            fontSize: condensed ? 15 : 21, letterSpacing: -0.3 }}
+            fontSize: stage ? 15 : 21, letterSpacing: -0.3 }}
         >
-          {parseISO(dateIso).toLocaleDateString('en-GB', condensed
+          {parseISO(dateIso).toLocaleDateString('en-GB', stage
             ? { weekday: 'short', day: 'numeric', month: 'short' }
             : { weekday: 'long', day: 'numeric', month: 'long' })}
         </Text>
-        <Mono style={{ fontSize: condensed ? 11 : 12.5 }}>
+        <Mono style={{ fontSize: stage ? 11 : 12.5 }}>
           {`${live.filter((x) => x.state === 'done').length}/${live.length}`}
         </Mono>
         {undoLabel ? (
@@ -343,7 +359,7 @@ export default function DayScreen() {
         ) : null}
       </View>
 
-      {marks.trips.length || marks.events.length ? (
+      {stage === 0 && (marks.trips.length || marks.events.length) ? (
         <View style={{ paddingHorizontal: 18, paddingBottom: 8, flexDirection: 'row',
           flexWrap: 'wrap', gap: 6, backgroundColor: t.sheet }}>
           {marks.trips.map((name) => (
@@ -365,7 +381,7 @@ export default function DayScreen() {
         </View>
       ) : null}
 
-      <Body top={6} onScroll={(y) => setCondensed(y > 18)}>
+      <Body top={6} scrollRef={scroller} onScroll={onScrolled}>
         {off ? (
           <View style={{ backgroundColor: t.sunk, borderRadius: radius.md, padding: 11 }}>
             <Text style={{ fontSize: 12.5, lineHeight: 18, color: t.ink2 }}>

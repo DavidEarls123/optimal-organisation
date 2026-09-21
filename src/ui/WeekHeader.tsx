@@ -33,8 +33,14 @@ export function dayLook(t: Theme): DayLook {
     hole: t.accentSoft, track: t.accentLine, sweep: t.hit };
 }
 
-/** Week identity, template, and the seven-day strip. Shown above every tab. */
-export function WeekHeader({ compact }: { compact?: boolean }) {
+/** Week identity, template, and the seven-day strip. Shown above every tab.
+ *
+ *  `stage` is how far out of the way it has been asked to get, which the Day
+ *  screen works out from how far you have scrolled:
+ *    0  all of it
+ *    1  the strip alone, on one line, still tappable
+ *    2  nothing — the day bar under it is enough to know where you are */
+export function WeekHeader({ compact, stage = 0 }: { compact?: boolean; stage?: 0 | 1 | 2 }) {
   const t = useTheme();
   const router = useRouter();
   const { state, weekId, setWeekId, day, setDay, today, update } = useStore();
@@ -59,6 +65,53 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
     // Stay on the same weekday. Landing on Monday every time means counting
     // across to Thursday again on every step.
   };
+
+  if (stage === 2) return null;
+
+  if (stage === 1) {
+    // One line: which day you are on and how each of them went. Everything that
+    // can be worked out from the list below it has gone.
+    return (
+      <View style={{ paddingHorizontal: 18, paddingTop: 6, paddingBottom: 2 }}>
+        <View style={{ flexDirection: 'row', gap: 3 }}>
+          {DAY_LETTERS.map((letter, d) => {
+            const selected = d === day;
+            const off = Boolean(week.untracked[d]);
+            const done = Boolean(week.complete[d]);
+            const future = current && d > ti;
+            const score = off || future ? 0 : dayScore(state, week, d);
+            const dot = off ? t.rule
+              : done ? t.hit
+                : score >= 0.999 ? t.hit
+                  : score > 0 ? t.partial : t.rule;
+            return (
+              <Pressable
+                key={d}
+                onPress={() => setDay(d)}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                accessibilityLabel={`${letter} ${addDays(parseISO(week.monday), d).getDate()}`}
+                style={{ flex: 1, alignItems: 'center', gap: 3, paddingVertical: 4,
+                  borderRadius: radius.sm + 1,
+                  borderWidth: selected ? 1 : 0,
+                  borderColor: selected ? look.edge : 'transparent',
+                  backgroundColor: selected ? look.fill : 'transparent',
+                  opacity: future && !selected ? 0.55 : 1 }}
+              >
+                <Text style={{ fontSize: 10, letterSpacing: 1,
+                  fontWeight: selected ? '800' : '500',
+                  color: selected ? look.ink : t.ink3 }}>
+                  {letter}
+                </Text>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: dot,
+                  borderWidth: d === ti && current ? 1.5 : 0, borderColor: t.accent }} />
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={{ paddingHorizontal: 18, paddingTop: 12, gap: 12 }}>

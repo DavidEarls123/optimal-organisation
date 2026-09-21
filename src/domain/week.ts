@@ -663,6 +663,55 @@ export function moveHabit(state: AppState, id: string, dir: -1 | 1): boolean {
   return true;
 }
 
+/** A standard task as you would write it down: what it is, which heading it
+ *  goes under, and the days of the week it happens on.
+ *
+ *  A template stores its scaffold the other way round — seven days, each with
+ *  a list — which is the right shape for building a week but the wrong one for
+ *  saying "this happens every day". Written out seven times it is seven things
+ *  to keep in step. So the editor works in these and turns them back. */
+export interface PlanTask {
+  text: string;
+  track: string | null;
+  /** Which of the template's headings it sits under. */
+  si: number;
+  /** Weekdays, Monday first. */
+  days: number[];
+}
+
+/** The seven days of a template's scaffold, read as a list of standard tasks.
+ *  Anything written identically on more than one day is one task on those
+ *  days. Order follows where each first appears. */
+export function planTaskList(plan: PlanEntry[][]): PlanTask[] {
+  const out: PlanTask[] = [];
+  const seen = new Map<string, PlanTask>();
+  for (let d = 0; d < 7; d += 1) {
+    for (const [text, track, si] of plan[d] ?? []) {
+      const key = `${text}\u0000${track ?? ''}\u0000${si}`;
+      const had = seen.get(key);
+      if (had) { if (!had.days.includes(d)) had.days.push(d); continue; }
+      const made: PlanTask = { text, track: track ?? null, si, days: [d] };
+      seen.set(key, made);
+      out.push(made);
+    }
+  }
+  return out;
+}
+
+/** And back again. A task on no days is dropped rather than written nowhere. */
+export function planFromList(list: PlanTask[]): PlanEntry[][] {
+  const plan: PlanEntry[][] = [[], [], [], [], [], [], []];
+  for (const task of list) {
+    const text = task.text.trim();
+    if (!text) continue;
+    for (const d of task.days) {
+      if (d < 0 || d > 6) continue;
+      plan[d].push([text, task.track, Math.max(0, task.si)]);
+    }
+  }
+  return plan;
+}
+
 /** Drops a habit at a place in the list. `toIndex` is a place in the list
  *  *without* the dragged habit, which is what a list being dragged through
  *  looks like. */
