@@ -1,14 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Keyboard, Linking, Pressable, ScrollView, View } from 'react-native';
-import { Text, useTextScale } from '../../src/ui/type';
+import { Text } from '../../src/ui/type';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  Extrapolation, interpolate, interpolateColor, runOnJS, useAnimatedStyle, useSharedValue,
-} from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 
-import { WeekHeader } from '../../src/ui/WeekHeader';
+import { SlimStrip, WeekHeader } from '../../src/ui/WeekHeader';
 import { DayDone } from '../../src/ui/DayDone';
 import {
   Bar, Body, Button, Chip, Empty, Field, Glyph, Mono, Note, Screen, Section, SectionHead,
@@ -58,9 +56,6 @@ export default function DayScreen() {
   /** True for the moment after a day is marked complete. */
   const [cheer, setCheer] = useState(false);
   const box = useBoxWidth();
-  const scale = useTextScale();
-  /** How tall the trip and countdown chips are, so they can be closed up. */
-  const [chipH, setChipH] = useState(0);
   /** The task being dragged, and where it would land. */
   const [dragId, setDragId] = useState<string | null>(null);
   /** The place it would land if you let go now, and how far down the list that
@@ -71,27 +66,6 @@ export default function DayScreen() {
   /** Headings whose finished work is showing. Folded away by default, so a
    *  day gets shorter as you get through it rather than longer. */
   const [showDone, setShowDone] = useState<Record<string, boolean>>({});
-
-  // The day bar's own collapse, over the same stretch of scrolling as the
-  // header above it, so the whole top moves as one thing.
-  const bar = useAnimatedStyle(() => ({
-    paddingTop: interpolate(scrollY.value, [0, 56], [8, 4], Extrapolation.CLAMP),
-    paddingBottom: interpolate(scrollY.value, [0, 56], [6, 5], Extrapolation.CLAMP),
-    borderBottomColor: interpolateColor(scrollY.value, [8, 44], [t.sheet, t.rule]),
-  }));
-  const dateBox = useAnimatedStyle(() => ({
-    height: interpolate(scrollY.value, [0, 56], [27 * scale, 20 * scale], Extrapolation.CLAMP),
-  }));
-  const longDate = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.value, [0, 40], [1, 0], Extrapolation.CLAMP),
-  }));
-  const shortDate = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.value, [20, 56], [0, 1], Extrapolation.CLAMP),
-  }));
-  const chips = useAnimatedStyle(() => ({
-    height: interpolate(scrollY.value, [0, 44], [chipH || 0, 0], Extrapolation.CLAMP),
-    opacity: interpolate(scrollY.value, [0, 36], [1, 0], Extrapolation.CLAMP),
-  }), [chipH]);
 
   const dateIso = week ? dayDateIso(week.monday, day) : '';
   // Headings come from the week, which took them from its template.
@@ -338,66 +312,27 @@ export default function DayScreen() {
   const planned = acts.filter((h) => habitDayStatus(week, h.id, day) === 'today');
   const anyday = acts.filter((h) => habitDayStatus(week, h.id, day) === 'anyday');
   const notToday = acts.filter((h) => habitDayStatus(week, h.id, day) === 'off');
+  /** What is on the calendar and not already written on the day. Once you have
+   *  taken one it is a task like any other, and saying it twice only makes the
+   *  day look longer than it is. Delete the task and the appointment comes
+   *  back, because it is still in your calendar. */
+  const onCalendar = (() => {
+    const had = new Set(live.map((x) => x.text.trim().toLowerCase()));
+    return events.filter((e) => !had.has(e.title.trim().toLowerCase()));
+  })();
+
   const watched = week.watched[day] ?? [];
   const marks = marksOn(state, dateIso);
 
-  return (
-    <Screen>
-      <WeekHeader scrollY={scrollY} />
-
-      {/* The day stays put while the list moves under it, shrinking as it goes
-          so it costs almost nothing once you are down the page. The two ways of
-          writing the date are stacked and faded between, because a long date
-          becoming a short one is a change of words, not of size. */}
-      <Animated.View style={[{ paddingHorizontal: 18, borderBottomWidth: 1,
-        backgroundColor: t.sheet, flexDirection: 'row', alignItems: 'center', gap: 10,
-        borderBottomColor: t.rule }, bar]}>
-        <Animated.View style={[{ flex: 1, justifyContent: 'center' }, dateBox]}>
-          <Animated.Text
-            numberOfLines={1}
-            style={[{ position: 'absolute', left: 0, right: 0, fontWeight: '700',
-              color: t.ink, fontSize: 21 * scale, letterSpacing: -0.3 }, longDate]}
-          >
-            {parseISO(dateIso).toLocaleDateString('en-GB',
-              { weekday: 'long', day: 'numeric', month: 'long' })}
-          </Animated.Text>
-          <Animated.Text
-            numberOfLines={1}
-            style={[{ position: 'absolute', left: 0, right: 0, fontWeight: '700',
-              color: t.ink, fontSize: 15 * scale, letterSpacing: -0.3 }, shortDate]}
-          >
-            {parseISO(dateIso).toLocaleDateString('en-GB',
-              { weekday: 'short', day: 'numeric', month: 'short' })}
-          </Animated.Text>
-        </Animated.View>
-        <Mono style={{ fontSize: 11.5 }}>
-          {`${live.filter((x) => x.state === 'done').length}/${live.length}`}
-        </Mono>
-        {undoLabel ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Undo ${undoLabel}`}
-            onPress={undo}
-            hitSlop={10}
-            style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center',
-              borderWidth: 1, borderColor: t.rule, borderRadius: 14 }}
-          >
-            <Glyph name="arrow.uturn.backward" fallback="↺" size={14} colour={t.ink2} />
-          </Pressable>
-        ) : null}
-      </Animated.View>
-
+  /** The week, and anything pinned to this day, as the top of the list itself.
+   *  It scrolls away at exactly the speed of your thumb because it is part of
+   *  what you are scrolling, rather than a thing above it getting smaller. */
+  const lead = (
+    <View style={{ backgroundColor: t.sheet }}>
+      <WeekHeader />
       {marks.trips.length || marks.events.length ? (
-        <Animated.View
-          style={[{ backgroundColor: t.sheet, overflow: 'hidden' }, chips]}
-        >
-          {/* Measured inside the box, not on it: the box's own height is the
-              thing being animated, so asking it how tall it is would only ever
-              give back the answer it was just given. */}
-          <View
-            onLayout={(e) => setChipH(Math.round(e.nativeEvent.layout.height) + 8)}
-            style={{ paddingHorizontal: 18, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}
-          >
+        <View style={{ paddingHorizontal: 18, paddingTop: 8, flexDirection: 'row',
+          flexWrap: 'wrap', gap: 6 }}>
           {marks.trips.map((name) => (
             <View key={`t-${name}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
               borderWidth: 1, borderColor: t.accentLine, backgroundColor: t.accentSoft,
@@ -414,11 +349,49 @@ export default function DayScreen() {
               <Text style={{ fontSize: 11.5, fontWeight: '600', color: t.ink2 }}>{name}</Text>
             </View>
           ))}
-          </View>
-        </Animated.View>
+        </View>
       ) : null}
+    </View>
+  );
 
-      <Body top={6} scrollRef={scroller} scrollY={scrollY}>
+  /** What stays: the seven days on one line, fading in as the week goes by
+   *  above it, and the day you are on. One fixed height — a pinned thing that
+   *  changes size pushes the list around underneath it. */
+  const pinned = (
+    <View style={{ backgroundColor: t.sheet, borderBottomWidth: 1, borderBottomColor: t.rule }}>
+      <SlimStrip scrollY={scrollY} />
+      <View style={{ paddingHorizontal: 18, paddingTop: 4, paddingBottom: 7,
+        flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <Text
+          numberOfLines={1}
+          style={{ flex: 1, fontWeight: '700', color: t.ink, fontSize: 17,
+            letterSpacing: -0.3 }}
+        >
+          {parseISO(dateIso).toLocaleDateString('en-GB',
+            { weekday: 'long', day: 'numeric', month: 'long' })}
+        </Text>
+        <Mono style={{ fontSize: 11.5 }}>
+          {`${live.filter((x) => x.state === 'done').length}/${live.length}`}
+        </Mono>
+        {undoLabel ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Undo ${undoLabel}`}
+            onPress={undo}
+            hitSlop={10}
+            style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center',
+              borderWidth: 1, borderColor: t.rule, borderRadius: 14 }}
+          >
+            <Glyph name="arrow.uturn.backward" fallback="↺" size={14} colour={t.ink2} />
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+
+  return (
+    <Screen>
+      <Body top={12} scrollRef={scroller} scrollY={scrollY} lead={lead} sticky={pinned}>
         {off ? (
           <View style={{ backgroundColor: t.sunk, borderRadius: radius.md, padding: 11 }}>
             <Text style={{ fontSize: 12.5, lineHeight: 18, color: t.ink2 }}>
@@ -446,11 +419,11 @@ export default function DayScreen() {
           </Section>
         ) : null}
 
-        {events.length ? (
+        {onCalendar.length ? (
           <Section>
             <SectionHead title="Calendar" right="from your phone" />
             <View>
-              {events.map((e) => (
+              {onCalendar.map((e) => (
                 <View key={e.id} style={{ flexDirection: 'row', gap: 10, alignItems: 'center',
                   paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: t.rule2 }}>
                   <Mono style={{ width: 46, color: t.accent, fontSize: 12, fontWeight: '600' }}>
@@ -468,21 +441,24 @@ export default function DayScreen() {
                       </Mono>
                     ) : null}
                   </View>
-                  {e.track ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => update((d) => {
-                        const arr = (d.weeks[weekId].tasks[day] ??= []);
-                        arr.push({ id: uid('n'), text: e.title, state: 'open', plan: false,
-                          track: e.track ?? null, sec: d.sections[0].id });
-                      })}
-                      style={{ borderWidth: 1, borderColor: t.accentLine, borderRadius: radius.pill,
-                        paddingHorizontal: 9, paddingVertical: 4 }}
-                    >
-                      <Text style={{ fontSize: 10, letterSpacing: 0.8, textTransform: 'uppercase',
-                        color: t.accent, fontWeight: '600' }}>+ Task</Text>
-                    </Pressable>
-                  ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Add ${e.title} to today`}
+                    onPress={() => update((d) => {
+                      const arr = (d.weeks[weekId].tasks[day] ??= []);
+                      // Under one of this week's own headings. The app's
+                      // standard ones are not necessarily this week's, and a
+                      // task filed under a heading the day has not got is a
+                      // task that never appears.
+                      arr.push({ id: uid('n'), text: e.title, state: 'open', plan: false,
+                        track: e.track ?? null, sec: sections[0]?.id ?? d.sections[0].id });
+                    }, 'adding that to the day')}
+                    style={{ borderWidth: 1, borderColor: t.accentLine, borderRadius: radius.pill,
+                      paddingHorizontal: 9, paddingVertical: 4 }}
+                  >
+                    <Text style={{ fontSize: 10, letterSpacing: 0.8, textTransform: 'uppercase',
+                      color: t.accent, fontWeight: '600' }}>+ Task</Text>
+                  </Pressable>
                 </View>
               ))}
             </View>

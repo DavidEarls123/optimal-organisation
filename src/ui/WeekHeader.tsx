@@ -38,15 +38,10 @@ export function dayLook(t: Theme): DayLook {
 
 /** Week identity, template, and the seven-day strip. Shown above every tab.
  *
- *  On the Day screen it shrinks as the list scrolls: everything, then the
- *  seven-day strip on one line, then nothing at all — the day bar under it is
- *  enough to know where you are. */
-export function WeekHeader({ compact, scrollY }: {
-  compact?: boolean;
-  /** How far the list under it has been scrolled. Given one, the header
-   *  collapses with it; without one it is simply drawn whole. */
-  scrollY?: SharedValue<number>;
-}) {
+ *  On the Day screen it is the top of the list rather than a thing fixed above
+ *  it, so it goes by at exactly the speed of your thumb. What stays behind is
+ *  SlimStrip, pinned under it. */
+export function WeekHeader({ compact }: { compact?: boolean }) {
   const t = useTheme();
   const router = useRouter();
   const { state, weekId, setWeekId, day, setDay, today, update } = useStore();
@@ -72,53 +67,7 @@ export function WeekHeader({ compact, scrollY }: {
     // across to Thursday again on every step.
   };
 
-  // One line: which day you are on and how each of them went. Everything that
-  // can be worked out from the list below it has gone. It is always drawn, and
-  // faded in over the full strip as that shrinks away — a cross-fade between
-  // two things of different heights is what makes a collapse look continuous
-  // rather than like one layout being swapped for another.
-  const slim = (
-    <View style={{ paddingHorizontal: 18, paddingTop: 6, paddingBottom: 2 }}>
-        <View style={{ flexDirection: 'row', gap: 3 }}>
-          {DAY_LETTERS.map((letter, d) => {
-            const selected = d === day;
-            const off = Boolean(week.untracked[d]);
-            const done = Boolean(week.complete[d]);
-            const future = current && d > ti;
-            const score = off || future ? 0 : dayScore(state, week, d);
-            const dot = off ? t.rule
-              : done ? t.hit
-                : score >= 0.999 ? t.hit
-                  : score > 0 ? t.partial : t.rule;
-            return (
-              <Pressable
-                key={d}
-                onPress={() => setDay(d)}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                accessibilityLabel={`${letter} ${addDays(parseISO(week.monday), d).getDate()}`}
-                style={{ flex: 1, alignItems: 'center', gap: 3, paddingVertical: 4,
-                  borderRadius: radius.sm + 1,
-                  borderWidth: selected ? 1 : 0,
-                  borderColor: selected ? look.edge : 'transparent',
-                  backgroundColor: selected ? look.fill : 'transparent',
-                  opacity: future && !selected ? 0.55 : 1 }}
-              >
-                <Text style={{ fontSize: 10, letterSpacing: 1,
-                  fontWeight: selected ? '800' : '500',
-                  color: selected ? look.ink : t.ink3 }}>
-                  {letter}
-                </Text>
-                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: dot,
-                  borderWidth: d === ti && current ? 1.5 : 0, borderColor: t.accent }} />
-              </Pressable>
-            );
-          })}
-        </View>
-    </View>
-  );
-
-  const full = (
+  return (
     <View style={{ paddingHorizontal: 18, paddingTop: 12, gap: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <CornerMark />
@@ -227,70 +176,71 @@ export function WeekHeader({ compact, scrollY }: {
       </View>
     </View>
   );
-
-  // Nothing to animate against: draw it whole and be done.
-  if (!scrollY) return full;
-
-  return <Shrinking scrollY={scrollY} full={full} slim={slim} />;
 }
 
-/** The header, collapsing with the list rather than in steps behind it.
+/** The seven days on one line, for the bar that stays put while the week
+ *  header scrolls away above it.
  *
- *  Both shapes are drawn, stacked, and the box around them is given whichever
- *  height the scroll position asks for. Because that runs on the thread that
- *  draws, it follows your thumb exactly: there is no moment where JavaScript
- *  decides the header is now a different header. */
-function Shrinking({ scrollY, full, slim }: {
+ *  It is always drawn and always the same height — only its opacity moves.
+ *  Anything pinned that changes height shoves the list about underneath it,
+ *  which is the opposite of what pinning something is for. */
+export function SlimStrip({ scrollY, from = 44, to = 104 }: {
   scrollY: SharedValue<number>;
-  full: React.ReactNode;
-  slim: React.ReactNode;
+  /** Where it starts and finishes fading in, as the header goes by. */
+  from?: number;
+  to?: number;
 }) {
-  // Measured rather than assumed, and measured again when they change — the
-  // text size is a setting, so these are not constants.
-  const [tall, setTall] = useState(0);
-  const [short, setShort] = useState(0);
-
-  const box = useAnimatedStyle(() => {
-    if (!tall || !short) return {};
-    // Two moves, one after the other, each over a stretch of scrolling rather
-    // than at a point: the full header down to the one-line strip, then that
-    // away altogether.
-    const h = interpolate(scrollY.value, [0, 56, 112, 178], [tall, short, short, 0],
-      Extrapolation.CLAMP);
-    return { height: h, opacity: interpolate(scrollY.value, [140, 178], [1, 0],
-      Extrapolation.CLAMP) };
-  }, [tall, short]);
-
-  const bigger = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.value, [0, 44], [1, 0], Extrapolation.CLAMP),
+  const t = useTheme();
+  const { state, weekId, day, setDay, today } = useStore();
+  const week = state.weeks[weekId];
+  const look = dayLook(t);
+  const shown = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [from, to], [0, 1], Extrapolation.CLAMP),
   }));
-  const smaller = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.value, [24, 60], [0, 1], Extrapolation.CLAMP),
-  }));
+  if (!week) return null;
+  const current = isCurrentWeek(week, today);
+  const ti = todayIndex(week, today);
 
   return (
-    <Animated.View style={[{ overflow: 'hidden' }, tall && short ? box : null]}>
-      <Animated.View
-        onLayout={(e) => {
-          const h = Math.round(e.nativeEvent.layout.height);
-          setTall((p) => (Math.abs(p - h) > 1 ? h : p));
-        }}
-        style={[{ position: 'absolute', left: 0, right: 0, top: 0 }, bigger]}
-      >
-        {full}
-      </Animated.View>
-      <Animated.View
-        onLayout={(e) => {
-          const h = Math.round(e.nativeEvent.layout.height);
-          setShort((p) => (Math.abs(p - h) > 1 ? h : p));
-        }}
-        style={[{ position: 'absolute', left: 0, right: 0, top: 0 }, smaller]}
-      >
-        {slim}
-      </Animated.View>
-      {/* Until both have been measured the box has no height of its own, so
-          the full one holds it open. */}
-      {tall && short ? null : <View style={{ opacity: 0 }}>{full}</View>}
+    <Animated.View style={shown}>
+      <View style={{ paddingHorizontal: 18, paddingTop: 6, paddingBottom: 2 }}>
+          <View style={{ flexDirection: 'row', gap: 3 }}>
+            {DAY_LETTERS.map((letter, d) => {
+              const selected = d === day;
+              const off = Boolean(week.untracked[d]);
+              const done = Boolean(week.complete[d]);
+              const future = current && d > ti;
+              const score = off || future ? 0 : dayScore(state, week, d);
+              const dot = off ? t.rule
+                : done ? t.hit
+                  : score >= 0.999 ? t.hit
+                    : score > 0 ? t.partial : t.rule;
+              return (
+                <Pressable
+                  key={d}
+                  onPress={() => setDay(d)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${letter} ${addDays(parseISO(week.monday), d).getDate()}`}
+                  style={{ flex: 1, alignItems: 'center', gap: 3, paddingVertical: 4,
+                    borderRadius: radius.sm + 1,
+                    borderWidth: selected ? 1 : 0,
+                    borderColor: selected ? look.edge : 'transparent',
+                    backgroundColor: selected ? look.fill : 'transparent',
+                    opacity: future && !selected ? 0.55 : 1 }}
+                >
+                  <Text style={{ fontSize: 10, letterSpacing: 1,
+                    fontWeight: selected ? '800' : '500',
+                    color: selected ? look.ink : t.ink3 }}>
+                    {letter}
+                  </Text>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: dot,
+                    borderWidth: d === ti && current ? 1.5 : 0, borderColor: t.accent }} />
+                </Pressable>
+              );
+            })}
+          </View>
+      </View>
     </Animated.View>
   );
 }

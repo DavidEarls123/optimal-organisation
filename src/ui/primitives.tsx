@@ -23,11 +23,20 @@ export function Screen({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function Body({ children, scrollRef, top, scrollY, onCondensed }: {
+export function Body({ children, scrollRef, top, scrollY, onCondensed, lead, sticky }: {
   children: React.ReactNode;
   scrollRef?: React.Ref<ScrollView>;
   /** Less air at the top, for a screen that already has a heading above it. */
   top?: number;
+  /** Drawn edge to edge above everything else, and part of the list rather
+   *  than fixed above it — so it goes away exactly as fast as you scroll,
+   *  never faster. A heading that shrinks while sitting outside the list moves
+   *  the list's top edge up at the same time as the list moves up through it,
+   *  and the two together pull the page along faster than your thumb. */
+  lead?: React.ReactNode;
+  /** Drawn edge to edge under the lead and pinned there as the rest goes by.
+   *  Its height must not change, or everything below it shifts. */
+  sticky?: React.ReactNode;
   /** Where the list has been scrolled to, kept on the thread that draws.
    *  Anything that shrinks as you scroll reads this rather than being told,
    *  because being told means a round trip through JavaScript for every frame
@@ -59,8 +68,7 @@ export function Body({ children, scrollRef, top, scrollY, onCondensed }: {
     <Animated.ScrollView
       ref={hold}
       style={{ flex: 1 }}
-      contentContainerStyle={{ padding: 18, paddingTop: top ?? 18,
-        paddingBottom: 48, gap: 22 }}
+      contentContainerStyle={{ paddingBottom: 48 }}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="interactive"
       scrollEventThrottle={16}
@@ -69,8 +77,11 @@ export function Body({ children, scrollRef, top, scrollY, onCondensed }: {
       // the signal: look again at whatever is being typed in.
       onContentSizeChange={keep}
       onScroll={onScroll}
+      stickyHeaderIndices={sticky ? [1] : undefined}
     >
-      {children}
+      {lead ?? <View />}
+      {sticky ?? <View />}
+      <View style={{ padding: 18, paddingTop: top ?? 18, gap: 22 }}>{children}</View>
     </Animated.ScrollView>
   );
 }
