@@ -1,6 +1,6 @@
 import type { AppState, Habit, Week } from './types';
 import { TEMPLATES } from './catalogue';
-import { DAY_NAMES, dayDateIso, dayIndexIn } from './dates';
+import { DAY_NAMES, dayDateIso, dayIndexIn, isoOf } from './dates';
 import type { WeekTemplate } from './types';
 
 export const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
@@ -36,9 +36,18 @@ export function isCurrentWeek(week: Week, today: Date): boolean {
 /** Tracked days elapsed so far — the denominator for "pace". */
 export function elapsedDays(week: Week, today: Date): number {
   const td = trackedDays(week);
-  if (!isCurrentWeek(week, today)) return td.length;
-  const ti = todayIndex(week, today);
-  return td.filter((d) => d <= ti).length;
+  if (isCurrentWeek(week, today)) {
+    const ti = todayIndex(week, today);
+    return td.filter((d) => d <= ti).length;
+  }
+  // A week still to come has had none of its days, and scoring one as though
+  // it were over said you had missed everything in it before it began.
+  return isAheadWeek(week, today) ? 0 : td.length;
+}
+
+/** A week whose Monday has not arrived yet. */
+export function isAheadWeek(week: Week, today: Date): boolean {
+  return week.monday > isoOf(today);
 }
 
 /** What a habit asks of one particular day.
@@ -117,8 +126,11 @@ export function dayAllDone(state: AppState, week: Week, day: number): boolean {
 }
 
 export interface WeekScore {
-  /** Against where you should be by now. */
+  /** Against where you should be by the end of the last day that is over. */
   pace: number;
+  /** True when nothing has come due yet, so pace is not a number worth
+   *  printing: the first day of a week, or a week still to come. */
+  pending: boolean;
   /** Against the whole week; only reaches 100% on Sunday night. */
   banked: number;
   habitsDone: number;
@@ -136,6 +148,14 @@ export function weekScore(state: AppState, week: Week, today: Date): WeekScore {
   const ti = todayIndex(week, today);
   const current = isCurrentWeek(week, today);
 
+  // Pace is measured against the days that are over. The day you are standing
+  // in is not one of them: at eight in the morning nothing on it is late, and
+  // a week that reads nought per cent over breakfast is not telling you
+  // anything true. Today can still earn — what is ticked counts the moment it
+  // is ticked — it just cannot yet be held against you.
+  const ahead = isAheadWeek(week, today);
+  const over = current ? Math.max(0, el - 1) : el;
+
   let done = 0;
   let target = 0;
   let expected = 0;
@@ -143,7 +163,7 @@ export function weekScore(state: AppState, week: Week, today: Date): WeekScore {
     const tg = habitTarget(week, h.id);
     if (!tg) continue;
     target += tg;
-    expected += td.length ? (tg * el) / td.length : 0;
+    expected += td.length ? (tg * over) / td.length : 0;
     done += Math.min(tg, habitDone(week, h.id));
   }
 
@@ -155,16 +175,26 @@ export function weekScore(state: AppState, week: Week, today: Date): WeekScore {
     for (const x of week.tasks[d] ?? []) {
       if (x.state === 'done') tickedAll += 1;
       else openAll += 1;
-      if (current && d > ti) continue;
+      // Days that are over are the only ones pace knows about: not the future,
+      // not a week that has not begun, and not the day you are standing in.
+      if (ahead || (current && d >= ti)) {
+        if (current && d === ti && x.state === 'done') ticked += 1;
+        continue;
+      }
       if (x.state === 'done') ticked += 1;
       else open += 1;
     }
   }
 
-  const hPace = expected ? Math.min(1, done / expected) : 0;
+  const hPace = expected ? Math.min(1, done / expected) : 1;
   const hBanked = target ? done / target : 0;
-  const tPace = ticked + open ? ticked / (ticked + open) : 1;
+  const tPace = ticked + open ? Math.min(1, ticked / (ticked + open)) : 1;
   const tBanked = tickedAll + openAll ? tickedAll / (tickedAll + openAll) : 1;
+
+  // Nothing has come due yet, so there is no pace to report — as against a
+  // pace of nought, which would be a judgement on a week that has not had the
+  // chance to go wrong.
+  const pending = expected === 0 && ticked + open === 0;
 
   // A template is allowed to be all habits or all tasks. When a side asks
   // nothing of you it cannot be scored, so its weight goes to the other side
@@ -180,6 +210,7 @@ export function weekScore(state: AppState, week: Week, today: Date): WeekScore {
 
   return {
     pace: blend(hPace, tPace),
+    pending,
     banked: blend(hBanked, tBanked),
     habitsDone: done,
     habitsTarget: target,

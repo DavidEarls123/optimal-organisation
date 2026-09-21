@@ -72,7 +72,7 @@ function ThisWeek() {
           <View>
             <Mono style={{ letterSpacing: 1.4, textTransform: 'uppercase', fontSize: 10 }}>Pace</Mono>
             <Text style={{ fontSize: 44, fontWeight: '700', color: t.ink, letterSpacing: -1.6,
-              fontVariant: ['tabular-nums'] }}>{pct(sc.pace)}</Text>
+              fontVariant: ['tabular-nums'] }}>{sc.pending ? '—' : pct(sc.pace)}</Text>
           </View>
           <View style={{ backgroundColor: verdict[2], borderRadius: radius.pill,
             paddingHorizontal: 9, paddingVertical: 3, marginBottom: 6 }}>
@@ -89,11 +89,14 @@ function ThisWeek() {
           borderLeftWidth: 2, borderLeftColor: t.accentLine }}>
           <Text style={{ fontSize: 12, lineHeight: 19, color: t.ink3 }}>
             <Text style={{ fontWeight: '700', color: t.ink2 }}>Pace</Text>
-            {` = how you are doing against where you should be ${Math.max(sc.elapsed, 0)} day`}
-            {sc.elapsed === 1 ? '' : 's'}
-            {' in. '}
+            {sc.pending
+              ? ' = how you are doing against the days that are over. None are yet, so'
+                + ' there is nothing to measure. '
+              : ` = how you are doing against the ${Math.max(sc.elapsed - 1, 0)} day`
+                + `${sc.elapsed - 1 === 1 ? '' : 's'} that are over. Today can earn but`
+                + ' cannot be missed until it is done. '}
             <Text style={{ fontWeight: '700', color: t.ink2 }}>Banked</Text>
-            {' = the same sum against the whole week.\n'}
+            {' = the same sum against the whole week, today and the rest of it included.\n'}
             {`score = habits × ${tpl.weights.habits.toFixed(2)} + tasks × ${tpl.weights.tasks.toFixed(2)} (set by ${tpl.name})`}
             {offDays ? `\n${offDays} day${offDays === 1 ? '' : 's'} untracked — targets reduced to match` : ''}
           </Text>
@@ -347,7 +350,8 @@ function ThisYear() {
     );
   }
 
-  const values = scored.map((x, i) => (i === scored.length - 1 ? x.s.pace : x.s.banked));
+  const values = scored.map((x, i) => (i === scored.length - 1
+    ? (x.s.pending ? x.s.banked : x.s.pace) : x.s.banked));
   const avg = values.reduce((a, b) => a + b, 0) / values.length;
   const best = Math.max(...values);
   const strong = values.filter((v) => v >= 0.8).length;

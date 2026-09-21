@@ -184,9 +184,11 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
  *  It is always drawn and always the same height — only its opacity moves.
  *  Anything pinned that changes height shoves the list about underneath it,
  *  which is the opposite of what pinning something is for. */
-export function SlimStrip({ scrollY, from = 44, to = 104 }: {
+const SLIM = 30;
+
+export function SlimStrip({ scrollY, from = 44, to = 112 }: {
   scrollY: SharedValue<number>;
-  /** Where it starts and finishes fading in, as the header goes by. */
+  /** Where it starts and finishes arriving, as the header goes by. */
   from?: number;
   to?: number;
 }) {
@@ -194,16 +196,24 @@ export function SlimStrip({ scrollY, from = 44, to = 104 }: {
   const { state, weekId, day, setDay, today } = useStore();
   const week = state.weeks[weekId];
   const look = dayLook(t);
+  // It slides out from under the bar rather than fading in where a space has
+  // been kept for it. A space kept for it is a gap under the date all the way
+  // up at the top of the page, for something that is not there yet.
   const shown = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.value, [from, to], [0, 1], Extrapolation.CLAMP),
+    transform: [{
+      translateY: interpolate(scrollY.value, [from, to], [-SLIM, 0], Extrapolation.CLAMP),
+    }],
   }));
   if (!week) return null;
   const current = isCurrentWeek(week, today);
   const ti = todayIndex(week, today);
 
   return (
-    <Animated.View style={shown}>
-      <View style={{ paddingHorizontal: 18, paddingTop: 6, paddingBottom: 2 }}>
+    <Animated.View
+      style={[{ position: 'absolute', top: '100%', left: 0, right: 0, height: SLIM,
+        backgroundColor: t.sheet, borderBottomWidth: 1, borderBottomColor: t.rule }, shown]}
+    >
+      <View style={{ paddingHorizontal: 18, paddingTop: 3, paddingBottom: 2 }}>
           <View style={{ flexDirection: 'row', gap: 3 }}>
             {DAY_LETTERS.map((letter, d) => {
               const selected = d === day;
@@ -211,10 +221,13 @@ export function SlimStrip({ scrollY, from = 44, to = 104 }: {
               const done = Boolean(week.complete[d]);
               const future = current && d > ti;
               const score = off || future ? 0 : dayScore(state, week, d);
-              const dot = off ? t.rule
-                : done ? t.hit
-                  : score >= 0.999 ? t.hit
-                    : score > 0 ? t.partial : t.rule;
+              const dot = done ? t.hit
+                : score >= 0.999 ? t.hit
+                  : score > 0 ? t.partial : t.rule;
+              // A day you are away for says so, here as in the full strip: a
+              // dot that means nothing is worse than no dot at all.
+              const on = marksOn(state, isoOf(addDays(parseISO(week.monday), d)));
+              const mark = on.trips.length || off ? '✈︎' : on.events.length ? '★' : '';
               return (
                 <Pressable
                   key={d}
@@ -234,8 +247,13 @@ export function SlimStrip({ scrollY, from = 44, to = 104 }: {
                     color: selected ? look.ink : t.ink3 }}>
                     {letter}
                   </Text>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: dot,
-                    borderWidth: d === ti && current ? 1.5 : 0, borderColor: t.accent }} />
+                  {mark ? (
+                    <Text style={{ fontSize: 8, lineHeight: 9, height: 9,
+                      color: selected ? look.ink : t.ink2 }}>{mark}</Text>
+                  ) : (
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: dot,
+                      borderWidth: d === ti && current ? 1.5 : 0, borderColor: t.accent }} />
+                  )}
                 </Pressable>
               );
             })}

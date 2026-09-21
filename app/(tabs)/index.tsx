@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Keyboard, Linking, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Keyboard, Linking, Pressable, View } from 'react-native';
 import { Text } from '../../src/ui/type';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
@@ -50,7 +50,6 @@ export default function DayScreen() {
   /** How far the list has been scrolled, kept on the thread that draws so the
    *  top can shrink with your thumb rather than in steps behind it. */
   const scrollY = useSharedValue(0);
-  const scroller = useRef<ScrollView>(null);
   /** The habit currently asking for a weight, if any. */
   const [weighing, setWeighing] = useState<string | null>(null);
   /** True for the moment after a day is marked complete. */
@@ -119,11 +118,10 @@ export default function DayScreen() {
 
   // Changing day puts the top back: you are starting a fresh list, and the
   // week strip is the thing you just used to get here.
-  useEffect(() => {
-    setMoveId(null); setShowPicker(false); setAdding(null);
-    scrollY.value = 0;
-    scroller.current?.scrollTo({ y: 0, animated: false });
-  }, [day, weekId, scrollY]);
+  // Changing day closes anything that was open on the old one, and nothing
+  // else: being thrown back to the top of the page every time you tap a day on
+  // the strip you are using *because* you are down the page is no use at all.
+  useEffect(() => { setMoveId(null); setShowPicker(false); setAdding(null); }, [day, weekId]);
 
   const tasks = useMemo(() => (week?.tasks[day] ?? []), [week, day]);
   const live = tasks;
@@ -359,8 +357,7 @@ export default function DayScreen() {
    *  changes size pushes the list around underneath it. */
   const pinned = (
     <View style={{ backgroundColor: t.sheet, borderBottomWidth: 1, borderBottomColor: t.rule }}>
-      <SlimStrip scrollY={scrollY} />
-      <View style={{ paddingHorizontal: 18, paddingTop: 4, paddingBottom: 7,
+      <View style={{ paddingHorizontal: 18, paddingTop: 6, paddingBottom: 7,
         flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <Text
           numberOfLines={1}
@@ -386,12 +383,15 @@ export default function DayScreen() {
           </Pressable>
         ) : null}
       </View>
+      {/* Hung below the bar rather than held inside it, so at the top of the
+          page there is no band of nothing under the date waiting for it. */}
+      <SlimStrip scrollY={scrollY} />
     </View>
   );
 
   return (
     <Screen>
-      <Body top={12} scrollRef={scroller} scrollY={scrollY} lead={lead} sticky={pinned}>
+      <Body top={12} scrollY={scrollY} lead={lead} sticky={pinned}>
         {off ? (
           <View style={{ backgroundColor: t.sunk, borderRadius: radius.md, padding: 11 }}>
             <Text style={{ fontSize: 12.5, lineHeight: 18, color: t.ink2 }}>
