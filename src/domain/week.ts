@@ -606,6 +606,41 @@ export function tripTemplateOf(state: AppState): Record<string, string[]> {
 /** A new trip's checklist: your standing list, plus whatever that kind of trip
  *  adds on top. The kind's extras are not editable — they are the point of
  *  picking a kind — but nothing stops you deleting them once the trip exists. */
+/** What a trip's checklist is missing, if it were built from that kind now.
+ *  Changing what kind of trip it is, or adding to the standing list after a
+ *  trip exists, would otherwise leave the trip on the list it was born with. */
+export function tripTopUp(state: AppState, tripId: string, tplId?: string): number {
+  const trip = state.trips.find((x) => x.id === tripId);
+  if (!trip) return 0;
+  const kind = tplId ?? trip.tplId;
+  const had = new Set(trip.items.map((x) => `${x.cat}\u0000${x.text.trim().toLowerCase()}`));
+  let added = 0;
+  // Nothing already on the list is touched, ticked or not: this only ever adds.
+  for (const item of buildTripItems(state, kind)) {
+    const key = `${item.cat}\u0000${item.text.trim().toLowerCase()}`;
+    if (had.has(key)) continue;
+    had.add(key);
+    trip.items.push(item);
+    added += 1;
+  }
+  return added;
+}
+
+/** How many of a kind's items a trip has not got, without changing anything. */
+export function tripMissing(state: AppState, tripId: string, tplId?: string): number {
+  const trip = state.trips.find((x) => x.id === tripId);
+  if (!trip) return 0;
+  const had = new Set(trip.items.map((x) => `${x.cat}\u0000${x.text.trim().toLowerCase()}`));
+  let n = 0;
+  for (const item of buildTripItems(state, tplId ?? trip.tplId)) {
+    const key = `${item.cat}\u0000${item.text.trim().toLowerCase()}`;
+    if (had.has(key)) continue;
+    had.add(key);
+    n += 1;
+  }
+  return n;
+}
+
 export function buildTripItems(state: AppState, tplId: string): TripItem[] {
   const base = tripTemplateOf(state);
   const kind = TRIP_TEMPLATES[tplId] ?? TRIP_TEMPLATES.weekend;

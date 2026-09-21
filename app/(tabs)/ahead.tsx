@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { Text } from '../../src/ui/type';
 
 import {
-  Body, Button, Chip, CornerMark, DateButton, Empty, Field, Mono, Note, Screen, Section,
+  Body, Button, Chip, CornerMark, DateButton, Empty, Field, Glyph, Mono, Note, Screen, Section,
   SectionHead, Sheet, Tick,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
@@ -12,7 +12,7 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { daysUntil, parseISO } from '../../src/domain/dates';
 import { TRIP_CATEGORIES, TRIP_TEMPLATES } from '../../src/domain/catalogue';
-import { buildTripItems, uid } from '../../src/domain/week';
+import { buildTripItems, tripMissing, tripTopUp, uid } from '../../src/domain/week';
 import type { Trip, TripItem } from '../../src/domain/types';
 
 const unit = (n: number) => (n === 0 ? 'today' : n === 1 ? 'day' : 'days');
@@ -30,6 +30,10 @@ export default function AheadScreen() {
   const [newTrip, setNewTrip] = useState({ name: '', start: '', end: '', tplId: 'weekend' });
   const [addingTrip, setAddingTrip] = useState(false);
   const [addingEvent, setAddingEvent] = useState(false);
+  /** The trip being changed, held as a draft so nothing moves under you while
+   *  you are typing a name or picking a date. */
+  const [editing, setEditing] = useState<
+    { id: string; name: string; start: string; end: string; tplId: string } | null>(null);
   const [newEvent, setNewEvent] = useState({ name: '', date: '' });
 
   const trips = state.trips
@@ -100,6 +104,8 @@ export default function AheadScreen() {
               today={today}
               expanded={open === trip.id}
               onToggle={() => setOpen(open === trip.id ? null : trip.id)}
+              onEdit={() => setEditing({ id: trip.id, name: trip.name, start: trip.start,
+                end: trip.end, tplId: trip.tplId })}
               draft={drafts}
               setDraft={setDrafts}
             />
@@ -167,6 +173,123 @@ export default function AheadScreen() {
           </Sheet>
         </Section>
 
+        <Sheet
+          open={editing !== null}
+          title={editing?.name ? `Edit ${editing.name}` : 'Edit trip'}
+          onClose={() => setEditing(null)}
+          footer={editing ? (
+            <>
+              <View style={{ flex: 1 }}>
+                <Button
+                  tone="ghost"
+                  title="Delete trip"
+                  onPress={() => Alert.alert(
+                    `Delete ${editing.name}?`,
+                    'The trip and everything on its checklist goes. Undo puts it back.',
+                    [{ text: 'Cancel', style: 'cancel' },
+                     {
+                       text: 'Delete',
+                       style: 'destructive',
+                       onPress: () => {
+                         update((d) => {
+                           d.trips = d.trips.filter((x) => x.id !== editing.id);
+                         }, 'deleting that trip');
+                         setEditing(null);
+                       },
+                     }],
+                  )}
+                />
+              </View>
+              <Button
+                title="Save"
+                onPress={() => {
+                  const name = editing.name.trim();
+                  if (!name || !/^\d{4}-\d{2}-\d{2}$/.test(editing.start)) return;
+                  const end = /^\d{4}-\d{2}-\d{2}$/.test(editing.end)
+                    && editing.end >= editing.start ? editing.end : editing.start;
+                  update((d) => {
+                    const trip = d.trips.find((x) => x.id === editing.id);
+                    if (!trip) return;
+                    trip.name = name;
+                    trip.start = editing.start;
+                    trip.end = end;
+                    trip.tplId = editing.tplId;
+                  }, 'changing that trip');
+                  setEditing(null);
+                }}
+              />
+            </>
+          ) : null}
+        >
+          {editing ? (
+            <>
+              <Field
+                value={editing.name}
+                placeholder="Where to?"
+                maxLength={40}
+                onChangeText={(v) => setEditing((p) => (p ? { ...p, name: v } : p))}
+              />
+              <View style={{ flexDirection: 'row', gap: 7 }}>
+                <DateButton
+                  title="Going out"
+                  placeholder="From…"
+                  value={editing.start}
+                  onChange={(v) => setEditing((p) => (p
+                    ? { ...p, start: v, end: p.end && p.end < v ? v : p.end } : p))}
+                />
+                <DateButton
+                  title="Coming back"
+                  placeholder="To…"
+                  value={editing.end}
+                  minimum={/^\d{4}-\d{2}-\d{2}$/.test(editing.start)
+                    ? parseISO(editing.start) : undefined}
+                  onChange={(v) => setEditing((p) => (p ? { ...p, end: v } : p))}
+                />
+              </View>
+              <View style={{ flexDirection: 'row', gap: 7, flexWrap: 'wrap' }}>
+                {Object.entries(TRIP_TEMPLATES).map(([k, v]) => (
+                  <Pressable
+                    key={k}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: editing.tplId === k }}
+                    onPress={() => setEditing((p) => (p ? { ...p, tplId: k } : p))}
+                    style={{ borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 11,
+                      paddingVertical: 5,
+                      borderColor: editing.tplId === k ? t.accent : t.rule,
+                      backgroundColor: editing.tplId === k ? t.accentSoft : 'transparent' }}
+                  >
+                    <Text style={{ fontSize: 12.5, fontWeight: '600',
+                      color: editing.tplId === k ? t.accent : t.ink2 }}>{v.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* Changing the kind does not rewrite a list you have been
+                  working through. It offers what that kind would have added. */}
+              {(() => {
+                const missing = tripMissing(state, editing.id, editing.tplId);
+                if (!missing) {
+                  return <Note>Nothing missing from this kind of trip’s checklist.</Note>;
+                }
+                return (
+                  <>
+                    <Button
+                      tone="ghost"
+                      title={`+ Add the ${missing} missing from this kind`}
+                      onPress={() => update((d) => { tripTopUp(d, editing.id, editing.tplId); },
+                        'topping up that trip')}
+                    />
+                    <Note>
+                      Only what is not already on the list. Nothing you have ticked or written
+                      is touched.
+                    </Note>
+                  </>
+                );
+              })()}
+            </>
+          ) : null}
+        </Sheet>
+
         <Section>
           <SectionHead title="Countdowns" right={String(events.length)} />
           {events.length === 0 ? <Empty>Nothing counting down.</Empty> : null}
@@ -229,8 +352,8 @@ export default function AheadScreen() {
   );
 }
 
-function TripCard({ trip, today, expanded, onToggle, draft, setDraft }: {
-  trip: Trip; today: Date; expanded: boolean; onToggle: () => void;
+function TripCard({ trip, today, expanded, onToggle, onEdit, draft, setDraft }: {
+  trip: Trip; today: Date; expanded: boolean; onToggle: () => void; onEdit: () => void;
   draft: Record<string, string>; setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
   const t = useTheme();
@@ -256,6 +379,15 @@ function TripCard({ trip, today, expanded, onToggle, draft, setDraft }: {
             {`${fmt(trip.start)} – ${fmt(trip.end)}`}
           </Mono>
         </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Edit ${trip.name}`}
+          hitSlop={8}
+          onPress={onEdit}
+          style={{ paddingHorizontal: 2, alignSelf: 'flex-start' }}
+        >
+          <Glyph name="ellipsis" fallback="···" size={15} colour={t.ink3} />
+        </Pressable>
         <View style={{ alignItems: 'flex-end' }}>
           <Text style={{ fontSize: 26, fontWeight: '700', letterSpacing: -1,
             fontVariant: ['tabular-nums'], color: here ? t.hit : a <= 14 ? t.accent : t.ink }}>
