@@ -59,7 +59,7 @@ export default function WeekScreen() {
         </Mono>
       </View>
 
-      <Body onScroll={(y) => setCondensed(y > 18)}>
+      <Body onCondensed={setCondensed}>
         <Section>
           <Pressable
             accessibilityRole="button"

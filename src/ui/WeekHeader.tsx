@@ -1,5 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
+import Animated, {
+  Extrapolation, interpolate, useAnimatedStyle, type SharedValue,
+} from 'react-native-reanimated';
 import { Text } from './type';
 import { useRouter } from 'expo-router';
 
@@ -35,12 +38,15 @@ export function dayLook(t: Theme): DayLook {
 
 /** Week identity, template, and the seven-day strip. Shown above every tab.
  *
- *  `stage` is how far out of the way it has been asked to get, which the Day
- *  screen works out from how far you have scrolled:
- *    0  all of it
- *    1  the strip alone, on one line, still tappable
- *    2  nothing — the day bar under it is enough to know where you are */
-export function WeekHeader({ compact, stage = 0 }: { compact?: boolean; stage?: 0 | 1 | 2 }) {
+ *  On the Day screen it shrinks as the list scrolls: everything, then the
+ *  seven-day strip on one line, then nothing at all — the day bar under it is
+ *  enough to know where you are. */
+export function WeekHeader({ compact, scrollY }: {
+  compact?: boolean;
+  /** How far the list under it has been scrolled. Given one, the header
+   *  collapses with it; without one it is simply drawn whole. */
+  scrollY?: SharedValue<number>;
+}) {
   const t = useTheme();
   const router = useRouter();
   const { state, weekId, setWeekId, day, setDay, today, update } = useStore();
@@ -66,13 +72,13 @@ export function WeekHeader({ compact, stage = 0 }: { compact?: boolean; stage?: 
     // across to Thursday again on every step.
   };
 
-  if (stage === 2) return null;
-
-  if (stage === 1) {
-    // One line: which day you are on and how each of them went. Everything that
-    // can be worked out from the list below it has gone.
-    return (
-      <View style={{ paddingHorizontal: 18, paddingTop: 6, paddingBottom: 2 }}>
+  // One line: which day you are on and how each of them went. Everything that
+  // can be worked out from the list below it has gone. It is always drawn, and
+  // faded in over the full strip as that shrinks away — a cross-fade between
+  // two things of different heights is what makes a collapse look continuous
+  // rather than like one layout being swapped for another.
+  const slim = (
+    <View style={{ paddingHorizontal: 18, paddingTop: 6, paddingBottom: 2 }}>
         <View style={{ flexDirection: 'row', gap: 3 }}>
           {DAY_LETTERS.map((letter, d) => {
             const selected = d === day;
@@ -109,11 +115,10 @@ export function WeekHeader({ compact, stage = 0 }: { compact?: boolean; stage?: 
             );
           })}
         </View>
-      </View>
-    );
-  }
+    </View>
+  );
 
-  return (
+  const full = (
     <View style={{ paddingHorizontal: 18, paddingTop: 12, gap: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <CornerMark />
@@ -221,6 +226,72 @@ export function WeekHeader({ compact, stage = 0 }: { compact?: boolean; stage?: 
         })}
       </View>
     </View>
+  );
+
+  // Nothing to animate against: draw it whole and be done.
+  if (!scrollY) return full;
+
+  return <Shrinking scrollY={scrollY} full={full} slim={slim} />;
+}
+
+/** The header, collapsing with the list rather than in steps behind it.
+ *
+ *  Both shapes are drawn, stacked, and the box around them is given whichever
+ *  height the scroll position asks for. Because that runs on the thread that
+ *  draws, it follows your thumb exactly: there is no moment where JavaScript
+ *  decides the header is now a different header. */
+function Shrinking({ scrollY, full, slim }: {
+  scrollY: SharedValue<number>;
+  full: React.ReactNode;
+  slim: React.ReactNode;
+}) {
+  // Measured rather than assumed, and measured again when they change — the
+  // text size is a setting, so these are not constants.
+  const [tall, setTall] = useState(0);
+  const [short, setShort] = useState(0);
+
+  const box = useAnimatedStyle(() => {
+    if (!tall || !short) return {};
+    // Two moves, one after the other, each over a stretch of scrolling rather
+    // than at a point: the full header down to the one-line strip, then that
+    // away altogether.
+    const h = interpolate(scrollY.value, [0, 56, 112, 178], [tall, short, short, 0],
+      Extrapolation.CLAMP);
+    return { height: h, opacity: interpolate(scrollY.value, [140, 178], [1, 0],
+      Extrapolation.CLAMP) };
+  }, [tall, short]);
+
+  const bigger = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, 44], [1, 0], Extrapolation.CLAMP),
+  }));
+  const smaller = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [24, 60], [0, 1], Extrapolation.CLAMP),
+  }));
+
+  return (
+    <Animated.View style={[{ overflow: 'hidden' }, tall && short ? box : null]}>
+      <Animated.View
+        onLayout={(e) => {
+          const h = Math.round(e.nativeEvent.layout.height);
+          setTall((p) => (Math.abs(p - h) > 1 ? h : p));
+        }}
+        style={[{ position: 'absolute', left: 0, right: 0, top: 0 }, bigger]}
+      >
+        {full}
+      </Animated.View>
+      <Animated.View
+        onLayout={(e) => {
+          const h = Math.round(e.nativeEvent.layout.height);
+          setShort((p) => (Math.abs(p - h) > 1 ? h : p));
+        }}
+        style={[{ position: 'absolute', left: 0, right: 0, top: 0 }, smaller]}
+      >
+        {slim}
+      </Animated.View>
+      {/* Until both have been measured the box has no height of its own, so
+          the full one holds it open. */}
+      {tall && short ? null : <View style={{ opacity: 0 }}>{full}</View>}
+    </Animated.View>
   );
 }
 

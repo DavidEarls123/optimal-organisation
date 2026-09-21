@@ -4,6 +4,9 @@ import {
   useWindowDimensions, type StyleProp, type TextStyle, type ViewStyle,
 } from 'react-native';
 import { Text, scaleType, useTextScale } from './type';
+import Animated, {
+  runOnJS, useAnimatedScrollHandler, useSharedValue, type SharedValue,
+} from 'react-native-reanimated';
 import { useIsFocused } from 'expo-router';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -20,22 +23,40 @@ export function Screen({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function Body({ children, onScroll, scrollRef, top }: {
+export function Body({ children, scrollRef, top, scrollY, onCondensed }: {
   children: React.ReactNode;
-  onScroll?: (y: number) => void;
   scrollRef?: React.Ref<ScrollView>;
   /** Less air at the top, for a screen that already has a heading above it. */
   top?: number;
+  /** Where the list has been scrolled to, kept on the thread that draws.
+   *  Anything that shrinks as you scroll reads this rather than being told,
+   *  because being told means a round trip through JavaScript for every frame
+   *  and that is what a jump is made of. */
+  scrollY?: SharedValue<number>;
+  /** Told once when the list leaves the top, and once when it comes back —
+   *  for a screen that only wants to know which side of it we are on. */
+  onCondensed?: (past: boolean) => void;
 }) {
-  const { ref, onScroll: follow, keep } = useKeepVisible();
+  const { ref, at, keep } = useKeepVisible();
   const hold = useCallback((node: ScrollView | null) => {
     (ref as React.MutableRefObject<ScrollView | null>).current = node;
     if (typeof scrollRef === 'function') scrollRef(node);
     else if (scrollRef) (scrollRef as React.MutableRefObject<ScrollView | null>).current = node;
   }, [ref, scrollRef]);
 
+  const past = useSharedValue(false);
+  const onScroll = useAnimatedScrollHandler((e) => {
+    at.value = e.contentOffset.y;
+    if (scrollY) scrollY.value = e.contentOffset.y;
+    if (!onCondensed) return;
+    const now = e.contentOffset.y > 18;
+    if (now === past.value) return;
+    past.value = now;
+    runOnJS(onCondensed)(now);
+  });
+
   return (
-    <ScrollView
+    <Animated.ScrollView
       ref={hold}
       style={{ flex: 1 }}
       contentContainerStyle={{ padding: 18, paddingTop: top ?? 18,
@@ -47,13 +68,10 @@ export function Body({ children, onScroll, scrollRef, top }: {
       // the keyboard never moved so it never says anything. The list growing is
       // the signal: look again at whatever is being typed in.
       onContentSizeChange={keep}
-      onScroll={(e) => {
-        follow(e.nativeEvent.contentOffset.y);
-        onScroll?.(e.nativeEvent.contentOffset.y);
-      }}
+      onScroll={onScroll}
     >
       {children}
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 
@@ -220,7 +238,9 @@ const BELOW = 78;
 
 export function useKeepVisible() {
   const ref = useRef<ScrollView>(null);
-  const at = useRef(0);
+  /** Where the list is, written by the scroll handler on the thread that draws
+   *  and read here when it is needed — which is only when the keyboard moves. */
+  const at = useSharedValue(0);
   const kb = useRef(0);
   // Tabs stay mounted behind the one you are looking at, and the keyboard
   // shouts at all of them. Only the screen in front of you may move.
@@ -241,7 +261,7 @@ export function useKeepVisible() {
       const want = Math.max(HEADER, room - h - BELOW);
       const move = y - want;
       if (Math.abs(move) < 12) return;
-      ref.current?.scrollTo({ y: Math.max(0, at.current + move), animated: true });
+      ref.current?.scrollTo({ y: Math.max(0, at.value + move), animated: true });
     });
   }, []);
 
@@ -254,11 +274,7 @@ export function useKeepVisible() {
     return () => { shown.remove(); gone.remove(); };
   }, [keep]);
 
-  /** Body hands this its scroll position, so a move can be worked out from
-   *  where the list already is. */
-  const onScroll = useCallback((y: number) => { at.current = y; }, []);
-
-  return { ref, onScroll, keep };
+  return { ref, at, keep };
 }
 
 /** The width of the small boxes that sit at the end of a row — the one button

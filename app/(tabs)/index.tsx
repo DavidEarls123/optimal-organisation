@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Keyboard, Linking, Pressable, ScrollView, View } from 'react-native';
-import { Text } from '../../src/ui/type';
+import { Text, useTextScale } from '../../src/ui/type';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, {
+  Extrapolation, interpolate, interpolateColor, runOnJS, useAnimatedStyle, useSharedValue,
+} from 'react-native-reanimated';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 
@@ -47,24 +49,18 @@ export default function DayScreen() {
   const [tagFor, setTagFor] = useState<Record<string, string>>({});
   /** Which section has its composer open. Only ever one. */
   const [adding, setAdding] = useState<string | null>(null);
-  /** How far the top has been asked to get out of the way: 0 all of it, 1 the
-   *  day strip alone, 2 nothing but the day bar. Each step has a wider band to
-   *  come back through than to go down, so a header cannot flicker between two
-   *  stages while your thumb is still. */
-  const [stage, setStage] = useState<0 | 1 | 2>(0);
+  /** How far the list has been scrolled, kept on the thread that draws so the
+   *  top can shrink with your thumb rather than in steps behind it. */
+  const scrollY = useSharedValue(0);
   const scroller = useRef<ScrollView>(null);
-  const onScrolled = useCallback((y: number) => {
-    setStage((cur) => {
-      if (cur === 0) return y > 26 ? 1 : 0;
-      if (cur === 1) return y > 168 ? 2 : y < 10 ? 0 : 1;
-      return y < 130 ? 1 : 2;
-    });
-  }, []);
   /** The habit currently asking for a weight, if any. */
   const [weighing, setWeighing] = useState<string | null>(null);
   /** True for the moment after a day is marked complete. */
   const [cheer, setCheer] = useState(false);
   const box = useBoxWidth();
+  const scale = useTextScale();
+  /** How tall the trip and countdown chips are, so they can be closed up. */
+  const [chipH, setChipH] = useState(0);
   /** The task being dragged, and where it would land. */
   const [dragId, setDragId] = useState<string | null>(null);
   /** The place it would land if you let go now, and how far down the list that
@@ -75,6 +71,27 @@ export default function DayScreen() {
   /** Headings whose finished work is showing. Folded away by default, so a
    *  day gets shorter as you get through it rather than longer. */
   const [showDone, setShowDone] = useState<Record<string, boolean>>({});
+
+  // The day bar's own collapse, over the same stretch of scrolling as the
+  // header above it, so the whole top moves as one thing.
+  const bar = useAnimatedStyle(() => ({
+    paddingTop: interpolate(scrollY.value, [0, 56], [8, 4], Extrapolation.CLAMP),
+    paddingBottom: interpolate(scrollY.value, [0, 56], [6, 5], Extrapolation.CLAMP),
+    borderBottomColor: interpolateColor(scrollY.value, [8, 44], [t.sheet, t.rule]),
+  }));
+  const dateBox = useAnimatedStyle(() => ({
+    height: interpolate(scrollY.value, [0, 56], [27 * scale, 20 * scale], Extrapolation.CLAMP),
+  }));
+  const longDate = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, 40], [1, 0], Extrapolation.CLAMP),
+  }));
+  const shortDate = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [20, 56], [0, 1], Extrapolation.CLAMP),
+  }));
+  const chips = useAnimatedStyle(() => ({
+    height: interpolate(scrollY.value, [0, 44], [chipH || 0, 0], Extrapolation.CLAMP),
+    opacity: interpolate(scrollY.value, [0, 36], [1, 0], Extrapolation.CLAMP),
+  }), [chipH]);
 
   const dateIso = week ? dayDateIso(week.monday, day) : '';
   // Headings come from the week, which took them from its template.
@@ -129,9 +146,10 @@ export default function DayScreen() {
   // Changing day puts the top back: you are starting a fresh list, and the
   // week strip is the thing you just used to get here.
   useEffect(() => {
-    setMoveId(null); setShowPicker(false); setAdding(null); setStage(0);
+    setMoveId(null); setShowPicker(false); setAdding(null);
+    scrollY.value = 0;
     scroller.current?.scrollTo({ y: 0, animated: false });
-  }, [day, weekId]);
+  }, [day, weekId, scrollY]);
 
   const tasks = useMemo(() => (week?.tasks[day] ?? []), [week, day]);
   const live = tasks;
@@ -325,24 +343,34 @@ export default function DayScreen() {
 
   return (
     <Screen>
-      <WeekHeader stage={stage} />
+      <WeekHeader scrollY={scrollY} />
 
-      {/* The day stays put while the list moves under it, shrinking to a single
-          line once you are past the top so it costs almost nothing. */}
-      <View style={{ paddingHorizontal: 18, paddingTop: stage ? 4 : 8,
-        paddingBottom: stage ? 5 : 6, borderBottomWidth: 1,
-        borderBottomColor: stage ? t.rule : 'transparent',
-        backgroundColor: t.sheet, flexDirection: 'row', alignItems: 'baseline', gap: 10 }}>
-        <Text
-          numberOfLines={1}
-          style={{ flex: 1, fontWeight: '700', color: t.ink,
-            fontSize: stage ? 15 : 21, letterSpacing: -0.3 }}
-        >
-          {parseISO(dateIso).toLocaleDateString('en-GB', stage
-            ? { weekday: 'short', day: 'numeric', month: 'short' }
-            : { weekday: 'long', day: 'numeric', month: 'long' })}
-        </Text>
-        <Mono style={{ fontSize: stage ? 11 : 12.5 }}>
+      {/* The day stays put while the list moves under it, shrinking as it goes
+          so it costs almost nothing once you are down the page. The two ways of
+          writing the date are stacked and faded between, because a long date
+          becoming a short one is a change of words, not of size. */}
+      <Animated.View style={[{ paddingHorizontal: 18, borderBottomWidth: 1,
+        backgroundColor: t.sheet, flexDirection: 'row', alignItems: 'center', gap: 10,
+        borderBottomColor: t.rule }, bar]}>
+        <Animated.View style={[{ flex: 1, justifyContent: 'center' }, dateBox]}>
+          <Animated.Text
+            numberOfLines={1}
+            style={[{ position: 'absolute', left: 0, right: 0, fontWeight: '700',
+              color: t.ink, fontSize: 21 * scale, letterSpacing: -0.3 }, longDate]}
+          >
+            {parseISO(dateIso).toLocaleDateString('en-GB',
+              { weekday: 'long', day: 'numeric', month: 'long' })}
+          </Animated.Text>
+          <Animated.Text
+            numberOfLines={1}
+            style={[{ position: 'absolute', left: 0, right: 0, fontWeight: '700',
+              color: t.ink, fontSize: 15 * scale, letterSpacing: -0.3 }, shortDate]}
+          >
+            {parseISO(dateIso).toLocaleDateString('en-GB',
+              { weekday: 'short', day: 'numeric', month: 'short' })}
+          </Animated.Text>
+        </Animated.View>
+        <Mono style={{ fontSize: 11.5 }}>
           {`${live.filter((x) => x.state === 'done').length}/${live.length}`}
         </Mono>
         {undoLabel ? (
@@ -357,11 +385,19 @@ export default function DayScreen() {
             <Glyph name="arrow.uturn.backward" fallback="↺" size={14} colour={t.ink2} />
           </Pressable>
         ) : null}
-      </View>
+      </Animated.View>
 
-      {stage === 0 && (marks.trips.length || marks.events.length) ? (
-        <View style={{ paddingHorizontal: 18, paddingBottom: 8, flexDirection: 'row',
-          flexWrap: 'wrap', gap: 6, backgroundColor: t.sheet }}>
+      {marks.trips.length || marks.events.length ? (
+        <Animated.View
+          style={[{ backgroundColor: t.sheet, overflow: 'hidden' }, chips]}
+        >
+          {/* Measured inside the box, not on it: the box's own height is the
+              thing being animated, so asking it how tall it is would only ever
+              give back the answer it was just given. */}
+          <View
+            onLayout={(e) => setChipH(Math.round(e.nativeEvent.layout.height) + 8)}
+            style={{ paddingHorizontal: 18, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}
+          >
           {marks.trips.map((name) => (
             <View key={`t-${name}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
               borderWidth: 1, borderColor: t.accentLine, backgroundColor: t.accentSoft,
@@ -378,10 +414,11 @@ export default function DayScreen() {
               <Text style={{ fontSize: 11.5, fontWeight: '600', color: t.ink2 }}>{name}</Text>
             </View>
           ))}
-        </View>
+          </View>
+        </Animated.View>
       ) : null}
 
-      <Body top={6} scrollRef={scroller} onScroll={onScrolled}>
+      <Body top={6} scrollRef={scroller} scrollY={scrollY}>
         {off ? (
           <View style={{ backgroundColor: t.sunk, borderRadius: radius.md, padding: 11 }}>
             <Text style={{ fontSize: 12.5, lineHeight: 18, color: t.ink2 }}>
