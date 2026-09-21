@@ -3,7 +3,7 @@ import { Pressable, View } from 'react-native';
 import Animated, {
   Extrapolation, interpolate, useAnimatedStyle, type SharedValue,
 } from 'react-native-reanimated';
-import { Text } from './type';
+import { Text, useTextScale } from './type';
 import { useRouter } from 'expo-router';
 
 import { useStore } from '../store/store';
@@ -138,7 +138,7 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
               accessibilityRole="button"
               accessibilityState={{ selected }}
               accessibilityLabel={`${letter} ${parseISO(week.monday).getDate() + d}`}
-              style={{ flex: 1, alignItems: 'center', gap: 5, paddingVertical: 7,
+              style={{ flex: 1, alignItems: 'center', gap: 5, paddingTop: 7, paddingBottom: 5,
                 borderRadius: radius.md, borderWidth: selected ? look.border : 1,
                 borderColor: selected ? look.edge : 'transparent',
                 backgroundColor: selected ? look.fill : 'transparent',
@@ -163,7 +163,7 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
               </View>
               {/* A trip or a countdown on this day, so it shows without going
                   to Coming Up to find it. */}
-              <Text style={{ fontSize: 8, lineHeight: 9, marginTop: -3, height: 9,
+              <Text style={{ fontSize: 8, lineHeight: 9, marginTop: -4, height: 8,
                 color: selected ? look.ink : t.ink2 }}>
                 {(() => {
                   const m = marksOn(state, isoOf(addDays(parseISO(week.monday), d)));
@@ -184,45 +184,39 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
  *  It is always drawn and always the same height — only its opacity moves.
  *  Anything pinned that changes height shoves the list about underneath it,
  *  which is the opposite of what pinning something is for. */
-/** How much room the one-line strip takes once it is all the way out. */
-export const SLIM = 30;
-/** The stretch of scrolling it opens over. */
-export const SLIM_FROM = 44;
-export const SLIM_TO = 112;
-
-/** The space the strip will eventually need, given up by the header above it
- *  at exactly the rate the strip takes it.
+/** The stretch of scrolling the one-line strip opens over.
  *
- *  This is the whole trick. The bar growing on its own would push the list
- *  down; the header shrinking on its own would pull it up. Done together, over
- *  the same scrolling, the list below does not move at all — and there is no
- *  band of nothing under the date at the top of the page waiting for a strip
- *  that is not there yet. */
-export function SlimRoom({ scrollY }: { scrollY: SharedValue<number> }) {
-  const room = useAnimatedStyle(() => ({
-    height: interpolate(scrollY.value, [SLIM_FROM, SLIM_TO], [SLIM, 0], Extrapolation.CLAMP),
-  }));
-  return <Animated.View style={room} />;
-}
+ *  Long on purpose. The strip has to take its room from somewhere, and keeping
+ *  a space for it at the top of the page — under the date, for something that
+ *  is not there yet — is worse than the list easing down a little as it opens.
+ *  Spread over this much scrolling, that easing is about a sixth of the speed
+ *  of your thumb and in the direction that reads as the page settling, rather
+ *  than the page running away from you. */
+const OPENS = 56;
+const OPEN_BY = 280;
 
 export function SlimStrip({ scrollY }: { scrollY: SharedValue<number> }) {
   const t = useTheme();
+  const scale = useTextScale();
   const { state, weekId, day, setDay, today } = useStore();
   const week = state.weeks[weekId];
   const look = dayLook(t);
+  // Measured off the writing, because the writing is a setting. A fixed height
+  // here cut the day you are on in half at the larger sizes.
+  const tall = Math.round(26 * scale);
   // Opened from nothing to its full height, and clipped while it does, so it
-  // is uncovered from under the date rather than squashed.
+  // is uncovered from under the date rather than dropped on top of it.
   const opening = useAnimatedStyle(() => ({
-    height: interpolate(scrollY.value, [SLIM_FROM, SLIM_TO], [0, SLIM], Extrapolation.CLAMP),
-  }));
+    height: interpolate(scrollY.value, [OPENS, OPEN_BY], [0, tall], Extrapolation.CLAMP),
+  }), [tall]);
   if (!week) return null;
   const current = isCurrentWeek(week, today);
   const ti = todayIndex(week, today);
 
   return (
     <Animated.View style={[{ overflow: 'hidden' }, opening]}>
-      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: SLIM,
-        paddingHorizontal: 18, paddingTop: 3, paddingBottom: 2 }}>
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: tall,
+        paddingHorizontal: 18, justifyContent: 'center' }}>
           <View style={{ flexDirection: 'row', gap: 3 }}>
             {DAY_LETTERS.map((letter, d) => {
               const selected = d === day;
@@ -244,7 +238,8 @@ export function SlimStrip({ scrollY }: { scrollY: SharedValue<number> }) {
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
                   accessibilityLabel={`${letter} ${addDays(parseISO(week.monday), d).getDate()}`}
-                  style={{ flex: 1, alignItems: 'center', gap: 3, paddingVertical: 4,
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center',
+                    justifyContent: 'center', gap: 5, paddingVertical: 2,
                     borderRadius: radius.sm + 1,
                     borderWidth: selected ? 1 : 0,
                     borderColor: selected ? look.edge : 'transparent',
