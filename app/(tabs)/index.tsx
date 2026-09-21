@@ -2,11 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Keyboard, Linking, Pressable, View } from 'react-native';
 import { Text } from '../../src/ui/type';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, {
+  Extrapolation, interpolate, runOnJS, useAnimatedStyle, useSharedValue,
+} from 'react-native-reanimated';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 
-import { SlimStrip, WeekHeader } from '../../src/ui/WeekHeader';
+import { OPENS, OPEN_BY, SlimStrip, WeekHeader } from '../../src/ui/WeekHeader';
 import { DayDone } from '../../src/ui/DayDone';
 import {
   Bar, Body, Button, Chip, Empty, Field, Glyph, Mono, Note, Screen, Section, SectionHead,
@@ -65,6 +67,11 @@ export default function DayScreen() {
   /** Headings whose finished work is showing. Folded away by default, so a
    *  day gets shorter as you get through it rather than longer. */
   const [showDone, setShowDone] = useState<Record<string, boolean>>({});
+
+  const dateRow = useAnimatedStyle(() => ({
+    paddingTop: interpolate(scrollY.value, [OPENS, OPEN_BY], [4, 1], Extrapolation.CLAMP),
+    paddingBottom: interpolate(scrollY.value, [OPENS, OPEN_BY], [7, 3], Extrapolation.CLAMP),
+  }));
 
   const dateIso = week ? dayDateIso(week.monday, day) : '';
   // Headings come from the week, which took them from its template.
@@ -358,8 +365,10 @@ export default function DayScreen() {
    *  and never at the cost of a gap under the date at the top of the page. */
   const pinned = (
     <View style={{ backgroundColor: t.sheet, borderBottomWidth: 1, borderBottomColor: t.rule }}>
-      <View style={{ paddingHorizontal: 18, paddingTop: 3, paddingBottom: 6,
-        flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      {/* The date gives up a few points of its own air as the strip opens, so
+          less of the room the strip needs has to come off the list. */}
+      <Animated.View style={[{ paddingHorizontal: 18,
+        flexDirection: 'row', alignItems: 'center', gap: 10 }, dateRow]}>
         <Text
           numberOfLines={1}
           style={{ flex: 1, fontWeight: '700', color: t.ink, fontSize: 17,
@@ -383,7 +392,7 @@ export default function DayScreen() {
             <Glyph name="arrow.uturn.backward" fallback="↺" size={14} colour={t.ink2} />
           </Pressable>
         ) : null}
-      </View>
+      </Animated.View>
       <SlimStrip scrollY={scrollY} />
     </View>
   );

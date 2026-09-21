@@ -186,14 +186,12 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
  *  which is the opposite of what pinning something is for. */
 /** The stretch of scrolling the one-line strip opens over.
  *
- *  Long on purpose. The strip has to take its room from somewhere, and keeping
- *  a space for it at the top of the page — under the date, for something that
- *  is not there yet — is worse than the list easing down a little as it opens.
- *  Spread over this much scrolling, that easing is about a sixth of the speed
- *  of your thumb and in the direction that reads as the page settling, rather
- *  than the page running away from you. */
-const OPENS = 56;
-const OPEN_BY = 280;
+ *  Short, and it ends inside the first flick. Spreading it out kept the list
+ *  steadier but left the strip caught halfway for most of a page — and a row
+ *  of letters halfway out of a box does not read as a transition in progress,
+ *  it reads as something cut off. Better to be over with. */
+export const OPENS = 16;
+export const OPEN_BY = 84;
 
 export function SlimStrip({ scrollY }: { scrollY: SharedValue<number> }) {
   const t = useTheme();
@@ -203,11 +201,15 @@ export function SlimStrip({ scrollY }: { scrollY: SharedValue<number> }) {
   const look = dayLook(t);
   // Measured off the writing, because the writing is a setting. A fixed height
   // here cut the day you are on in half at the larger sizes.
-  const tall = Math.round(26 * scale);
+  const tall = Math.round(22 * scale);
   // Opened from nothing to its full height, and clipped while it does, so it
   // is uncovered from under the date rather than dropped on top of it.
   const opening = useAnimatedStyle(() => ({
     height: interpolate(scrollY.value, [OPENS, OPEN_BY], [0, tall], Extrapolation.CLAMP),
+    // Up to full before the box is, so the little of it you catch on the way
+    // is faint rather than half a row of letters.
+    opacity: interpolate(scrollY.value, [OPENS, OPENS + (OPEN_BY - OPENS) * 0.7], [0, 1],
+      Extrapolation.CLAMP),
   }), [tall]);
   if (!week) return null;
   const current = isCurrentWeek(week, today);
