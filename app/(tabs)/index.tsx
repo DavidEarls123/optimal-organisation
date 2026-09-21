@@ -6,7 +6,7 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-nativ
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 
-import { SlimStrip, WeekHeader } from '../../src/ui/WeekHeader';
+import { SlimRoom, SlimStrip, WeekHeader } from '../../src/ui/WeekHeader';
 import { DayDone } from '../../src/ui/DayDone';
 import {
   Bar, Body, Button, Chip, Empty, Field, Glyph, Mono, Note, Screen, Section, SectionHead,
@@ -349,12 +349,15 @@ export default function DayScreen() {
           ))}
         </View>
       ) : null}
+      {/* Given up at the same rate the strip below takes it, so the list
+          underneath does not move a point either way. */}
+      <SlimRoom scrollY={scrollY} />
     </View>
   );
 
-  /** What stays: the seven days on one line, fading in as the week goes by
-   *  above it, and the day you are on. One fixed height — a pinned thing that
-   *  changes size pushes the list around underneath it. */
+  /** What stays: the day you are on, and the seven days on one line opening
+   *  underneath it as the week goes by above. The strip only ever takes room
+   *  the header is giving up at the same moment, so nothing below is moved. */
   const pinned = (
     <View style={{ backgroundColor: t.sheet, borderBottomWidth: 1, borderBottomColor: t.rule }}>
       <View style={{ paddingHorizontal: 18, paddingTop: 6, paddingBottom: 7,
@@ -383,8 +386,6 @@ export default function DayScreen() {
           </Pressable>
         ) : null}
       </View>
-      {/* Hung below the bar rather than held inside it, so at the top of the
-          page there is no band of nothing under the date waiting for it. */}
       <SlimStrip scrollY={scrollY} />
     </View>
   );

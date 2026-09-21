@@ -184,36 +184,45 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
  *  It is always drawn and always the same height — only its opacity moves.
  *  Anything pinned that changes height shoves the list about underneath it,
  *  which is the opposite of what pinning something is for. */
-const SLIM = 30;
+/** How much room the one-line strip takes once it is all the way out. */
+export const SLIM = 30;
+/** The stretch of scrolling it opens over. */
+export const SLIM_FROM = 44;
+export const SLIM_TO = 112;
 
-export function SlimStrip({ scrollY, from = 44, to = 112 }: {
-  scrollY: SharedValue<number>;
-  /** Where it starts and finishes arriving, as the header goes by. */
-  from?: number;
-  to?: number;
-}) {
+/** The space the strip will eventually need, given up by the header above it
+ *  at exactly the rate the strip takes it.
+ *
+ *  This is the whole trick. The bar growing on its own would push the list
+ *  down; the header shrinking on its own would pull it up. Done together, over
+ *  the same scrolling, the list below does not move at all — and there is no
+ *  band of nothing under the date at the top of the page waiting for a strip
+ *  that is not there yet. */
+export function SlimRoom({ scrollY }: { scrollY: SharedValue<number> }) {
+  const room = useAnimatedStyle(() => ({
+    height: interpolate(scrollY.value, [SLIM_FROM, SLIM_TO], [SLIM, 0], Extrapolation.CLAMP),
+  }));
+  return <Animated.View style={room} />;
+}
+
+export function SlimStrip({ scrollY }: { scrollY: SharedValue<number> }) {
   const t = useTheme();
   const { state, weekId, day, setDay, today } = useStore();
   const week = state.weeks[weekId];
   const look = dayLook(t);
-  // It slides out from under the bar rather than fading in where a space has
-  // been kept for it. A space kept for it is a gap under the date all the way
-  // up at the top of the page, for something that is not there yet.
-  const shown = useAnimatedStyle(() => ({
-    transform: [{
-      translateY: interpolate(scrollY.value, [from, to], [-SLIM, 0], Extrapolation.CLAMP),
-    }],
+  // Opened from nothing to its full height, and clipped while it does, so it
+  // is uncovered from under the date rather than squashed.
+  const opening = useAnimatedStyle(() => ({
+    height: interpolate(scrollY.value, [SLIM_FROM, SLIM_TO], [0, SLIM], Extrapolation.CLAMP),
   }));
   if (!week) return null;
   const current = isCurrentWeek(week, today);
   const ti = todayIndex(week, today);
 
   return (
-    <Animated.View
-      style={[{ position: 'absolute', top: '100%', left: 0, right: 0, height: SLIM,
-        backgroundColor: t.sheet, borderBottomWidth: 1, borderBottomColor: t.rule }, shown]}
-    >
-      <View style={{ paddingHorizontal: 18, paddingTop: 3, paddingBottom: 2 }}>
+    <Animated.View style={[{ overflow: 'hidden' }, opening]}>
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: SLIM,
+        paddingHorizontal: 18, paddingTop: 3, paddingBottom: 2 }}>
           <View style={{ flexDirection: 'row', gap: 3 }}>
             {DAY_LETTERS.map((letter, d) => {
               const selected = d === day;
