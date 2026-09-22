@@ -19,7 +19,7 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES, dayDateIso, isoOf, parseISO } from '../../src/domain/dates';
 import {
-  dropSlots, marksOn, moveChoices, moveTask, nudgeTask, orderedTasks, placeTask, sectionsOf,
+  dropSlots, marksOn, moveChoices, moveTask, orderedTasks, placeTask, sectionsOf,
   uid,
 } from '../../src/domain/week';
 import {
@@ -143,10 +143,6 @@ export default function DayScreen() {
       if (next === 'done') x.doneAt = Date.now();
       else delete x.doneAt;
     }, next === 'done' ? 'ticking that off' : 'unticking that');
-  }, [update, weekId, day]);
-
-  const reorder = useCallback((id: string, dir: -1 | 1) => {
-    update((d) => { nudgeTask(d, weekId, day, id, dir); }, 'moving that task');
   }, [update, weekId, day]);
 
   /** Where every row sits on the screen, measured rather than assumed: a row
@@ -494,7 +490,6 @@ export default function DayScreen() {
                   onToggle={() => setTaskState(x.id, x.state === 'done' ? 'open' : 'done')}
                   onDelete={() => deleteTask(x.id, x.text)}
                   onOpenMove={() => { setMoveId(moveId === x.id ? null : x.id); setShowPicker(false); }}
-                  onReorder={(dir) => reorder(x.id, dir)}
                   onRename={(text) => update((d) => {
                     const item = (d.weeks[weekId].tasks[day] ?? []).find((y) => y.id === x.id);
                     if (item) item.text = text;
@@ -988,12 +983,12 @@ function TagPicker({ value, onChange }: { value: string; onChange: (v: string) =
 }
 
 function TaskRow({
-  task, open, onToggle, onDelete, onOpenMove, onReorder, onPickDate, onRename, onNote,
+  task, open, onToggle, onDelete, onOpenMove, onPickDate, onRename, onNote,
   choices, onMoveToDate, onMeasure, onDragMove, onDragEnd, dragging,
 }: {
   task: Task; open: boolean;
   onToggle: () => void; onDelete: () => void; onOpenMove: () => void;
-  onReorder: (dir: -1 | 1) => void; onPickDate: () => void;
+  onPickDate: () => void;
   onRename: (text: string) => void;
   onNote: (text: string) => void;
   /** Forward days offered in the strip, computed once by the screen. */
@@ -1111,14 +1106,13 @@ function TaskRow({
           />
         ) : (
           <Pressable
-            // The name does not tick it off. Ticking something by accident while
-            // reading down a list is worth more than a second tap target, so the
-            // box is the only thing that does it — this opens the panel instead.
-            onPress={onOpenMove}
-            onLongPress={() => { setDraft(task.text); setEditing(true); }}
-            delayLongPress={300}
+            // The name does not tick it off — ticking something by accident
+            // while reading down a list is worth more than a second tap target
+            // for the box. Tapping it is how you change it, which is where
+            // anybody would look first.
+            onPress={() => { setDraft(task.text); setEditing(true); }}
             accessibilityRole="button"
-            accessibilityLabel={open ? `Close options for ${task.text}` : `Options for ${task.text}`}
+            accessibilityLabel={`Rename ${task.text}`}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}
           >
             <Text style={{ flexShrink: 1, fontSize: 14.5, lineHeight: 19,
@@ -1184,6 +1178,18 @@ function TaskRow({
                 </Text>
               </Pressable>
             ))}
+            {/* Further out than the week in front of you, at the end of it,
+                because it is the same question asked of a wider answer. */}
+            <Pressable
+              onPress={onPickDate}
+              accessibilityRole="button"
+              accessibilityLabel="Move to a date further out"
+              style={{ flex: 1, borderWidth: 1, borderRadius: radius.sm + 1,
+                paddingVertical: 6, alignItems: 'center', justifyContent: 'center', gap: 1,
+                borderColor: t.accentLine, backgroundColor: t.accentSoft }}
+            >
+              <Glyph name="calendar" fallback="▦" size={17} colour={t.accent} />
+            </Pressable>
           </View>
           <Mono style={{ letterSpacing: 1, textTransform: 'uppercase', fontSize: 10,
             paddingTop: 2 }}>
@@ -1200,33 +1206,9 @@ function TaskRow({
             style={{ minHeight: 88, textAlignVertical: 'top', paddingTop: 10, lineHeight: 19 }}
           />
 
-          <View style={{ flexDirection: 'row', gap: 7 }}>
-            {/* Up and Down share the width Rename has below; Pick a date lines
-                up with Delete, so the panel reads as two even columns. */}
-            <View style={{ flex: 1, flexDirection: 'row', gap: 7 }}>
-              <View style={{ flex: 1 }}>
-                <Button tone="ghost" title="↑ Up" onPress={() => onReorder(-1)} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Button tone="ghost" title="↓ Down" onPress={() => onReorder(1)} />
-              </View>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Button title="Pick a date…" onPress={onPickDate} />
-            </View>
-          </View>
-          <View style={{ flexDirection: 'row', gap: 7 }}>
-            <View style={{ flex: 1 }}>
-              <Button
-                tone="ghost"
-                title="Rename"
-                onPress={() => { setDraft(task.text); setEditing(true); }}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Button tone="ghost" title="Delete" onPress={onDelete} />
-            </View>
-          </View>
+          {/* Nothing else is left in here. Moving one up or down is what the
+              grip is for, and renaming is what the name is for. */}
+          <Button tone="ghost" title="Delete" onPress={onDelete} />
         </View>
       ) : null}
     </Animated.View>
