@@ -481,23 +481,36 @@ test('what the summary promises is what building a week delivers', () => {
   }
 });
 
-test('the training a template card shows is the training a week delivers', () => {
+test('the training a template card shows is the training it lays down', () => {
   const s = fresh('run');
   const shown = templateTraining(s, 'run');
-  assert.ok(shown.length > 0, 'a run block lays down tagged sessions');
+  assert.ok(shown.length > 0, 'a run block lays down sessions worth counting');
 
+  // The card counts what the template is for. It is read off the template's
+  // own plan, so it says the same thing however a week built from it is
+  // afterwards worked through.
+  const plan = s.templates.run.plan;
+  const want: Record<string, number> = {};
+  for (const day of plan) {
+    for (const [, track] of day) if (track) want[track] = (want[track] ?? 0) + 1;
+  }
+  assert.deepEqual(Object.fromEntries(shown.map((k) => [k.id, k.n])), want);
+});
+
+test('a week built from a template arrives with no tags on anything', () => {
+  // A tag says a session happened and counts towards what you track. Only you
+  // can say that, so nothing arrives already wearing one.
+  const s = fresh('run');
   ensureWeek(s, '2026-09-21');
   const w = s.weeks['2026-W39'];
-  const built: Record<string, number> = {};
+  const tagged = [];
   for (let d = 0; d < 7; d += 1) {
-    for (const task of w.tasks[d] ?? []) {
-      if (task.track) built[task.track] = (built[task.track] ?? 0) + 1;
-    }
+    for (const task of w.tasks[d] ?? []) if (task.track) tagged.push(task.text);
   }
-  assert.deepEqual(
-    Object.fromEntries(shown.map((k) => [k.id, k.n])), built,
-    'the card and the built week agree on every trackable',
-  );
+  assert.deepEqual(tagged, [], 'nothing came in pre-tagged');
+  const any = Array.from({ length: 7 }, (_, d) => (w.tasks[d] ?? []).length)
+    .reduce((a, b) => a + b, 0);
+  assert.ok(any > 0, 'and the tasks themselves did arrive');
 });
 
 test('the template cards distinguish a run block from a deload', () => {

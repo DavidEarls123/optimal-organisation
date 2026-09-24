@@ -1,22 +1,31 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Alert, Pressable, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { Text } from '../src/ui/type';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { Body, Button, Field, Mono, Note, Screen, Section, SectionHead } from '../src/ui/primitives';
+import {
+  Body, Button, Empty, Field, Mono, Note, Screen, Section, SectionHead, Sheet,
+} from '../src/ui/primitives';
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
 import { TEMPLATE_GOALS } from '../src/domain/catalogue';
 import { DAY_LETTERS, DAY_NAMES } from '../src/domain/dates';
 import {
-  clonePlan, countPlan, daysPlan, deleteTemplate, everyPlan, planFromList, planTaskList, uid,
+  clonePlan, copyTemplateInto, countPlan, daysPlan, deleteTemplate, everyPlan, planFromList,
+  planTaskList, uid,
 } from '../src/domain/week';
 import type { PlanTask } from '../src/domain/week';
+import { useListDrag } from '../src/ui/useListDrag';
 import type { HabitMode, HabitPlan, WeekTemplate } from '../src/domain/types';
 
 /** As long as a task's name can be on a day. */
 const PLAN_LIMIT = 120;
+
+/** The headings are a flat list, which is a list with one heading of its own. */
+const ONE = 'all';
 
 /** What the template asks of a habit, read out of a draft rather than the store. */
 function planIn(draft: WeekTemplate, habit: { id: string; def?: HabitPlan }): HabitPlan {
@@ -46,6 +55,7 @@ export default function TemplateEditScreen() {
   const [draft, setDraft] = useState<WeekTemplate | null>(
     () => (saved ? JSON.parse(JSON.stringify(saved)) : null));
   const [busy, setBusy] = useState(false);
+  const [copying, setCopying] = useState(false);
   const [tasks, setTaskList] = useState<PlanTask[]>(
     () => (saved ? planTaskList(saved.plan ?? []) : []));
 
@@ -64,8 +74,27 @@ export default function TemplateEditScreen() {
    *  Kept as its own state so a task can sit there with no days or no name
    *  while you are still typing it, rather than vanishing mid-word. */
   /** The headings this template gives a day, which is what a task's place in
-   *  the list refers to. */
+   *  the list refers to, and the order a day lays them out in. */
   const secs = tpl.sections ?? state.sections;
+
+  // A flat list is a list with one heading, so the drag that moves tasks under
+  // headings moves headings too, with none of it written twice.
+  const secDrag = useListDrag({
+    order: secs.map((x) => ({ id: x.id, sec: ONE })),
+    sections: [ONE],
+    onDrop: (id, at) => edit((d) => {
+      const list = d.sections ?? state.sections.map((x) => ({ ...x }));
+      const from = list.findIndex((x) => x.id === id);
+      if (from < 0) return;
+      const rest = list.filter((x) => x.id !== id);
+      rest.splice(Math.max(0, Math.min(rest.length, at)), 0, list[from]);
+      d.sections = rest;
+    }),
+  });
+  const secLine = secDrag.lineIn(ONE);
+
+  /** Every other template, as something to copy from. */
+  const others = Object.values(state.templates).filter((x) => x.id !== templateId);
 
   const setTasks = (fn: (list: PlanTask[]) => PlanTask[]) => {
     const next = fn(tasks);
@@ -159,37 +188,40 @@ export default function TemplateEditScreen() {
             right={`${(tpl.sections ?? state.sections).length}`}
           />
           <Note>
-            The headings a day is split into on this kind of week. A week takes a copy when
-            it is built, so changing them here shapes weeks from now on.
+            The headings a day is split into on this kind of week, in the order a day puts
+            them — hold the ⠿ to move one. A week takes a copy when it is built, so changing
+            them here shapes weeks from now on.
           </Note>
-          {(tpl.sections ?? state.sections).map((sc, i) => (
-            <View key={sc.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Mono style={{ width: 16 }}>{String(i + 1)}</Mono>
-              <Field
-                value={sc.name}
-                onChangeText={(v) => edit((d) => {
+          <View onLayout={(e) => secDrag.measureList(ONE, e.nativeEvent.layout.y)}>
+            {secs.map((sc, i) => (
+              <SectionRow
+                key={sc.id}
+                index={i}
+                name={sc.name}
+                canRemove={secs.length > 1}
+                onRename={(v) => edit((d) => {
                   d.sections = (d.sections ?? state.sections.map((x) => ({ ...x })));
                   const found = d.sections.find((x) => x.id === sc.id);
                   if (found) found.name = v;
                 })}
-                maxLength={24}
-                accessibilityLabel={`Rename ${sc.name}`}
+                onRemove={() => edit((d) => {
+                  d.sections = (d.sections ?? state.sections.map((x) => ({ ...x })))
+                    .filter((x) => x.id !== sc.id);
+                })}
+                onMeasure={(y, h) => secDrag.measureRow(sc.id, y, h)}
+                onDragMove={(dy) => secDrag.onDragMove(sc.id, dy)}
+                onDragEnd={(dy) => secDrag.onDragEnd(sc.id, dy)}
+                dragging={secDrag.dragId === sc.id}
               />
-              {(tpl.sections ?? state.sections).length > 1 ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${sc.name}`}
-                  hitSlop={8}
-                  onPress={() => edit((d) => {
-                    d.sections = (d.sections ?? state.sections.map((x) => ({ ...x })))
-                      .filter((x) => x.id !== sc.id);
-                  })}
-                >
-                  <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          ))}
+            ))}
+            {secLine !== null ? (
+              <View
+                pointerEvents="none"
+                style={{ position: 'absolute', left: 0, right: 0, top: secLine - 1, height: 2,
+                  borderRadius: 1, backgroundColor: t.accent, zIndex: 20 }}
+              />
+            ) : null}
+          </View>
           <Button
             tone="ghost"
             title="+ Add a section"
@@ -292,7 +324,7 @@ export default function TemplateEditScreen() {
             tone="ghost"
             title="+ Add a standard task"
             onPress={() => setTasks((list) => [...list,
-              { text: '', track: null, si: 0, days: [0, 1, 2, 3, 4, 5, 6] }])}
+              { text: '', si: 0, days: [0, 1, 2, 3, 4, 5, 6] }])}
           />
         </Section>
 
@@ -444,6 +476,47 @@ export default function TemplateEditScreen() {
         </View>
 
         <Section>
+          <SectionHead title="Start from another" />
+          <Note>
+            Take another template's shape wholesale: its headings, its standard tasks, what
+            it asks of each habit and how it scores them. Only the name stays yours. Nothing
+            is saved until you save, so you can look and back out.
+          </Note>
+          <Button tone="ghost" title="Copy from an existing template"
+            onPress={() => setCopying(true)} />
+        </Section>
+
+        <Sheet open={copying} title="Copy from" onClose={() => setCopying(false)}>
+          <Note>
+            Everything but the name is replaced by that template's. What this one currently
+            says is gone the moment you save.
+          </Note>
+          {others.length === 0 ? <Empty>There is nothing else to copy from.</Empty> : null}
+          {others.map((other) => (
+            <Pressable
+              key={other.id}
+              accessibilityRole="button"
+              accessibilityLabel={`Copy ${other.name}`}
+              onPress={() => {
+                const next = copyTemplateInto(tpl, other);
+                setDraft(next);
+                setTaskList(planTaskList(next.plan ?? []));
+                setCopying(false);
+              }}
+              style={{ borderWidth: 1, borderColor: t.rule, borderRadius: radius.md,
+                paddingHorizontal: 12, paddingVertical: 11, gap: 2 }}
+            >
+              <Text style={{ fontSize: 14.5, fontWeight: '600', color: t.ink }}>{other.name}</Text>
+              <Mono style={{ fontSize: 10.5 }}>
+                {`${(other.sections ?? state.sections).length} headings`}
+                {` · ${planTaskList(other.plan ?? []).length} standard tasks`}
+                {other.tag ? ` · ${other.tag}` : ''}
+              </Mono>
+            </Pressable>
+          ))}
+        </Sheet>
+
+        <Section>
           <SectionHead title="Danger" right={inUse ? `used by ${inUse} week${inUse === 1 ? '' : 's'}` : 'unused'} />
           <Button
             tone="ghost"
@@ -473,5 +546,81 @@ export default function TemplateEditScreen() {
         </Section>
       </Body>
     </Screen>
+  );
+}
+
+/** One heading in a template, held and dragged into the order a day will lay
+ *  them out in. */
+function SectionRow({
+  index, name, canRemove, onRename, onRemove, onMeasure, onDragMove, onDragEnd, dragging,
+}: {
+  index: number; name: string; canRemove: boolean;
+  onRename: (v: string) => void;
+  onRemove: () => void;
+  onMeasure: (y: number, h: number) => void;
+  onDragMove: (dy: number) => void;
+  onDragEnd: (dy: number) => void;
+  dragging: boolean;
+}) {
+  const t = useTheme();
+  const lift = useSharedValue(0);
+  const told = useSharedValue(0);
+  const pan = useMemo(
+    () => Gesture.Pan()
+      .activateAfterLongPress(220)
+      .onStart((e) => { told.value = e.translationY; runOnJS(onDragMove)(e.translationY); })
+      .onUpdate((e) => {
+        lift.value = e.translationY;
+        if (Math.abs(e.translationY - told.value) < 6) return;
+        told.value = e.translationY;
+        runOnJS(onDragMove)(e.translationY);
+      })
+      .onEnd((e) => { runOnJS(onDragEnd)(e.translationY); lift.value = 0; })
+      .onFinalize(() => { lift.value = 0; }),
+    [lift, told, onDragMove, onDragEnd],
+  );
+  const lifted = useAnimatedStyle(() => ({ transform: [{ translateY: lift.value }] }));
+
+  return (
+    <Animated.View
+      onLayout={(e) => onMeasure(e.nativeEvent.layout.y, e.nativeEvent.layout.height)}
+      style={[{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4,
+        zIndex: dragging ? 10 : 0,
+        backgroundColor: dragging ? t.sheet2 : 'transparent',
+        borderRadius: dragging ? radius.md : 0 }, lifted]}
+    >
+      <GestureDetector gesture={pan}>
+        <View
+          accessible
+          accessibilityRole="adjustable"
+          accessibilityLabel={`Hold to move ${name}`}
+          hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+        >
+          <Text style={{ color: dragging ? t.accent : t.ink3, fontSize: 15, lineHeight: 18 }}>⠿</Text>
+        </View>
+      </GestureDetector>
+      <Mono style={{ width: 14 }}>{String(index + 1)}</Mono>
+      {/* Typed as it will be drawn: a day shouts its headings, so this does
+          too, and what you type is what you get rather than a surprise. */}
+      <Field
+        value={name}
+        onChangeText={onRename}
+        onBlur={() => onRename(name.trim())}
+        maxLength={24}
+        accessibilityLabel={`Rename ${name}`}
+        style={{ letterSpacing: 1.1, textTransform: 'uppercase', fontWeight: '700',
+          fontSize: 12.5 }}
+      />
+      {canRemove ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Remove ${name}`}
+          hitSlop={8}
+          onPress={onRemove}
+        >
+          <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
+        </Pressable>
+      ) : null}
+    </Animated.View>
   );
 }

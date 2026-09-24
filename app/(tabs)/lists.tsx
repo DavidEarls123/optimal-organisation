@@ -252,6 +252,10 @@ function Shopping() {
                   const gg = d.weeks[weekId].shop?.find((x) => x.id === g.id);
                   if (gg) gg.name = v;
                 })}
+                onBlur={() => update((d) => {
+                  const gg = d.weeks[weekId].shop?.find((x) => x.id === g.id);
+                  if (gg) gg.name = gg.name.trim();
+                })}
                 maxLength={28}
                 style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 0, paddingHorizontal: 0,
                   paddingVertical: 2, fontSize: 12.5, letterSpacing: 1.1, textTransform: 'uppercase',
@@ -399,8 +403,11 @@ function Shopping() {
                 opacity: nothing ? 0.4 : 1 }}
             >
               <Tick on={on} tone="accent" />
-              <Text style={{ flex: 1, fontSize: 14.5, color: t.ink,
-                fontWeight: on ? '600' : '400' }}>{o.name}</Text>
+              {/* A heading looks like a heading here too. Shown as typed in one
+                  place and shouted in another, the same heading reads as two. */}
+              <Text style={{ flex: 1, fontSize: 12.5, letterSpacing: 1.1,
+                textTransform: 'uppercase', fontWeight: on ? '800' : '700',
+                color: on ? t.accent : t.ink }}>{o.name}</Text>
               <Mono style={{ fontSize: 11 }}>
                 {nothing ? 'all here' : `+${o.adds}${o.isNew ? ' · new' : ''}`}
               </Mono>

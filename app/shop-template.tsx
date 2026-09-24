@@ -57,6 +57,10 @@ export default function ShopTemplateScreen() {
                   const gg = d.shopTemplate?.find((x) => x.id === g.id);
                   if (gg) gg.name = v;
                 })}
+                onBlur={() => update((d) => {
+                  const gg = d.shopTemplate?.find((x) => x.id === g.id);
+                  if (gg) gg.name = gg.name.trim();
+                })}
                 maxLength={HEADING_LIMIT}
                 accessibilityLabel={`Rename ${g.name}`}
                 style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 0,

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Dimensions, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View,
   useWindowDimensions, type StyleProp, type TextStyle, type ViewStyle,
@@ -492,12 +492,26 @@ export function Sheet({ open, title, onClose, children, footer }: {
 }) {
   const t = useTheme();
   const { height } = useWindowDimensions();
+  // A sheet sits in the middle of the screen, which is under the keyboard once
+  // one is up. Rather than scrolling inside it — there is often nothing to
+  // scroll — the middle it centres itself in becomes the part you can still
+  // see, so the card lifts clear and what you are typing comes with it.
+  const [kb, setKb] = useState(0);
+  useEffect(() => {
+    if (!open) return undefined;
+    const shown = Keyboard.addListener('keyboardDidShow',
+      (e) => setKb(e.endCoordinates.height));
+    const gone = Keyboard.addListener('keyboardDidHide', () => setKb(0));
+    return () => { shown.remove(); gone.remove(); setKb(0); };
+  }, [open]);
+
   // Room for the header, the footer and the screen edges, and never so tall
   // that a long list has nowhere to scroll.
-  const bodyMax = Math.max(160, Math.min(520, height - 260));
+  const bodyMax = Math.max(140, Math.min(520, height - kb - 260));
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 22 }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 22,
+        paddingBottom: 22 + kb }}>
         {/* The backdrop sits behind the card rather than around it: wrapping the
             card in a Pressable let it swallow the drag a long list needs. */}
         <Pressable

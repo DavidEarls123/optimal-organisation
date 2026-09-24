@@ -1,4 +1,4 @@
-import type { AppState, HabitPlan, PlanEntry, ShopGroup, Task, Trip, TripItem, Week, Section } from './types';
+import type { AppState, HabitPlan, PlanEntry, ShopGroup, Task, Trip, TripItem, Week, WeekTemplate, Section } from './types';
 import {
   SHOP_TEMPLATE, TEMPLATES, TRIP_BASE, TRIP_CATEGORIES, TRIP_TEMPLATES,
 } from './catalogue';
@@ -46,12 +46,16 @@ export function planTasks(state: AppState, templateId: string, dayIndex: number)
   const from = t.sections?.length ? t.sections : state.sections;
   const secs = from.length ? from : [{ id: 's1', name: 'Morning' }];
   const entries: PlanEntry[] = t.plan[dayIndex] ?? [];
-  return entries.map(([text, track, si]) => ({
+  // No tag. A tag says a session happened and counts towards what you track,
+  // which is a claim only you can make — a template suggesting the work is not
+  // the same as you having done it, and a week should not start out already
+  // wearing the tags of things nobody has done yet.
+  return entries.map(([text, , si]) => ({
     id: uid('p'),
     text,
     state: 'open' as const,
     plan: true,
-    track: track ?? null,
+    track: null,
     sec: (secs[si] ?? secs[0]).id,
   }));
 }
@@ -732,6 +736,35 @@ export function moveHabit(state: AppState, id: string, dir: -1 | 1): boolean {
   return true;
 }
 
+/** Empties a week of tasks, every day of it.
+ *
+ *  A week accumulates: a template suggests things, you add things, you change
+ *  template and it keeps what was already written because throwing away your
+ *  work on a change of mind would be worse. Sometimes what you want is the
+ *  week as the template would have made it, and nothing else — so this takes
+ *  the tasks out and leaves everything you have actually recorded alone: the
+ *  habits you ticked, the weights you logged, the days you marked done. */
+export function clearWeekTasks(state: AppState, weekId: string): number {
+  const w = state.weeks[weekId];
+  if (!w) return 0;
+  let gone = 0;
+  for (let d = 0; d < 7; d += 1) {
+    gone += (w.tasks[d] ?? []).length;
+    w.tasks[d] = [];
+  }
+  return gone;
+}
+
+/** One template made into the shape of another, keeping only what makes it
+ *  itself: its id and its name. Everything else — the headings, the standard
+ *  tasks, what it asks of each habit, how it scores them, what it is for — is
+ *  taken wholesale, and deeply, so that editing the copy afterwards cannot
+ *  reach back into the one it was copied from. */
+export function copyTemplateInto(into: WeekTemplate, from: WeekTemplate): WeekTemplate {
+  const copy: WeekTemplate = JSON.parse(JSON.stringify(from));
+  return { ...copy, id: into.id, name: into.name };
+}
+
 /** A standard task as you would write it down: what it is, which heading it
  *  goes under, and the days of the week it happens on.
  *
@@ -741,7 +774,6 @@ export function moveHabit(state: AppState, id: string, dir: -1 | 1): boolean {
  *  to keep in step. So the editor works in these and turns them back. */
 export interface PlanTask {
   text: string;
-  track: string | null;
   /** Which of the template's headings it sits under. */
   si: number;
   /** Weekdays, Monday first. */
@@ -755,11 +787,11 @@ export function planTaskList(plan: PlanEntry[][]): PlanTask[] {
   const out: PlanTask[] = [];
   const seen = new Map<string, PlanTask>();
   for (let d = 0; d < 7; d += 1) {
-    for (const [text, track, si] of plan[d] ?? []) {
-      const key = `${text}\u0000${track ?? ''}\u0000${si}`;
+    for (const [text, , si] of plan[d] ?? []) {
+      const key = `${text}\u0000${si}`;
       const had = seen.get(key);
       if (had) { if (!had.days.includes(d)) had.days.push(d); continue; }
-      const made: PlanTask = { text, track: track ?? null, si, days: [d] };
+      const made: PlanTask = { text, si, days: [d] };
       seen.set(key, made);
       out.push(made);
     }
@@ -775,7 +807,7 @@ export function planFromList(list: PlanTask[]): PlanEntry[][] {
     if (!text) continue;
     for (const d of task.days) {
       if (d < 0 || d > 6) continue;
-      plan[d].push([text, task.track, Math.max(0, task.si)]);
+      plan[d].push([text, null, Math.max(0, task.si)]);
     }
   }
   return plan;

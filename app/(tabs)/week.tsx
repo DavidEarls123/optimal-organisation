@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 import { Text } from '../../src/ui/type';
 import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
 import {
-  Body, Chip, Empty, Mono, Note, Screen, Section, SectionHead,
+  Body, Button, Chip, Empty, Mono, Note, Screen, Section, SectionHead,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -14,6 +14,7 @@ import { DAY_LETTERS, DAY_NAMES, addDays, parseISO, weekNumber } from '../../src
 import {
   activeHabits, habitDone, habitTarget, isCurrentWeek, planLabel, scheduledOn, templateOf, todayIndex,
 } from '../../src/domain/scoring';
+import { clearWeekTasks } from '../../src/domain/week';
 
 /** 15 – 21 September, or 28 September – 4 October when it straddles two. */
 function rangeLabel(mondayIso: string): string {
@@ -75,6 +76,35 @@ export default function WeekScreen() {
             </Text>
             <Text style={{ fontSize: 13, color: t.accent }}>Change ›</Text>
           </Pressable>
+
+          {/* A week keeps what is written on it through a change of template,
+              because throwing your own work away on a change of mind would be
+              worse. This is for when what you want is the week the template
+              would have made, and nothing else. */}
+          <Button
+            tone="ghost"
+            title="Clear this week’s tasks"
+            onPress={() => {
+              const n = [0, 1, 2, 3, 4, 5, 6]
+                .reduce((a, d) => a + (week.tasks[d] ?? []).length, 0);
+              if (!n) return;
+              Alert.alert(
+                'Clear this week?',
+                `${n} task${n === 1 ? '' : 's'} across the seven days go. Habits, weights and `
+                + 'the days you have marked complete stay. Undo puts it all back.',
+                [{ text: 'Cancel', style: 'cancel' },
+                 {
+                   text: 'Clear',
+                   style: 'destructive',
+                   onPress: () => update((d) => { clearWeekTasks(d, weekId); }, 'clearing the week'),
+                 }],
+              );
+            }}
+          />
+          <Note>
+            Clear it, then change the template, and the week is exactly what that template
+            lays down.
+          </Note>
         </Section>
 
         <Section>
