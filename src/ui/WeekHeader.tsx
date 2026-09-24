@@ -184,12 +184,15 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
  *  It is always drawn and always the same height — only its opacity moves.
  *  Anything pinned that changes height shoves the list about underneath it,
  *  which is the opposite of what pinning something is for. */
-/** How much scrolling the one-line strip opens over, once it starts.
+/** How much scrolling the one-line strip opens over, finishing at the moment
+ *  the week above it has gone.
  *
- *  Short, so it is over inside the flick that starts it: a row of letters
- *  halfway out of a box does not read as a transition in progress, it reads as
- *  something cut off. */
-export const SLIM_RANGE = 72;
+ *  It has to finish there rather than start there. Starting there means the
+ *  date pins to the top with the strip still to come, and you scroll past a
+ *  task or two waiting for it. Finishing there costs the last inch of the
+ *  header's travel, when all that is left of it is the bottom edge of the day
+ *  cells — and the strip is still nearly invisible through most of that. */
+export const SLIM_RANGE = 46;
 
 /** Where it starts: the moment the week above has gone.
  *
@@ -218,13 +221,13 @@ export function SlimStrip({ scrollY, after }: {
     // strip to show: an unmeasured header would put it on the screen at once,
     // beside the week it is standing in for.
     if (after.value <= 0) return { height: 0, opacity: 0 };
-    const from = after.value;
-    const to = from + SLIM_RANGE;
+    const to = after.value;
+    const from = Math.max(0, to - SLIM_RANGE);
     return {
       height: interpolate(scrollY.value, [from, to], [0, tall], Extrapolation.CLAMP),
-      // Up to full before the box is, so the little of it you catch on the way
-      // is faint rather than half a row of letters.
-      opacity: interpolate(scrollY.value, [from, from + SLIM_RANGE * 0.7], [0, 1],
+      // Held back until the week above is all but gone, so the two are never
+      // both there to be read — by the time this can be seen, that cannot.
+      opacity: interpolate(scrollY.value, [from + (to - from) * 0.45, to], [0, 1],
         Extrapolation.CLAMP),
     };
   }, [tall]);

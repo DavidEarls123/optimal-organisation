@@ -67,8 +67,8 @@ export default function DayScreen() {
   const [showDone, setShowDone] = useState<Record<string, boolean>>({});
 
   const dateRow = useAnimatedStyle(() => {
-    const from = leadH.value > 0 ? leadH.value : 1e9;
-    const to = from + SLIM_RANGE;
+    const to = leadH.value > 0 ? leadH.value : 1e9;
+    const from = Math.max(0, to - SLIM_RANGE);
     return {
       paddingTop: interpolate(scrollY.value, [from, to], [4, 1], Extrapolation.CLAMP),
       paddingBottom: interpolate(scrollY.value, [from, to], [7, 3], Extrapolation.CLAMP),
