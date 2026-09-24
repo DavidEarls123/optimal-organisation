@@ -89,6 +89,11 @@ export function migrate(loaded: Partial<AppState> | null): AppState | null {
   };
   fixShop(s.shopTemplate);
 
+  if (s.hiddenEvents !== undefined) {
+    s.hiddenEvents = Array.isArray(s.hiddenEvents)
+      ? s.hiddenEvents.filter((x) => typeof x === 'string' && x) : [];
+  }
+
   // A trip's checklist is as editable as a day now: its own headings, and a
   // note on anything that needs one. Both are repaired rather than trusted.
   for (const trip of s.trips) {

@@ -736,6 +736,26 @@ export function moveHabit(state: AppState, id: string, dir: -1 | 1): boolean {
   return true;
 }
 
+/** How many calendar entries the app will remember hiding. Old ones fall off
+ *  the end: an entry from two years ago is not coming back round. */
+const HIDDEN_KEPT = 400;
+
+/** Puts a calendar entry out of sight on the day, without touching the entry.
+ *  Week One only ever reads your calendar. */
+export function hideEvent(state: AppState, eventId: string): void {
+  if (!eventId) return;
+  const had = (state.hiddenEvents ?? []).filter((x) => x !== eventId);
+  had.push(eventId);
+  state.hiddenEvents = had.slice(-HIDDEN_KEPT);
+}
+
+/** And brings them all back, for when you have hidden something you wanted. */
+export function showEvents(state: AppState): number {
+  const n = (state.hiddenEvents ?? []).length;
+  state.hiddenEvents = [];
+  return n;
+}
+
 /** Empties a week of tasks, every day of it.
  *
  *  A week accumulates: a template suggests things, you add things, you change

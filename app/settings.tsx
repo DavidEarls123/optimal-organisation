@@ -13,7 +13,7 @@ import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
 import { HABIT_PRESETS, TRACK_PRESETS, slug } from '../src/domain/catalogue';
 import { TEXT_SIZES } from '../src/domain/types';
-import { moveHabit, placeHabit, uid } from '../src/domain/week';
+import { moveHabit, placeHabit, showEvents, uid } from '../src/domain/week';
 import { APP_BY, APP_NAME } from '../src/brand';
 
 const NAME_LIMIT = 32;
@@ -352,6 +352,22 @@ export default function SettingsScreen() {
           </View>
           <Button title="+ Add a session type" onPress={() => setPickTrack(true)} />
         </Section>
+
+        {(state.hiddenEvents ?? []).length ? (
+          <Section>
+            <SectionHead title="Calendar"
+              right={`${(state.hiddenEvents ?? []).length} hidden`} />
+            <Note>
+              Entries you have cleared off a day. Week One only ever reads your calendar, so
+              this hides them here and changes nothing in the calendar itself.
+            </Note>
+            <Button
+              tone="ghost"
+              title="Show them all again"
+              onPress={() => update((d) => { showEvents(d); }, 'showing those again')}
+            />
+          </Section>
+        ) : null}
 
         <Section>
           <SectionHead title="Your data" />

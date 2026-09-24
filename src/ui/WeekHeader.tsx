@@ -184,16 +184,25 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
  *  It is always drawn and always the same height — only its opacity moves.
  *  Anything pinned that changes height shoves the list about underneath it,
  *  which is the opposite of what pinning something is for. */
-/** The stretch of scrolling the one-line strip opens over.
+/** How much scrolling the one-line strip opens over, once it starts.
  *
- *  Short, and it ends inside the first flick. Spreading it out kept the list
- *  steadier but left the strip caught halfway for most of a page — and a row
- *  of letters halfway out of a box does not read as a transition in progress,
- *  it reads as something cut off. Better to be over with. */
-export const OPENS = 16;
-export const OPEN_BY = 84;
+ *  Short, so it is over inside the flick that starts it: a row of letters
+ *  halfway out of a box does not read as a transition in progress, it reads as
+ *  something cut off. */
+export const SLIM_RANGE = 72;
 
-export function SlimStrip({ scrollY }: { scrollY: SharedValue<number> }) {
+/** Where it starts: the moment the week above has gone.
+ *
+ *  Not a number picked in advance. The week header is as tall as its contents
+ *  make it — the range it covers, a trip pinned to a day, the size the writing
+ *  is set to — and the strip is the same seven days said again. Two of them on
+ *  the screen at once is just clutter, so it waits for the header to be gone,
+ *  which is the moment the date reaches the top. */
+export function SlimStrip({ scrollY, after }: {
+  scrollY: SharedValue<number>;
+  /** How tall the week header is, measured rather than assumed. */
+  after: SharedValue<number>;
+}) {
   const t = useTheme();
   const scale = useTextScale();
   const { state, weekId, day, setDay, today } = useStore();
@@ -204,13 +213,21 @@ export function SlimStrip({ scrollY }: { scrollY: SharedValue<number> }) {
   const tall = Math.round(22 * scale);
   // Opened from nothing to its full height, and clipped while it does, so it
   // is uncovered from under the date rather than dropped on top of it.
-  const opening = useAnimatedStyle(() => ({
-    height: interpolate(scrollY.value, [OPENS, OPEN_BY], [0, tall], Extrapolation.CLAMP),
-    // Up to full before the box is, so the little of it you catch on the way
-    // is faint rather than half a row of letters.
-    opacity: interpolate(scrollY.value, [OPENS, OPENS + (OPEN_BY - OPENS) * 0.7], [0, 1],
-      Extrapolation.CLAMP),
-  }), [tall]);
+  const opening = useAnimatedStyle(() => {
+    // Until the header has been measured there is nothing to wait for and no
+    // strip to show: an unmeasured header would put it on the screen at once,
+    // beside the week it is standing in for.
+    if (after.value <= 0) return { height: 0, opacity: 0 };
+    const from = after.value;
+    const to = from + SLIM_RANGE;
+    return {
+      height: interpolate(scrollY.value, [from, to], [0, tall], Extrapolation.CLAMP),
+      // Up to full before the box is, so the little of it you catch on the way
+      // is faint rather than half a row of letters.
+      opacity: interpolate(scrollY.value, [from, from + SLIM_RANGE * 0.7], [0, 1],
+        Extrapolation.CLAMP),
+    };
+  }, [tall]);
   if (!week) return null;
   const current = isCurrentWeek(week, today);
   const ti = todayIndex(week, today);

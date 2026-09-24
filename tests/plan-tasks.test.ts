@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialState } from '../src/domain/state';
 import {
-  applyTemplate, clearWeekTasks, copyTemplateInto, planFromList, planTaskList, planTasks,
+  applyTemplate, clearWeekTasks, copyTemplateInto, hideEvent, planFromList, planTaskList,
+  planTasks, showEvents,
 } from '../src/domain/week';
 import type { PlanEntry } from '../src/domain/types';
 
@@ -179,4 +180,33 @@ test('a cleared week takes only what the next template lays down', () => {
     const wanted = planTasks(s, other, d).map((x) => x.text).sort();
     assert.deepEqual((w.tasks[d] ?? []).map((x) => x.text).sort(), wanted, `day ${d}`);
   }
+});
+
+test('hiding a calendar entry remembers it, and showing brings them all back', () => {
+  const s = createInitialState(TUE, 'run');
+  hideEvent(s, 'ev-1');
+  hideEvent(s, 'ev-2');
+  assert.deepEqual(s.hiddenEvents, ['ev-1', 'ev-2']);
+  assert.equal(showEvents(s), 2);
+  assert.deepEqual(s.hiddenEvents, []);
+});
+
+test('hiding the same entry twice does not remember it twice', () => {
+  const s = createInitialState(TUE, 'run');
+  hideEvent(s, 'ev-1');
+  hideEvent(s, 'ev-1');
+  assert.deepEqual(s.hiddenEvents, ['ev-1']);
+});
+
+test('an entry with no id is not hidden, because that would hide everything', () => {
+  const s = createInitialState(TUE, 'run');
+  hideEvent(s, '');
+  assert.deepEqual(s.hiddenEvents ?? [], []);
+});
+
+test('the list of hidden entries does not grow without end', () => {
+  const s = createInitialState(TUE, 'run');
+  for (let i = 0; i < 600; i += 1) hideEvent(s, `ev-${i}`);
+  assert.equal((s.hiddenEvents ?? []).length, 400);
+  assert.equal((s.hiddenEvents ?? [])[399], 'ev-599', 'and it is the recent ones that stay');
 });

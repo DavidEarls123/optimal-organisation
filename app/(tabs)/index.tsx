@@ -8,7 +8,7 @@ import Animated, {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 
-import { OPENS, OPEN_BY, SlimStrip, WeekHeader } from '../../src/ui/WeekHeader';
+import { SLIM_RANGE, SlimStrip, WeekHeader } from '../../src/ui/WeekHeader';
 import { DayDone } from '../../src/ui/DayDone';
 import {
   Bar, Body, Button, Chip, Empty, Field, Glyph, Mono, Note, Screen, Section, SectionHead,
@@ -19,7 +19,8 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES, dayDateIso, isoOf, parseISO } from '../../src/domain/dates';
 import {
-  marksOn, moveChoices, moveTask, orderedTasks, placeTask, sectionsOf, uid,
+  hideEvent, marksOn, moveChoices, moveTask, orderedTasks, placeTask, sectionsOf, showEvents,
+  uid,
 } from '../../src/domain/week';
 import { useListDrag } from '../../src/ui/useListDrag';
 import {
@@ -52,6 +53,9 @@ export default function DayScreen() {
   /** How far the list has been scrolled, kept on the thread that draws so the
    *  top can shrink with your thumb rather than in steps behind it. */
   const scrollY = useSharedValue(0);
+  /** How tall the week header is. The strip that stands in for it waits until
+   *  it has gone, so the two are never on the screen together. */
+  const leadH = useSharedValue(0);
   /** The habit currently asking for a weight, if any. */
   const [weighing, setWeighing] = useState<string | null>(null);
   /** True for the moment after a day is marked complete. */
@@ -62,10 +66,14 @@ export default function DayScreen() {
    *  day gets shorter as you get through it rather than longer. */
   const [showDone, setShowDone] = useState<Record<string, boolean>>({});
 
-  const dateRow = useAnimatedStyle(() => ({
-    paddingTop: interpolate(scrollY.value, [OPENS, OPEN_BY], [4, 1], Extrapolation.CLAMP),
-    paddingBottom: interpolate(scrollY.value, [OPENS, OPEN_BY], [7, 3], Extrapolation.CLAMP),
-  }));
+  const dateRow = useAnimatedStyle(() => {
+    const from = leadH.value > 0 ? leadH.value : 1e9;
+    const to = from + SLIM_RANGE;
+    return {
+      paddingTop: interpolate(scrollY.value, [from, to], [4, 1], Extrapolation.CLAMP),
+      paddingBottom: interpolate(scrollY.value, [from, to], [7, 3], Extrapolation.CLAMP),
+    };
+  });
 
   const dateIso = week ? dayDateIso(week.monday, day) : '';
   // Headings come from the week, which took them from its template.
@@ -261,8 +269,16 @@ export default function DayScreen() {
    *  back, because it is still in your calendar. */
   const onCalendar = (() => {
     const had = new Set(live.map((x) => x.text.trim().toLowerCase()));
-    return events.filter((e) => !had.has(e.title.trim().toLowerCase()));
+    const hid = new Set(state.hiddenEvents ?? []);
+    return events.filter((e) => !had.has(e.title.trim().toLowerCase()) && !hid.has(e.id));
   })();
+
+  /** A task taken from the calendar whose entry is no longer on this day: moved
+   *  to another, or called off. Only worth saying when the calendar is actually
+   *  readable — with the door shut, everything would look cancelled. */
+  const adrift = (task: Task) => Boolean(
+    task.from && access === 'granted' && !events.some((e) => e.id === task.from),
+  );
 
   const watched = week.watched[day] ?? [];
   const marks = marksOn(state, dateIso);
@@ -271,7 +287,10 @@ export default function DayScreen() {
    *  It scrolls away at exactly the speed of your thumb because it is part of
    *  what you are scrolling, rather than a thing above it getting smaller. */
   const lead = (
-    <View style={{ backgroundColor: t.sheet }}>
+    <View
+      style={{ backgroundColor: t.sheet }}
+      onLayout={(e) => { leadH.value = e.nativeEvent.layout.height; }}
+    >
       <WeekHeader />
       {marks.trips.length || marks.events.length ? (
         <View style={{ paddingHorizontal: 18, paddingTop: 8, flexDirection: 'row',
@@ -331,7 +350,7 @@ export default function DayScreen() {
           </Pressable>
         ) : null}
       </Animated.View>
-      <SlimStrip scrollY={scrollY} />
+      <SlimStrip scrollY={scrollY} after={leadH} />
     </View>
   );
 
@@ -389,6 +408,15 @@ export default function DayScreen() {
                   </View>
                   <Pressable
                     accessibilityRole="button"
+                    accessibilityLabel={`Hide ${e.title}`}
+                    hitSlop={8}
+                    onPress={() => update((d) => { hideEvent(d, e.id); }, 'hiding that')}
+                    style={{ paddingHorizontal: 4 }}
+                  >
+                    <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
                     accessibilityLabel={`Add ${e.title} to today`}
                     onPress={() => update((d) => {
                       const arr = (d.weeks[weekId].tasks[day] ??= []);
@@ -397,7 +425,8 @@ export default function DayScreen() {
                       // task filed under a heading the day has not got is a
                       // task that never appears.
                       arr.push({ id: uid('n'), text: e.title, state: 'open', plan: false,
-                        track: e.track ?? null, sec: sections[0]?.id ?? d.sections[0].id });
+                        track: e.track ?? null, sec: sections[0]?.id ?? d.sections[0].id,
+                        from: e.id });
                     }, 'adding that to the day')}
                     style={{ borderWidth: 1, borderColor: t.accentLine, borderRadius: radius.pill,
                       paddingHorizontal: 9, paddingVertical: 4 }}
@@ -425,6 +454,7 @@ export default function DayScreen() {
               <React.Fragment key={x.id}>
                 <TaskRow
                   task={x}
+                  adrift={adrift(x)}
                   open={moveId === x.id}
                   onToggle={() => setTaskState(x.id, x.state === 'done' ? 'open' : 'done')}
                   onDelete={() => deleteTask(x.id, x.text)}
@@ -922,10 +952,13 @@ function TagPicker({ value, onChange }: { value: string; onChange: (v: string) =
 }
 
 function TaskRow({
-  task, open, onToggle, onDelete, onOpenMove, onPickDate, onRename, onNote,
+  task, adrift, open, onToggle, onDelete, onOpenMove, onPickDate, onRename, onNote,
   choices, onMoveToDate, onMeasure, onDragMove, onDragEnd, dragging,
 }: {
-  task: Task; open: boolean;
+  task: Task;
+  /** Taken from a calendar entry that is no longer on this day. */
+  adrift: boolean;
+  open: boolean;
   onToggle: () => void; onDelete: () => void; onOpenMove: () => void;
   onPickDate: () => void;
   onRename: (text: string) => void;
@@ -1057,6 +1090,10 @@ function TaskRow({
             <Text style={{ flexShrink: 1, fontSize: 14.5, lineHeight: 19,
               color: done ? t.ink3 : t.ink,
               textDecorationLine: done ? 'line-through' : 'none' }}>{task.text}</Text>
+            {adrift ? (
+              <Text style={{ fontSize: 9.5, letterSpacing: 0.6, textTransform: 'uppercase',
+                fontWeight: '700', color: t.partial }}>moved</Text>
+            ) : null}
             {/* There is more to this one than its name. */}
             {task.note ? (
               <View
@@ -1144,6 +1181,14 @@ function TaskRow({
             accessibilityLabel={`Notes for ${task.text}`}
             style={{ minHeight: 88, textAlignVertical: 'top', paddingTop: 10, lineHeight: 19 }}
           />
+
+          {adrift ? (
+            <Note>
+              This came from your calendar, and the entry is not on this day any more —
+              moved to another day, or called off. Week One only ever reads your calendar,
+              so it cannot follow it: move this one yourself, or get rid of it.
+            </Note>
+          ) : null}
 
           {/* Nothing else is left in here. Moving one up or down is what the
               grip is for, and renaming is what the name is for. */}

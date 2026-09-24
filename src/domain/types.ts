@@ -53,6 +53,11 @@ export interface Task {
   /** Anything that did not fit in the name. A task with one is marked on the
    *  day with a dot, so you can see there is more without it being in the way. */
   note?: string;
+  /** The calendar entry it was taken from, where it was taken from one. Kept so
+   *  the day can notice when that entry is no longer on it — moved to another
+   *  day, or called off — and say so rather than leaving you to wonder why the
+   *  appointment is in two places. */
+  from?: string;
 }
 
 /** How much a task's note can hold. Long enough for an address, a packing list
@@ -152,6 +157,11 @@ export interface AppState {
   sample: boolean;
   /** Everything the app remembers about how you want it to behave. */
   prefs: Prefs;
+  /** Calendar entries you have told the app you do not want to see. Your
+   *  calendar is not a to-do list and half of what is in it is somebody else's
+   *  business, so a day should not insist on showing you all of it. Nothing is
+   *  written to the calendar itself — this only hides. */
+  hiddenEvents?: string[];
   /** The standing shopping list new weeks are built from. */
   shopTemplate?: ShopGroup[];
   /** The standing checklist new trips are built from, by category. */

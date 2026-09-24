@@ -27,6 +27,12 @@ const PLAN_LIMIT = 120;
 /** The headings are a flat list, which is a list with one heading of its own. */
 const ONE = 'all';
 
+/** A standard task while it is being edited. The key is the editor's own, so a
+ *  row can be held and dragged without anything being stored to hold it by —
+ *  what a template keeps is what it lays down, not how it was typed. */
+type Row = PlanTask & { key: string };
+const keyed = (list: PlanTask[]): Row[] => list.map((x) => ({ ...x, key: uid('pt') }));
+
 /** What the template asks of a habit, read out of a draft rather than the store. */
 function planIn(draft: WeekTemplate, habit: { id: string; def?: HabitPlan }): HabitPlan {
   const stored = draft.plans?.[habit.id];
@@ -56,8 +62,8 @@ export default function TemplateEditScreen() {
     () => (saved ? JSON.parse(JSON.stringify(saved)) : null));
   const [busy, setBusy] = useState(false);
   const [copying, setCopying] = useState(false);
-  const [tasks, setTaskList] = useState<PlanTask[]>(
-    () => (saved ? planTaskList(saved.plan ?? []) : []));
+  const [tasks, setTaskList] = useState<Row[]>(
+    () => keyed(saved ? planTaskList(saved.plan ?? []) : []));
 
   if (!saved || !draft) {
     return <Screen><Body><Note>That template is gone.</Note></Body></Screen>;
@@ -96,11 +102,46 @@ export default function TemplateEditScreen() {
   /** Every other template, as something to copy from. */
   const others = Object.values(state.templates).filter((x) => x.id !== templateId);
 
-  const setTasks = (fn: (list: PlanTask[]) => PlanTask[]) => {
+  const setTasks = (fn: (list: Row[]) => Row[]) => {
     const next = fn(tasks);
     setTaskList(next);
     edit((d) => { d.plan = planFromList(next); });
   };
+
+  // The standard tasks reorder by hand too, on the same drag: what a template
+  // lays down first is what a day shows first.
+  const liftTask = useSharedValue(0);
+  const toldTask = useSharedValue(0);
+  const taskDrag = useListDrag({
+    order: tasks.map((x) => ({ id: x.key, sec: ONE })),
+    sections: [ONE],
+    onDrop: (id, at) => setTasks((list) => {
+      const from = list.findIndex((x) => x.key === id);
+      if (from < 0) return list;
+      const rest = list.filter((x) => x.key !== id);
+      rest.splice(Math.max(0, Math.min(rest.length, at)), 0, list[from]);
+      return rest;
+    }),
+  });
+  const taskLine = taskDrag.lineIn(ONE);
+  const liftedTask = useAnimatedStyle(() => ({ transform: [{ translateY: liftTask.value }] }));
+  const grips = tasks.map((row) => Gesture.Pan()
+    .activateAfterLongPress(220)
+    .onStart((e) => {
+      toldTask.value = e.translationY;
+      runOnJS(taskDrag.onDragMove)(row.key, e.translationY);
+    })
+    .onUpdate((e) => {
+      liftTask.value = e.translationY;
+      if (Math.abs(e.translationY - toldTask.value) < 6) return;
+      toldTask.value = e.translationY;
+      runOnJS(taskDrag.onDragMove)(row.key, e.translationY);
+    })
+    .onEnd((e) => {
+      runOnJS(taskDrag.onDragEnd)(row.key, e.translationY);
+      liftTask.value = 0;
+    })
+    .onFinalize(() => { liftTask.value = 0; }));
 
   const setPlan = (habitId: string, plan: HabitPlan) => edit((d) => {
     d.plans ??= {};
@@ -241,13 +282,31 @@ export default function TemplateEditScreen() {
             weeks from now on, and never touches one you have already started.
           </Note>
 
+          <View onLayout={(e) => taskDrag.measureList(ONE, e.nativeEvent.layout.y)}>
           {tasks.map((task, i) => (
-            <View
-              key={`task-${i}`}
-              style={{ gap: 7, borderWidth: 1, borderColor: t.rule, borderRadius: radius.md,
-                padding: 10 }}
+            <Animated.View
+              key={task.key}
+              onLayout={(e) => taskDrag.measureRow(task.key,
+                e.nativeEvent.layout.y, e.nativeEvent.layout.height)}
+              style={[{ gap: 7, borderWidth: 1, borderRadius: radius.md, padding: 10,
+                marginBottom: 10,
+                borderColor: taskDrag.dragId === task.key ? t.accent : t.rule,
+                backgroundColor: taskDrag.dragId === task.key ? t.sheet2 : 'transparent',
+                zIndex: taskDrag.dragId === task.key ? 10 : 0 },
+                task.key === taskDrag.dragId ? liftedTask : null]}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <GestureDetector gesture={grips[i]}>
+                  <View
+                    accessible
+                    accessibilityRole="adjustable"
+                    accessibilityLabel={`Hold to move ${task.text || 'this task'}`}
+                    hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                  >
+                    <Text style={{ fontSize: 15, lineHeight: 18,
+                      color: taskDrag.dragId === task.key ? t.accent : t.ink3 }}>⠿</Text>
+                  </View>
+                </GestureDetector>
                 <Field
                   value={task.text}
                   onChangeText={(v) => setTasks((list) => list.map((x, j) => (
@@ -317,14 +376,22 @@ export default function TemplateEditScreen() {
                   </Pressable>
                 ))}
               </View>
-            </View>
+            </Animated.View>
           ))}
+          {taskLine !== null ? (
+            <View
+              pointerEvents="none"
+              style={{ position: 'absolute', left: 0, right: 0, top: taskLine - 1, height: 2,
+                borderRadius: 1, backgroundColor: t.accent, zIndex: 20 }}
+            />
+          ) : null}
+          </View>
 
           <Button
             tone="ghost"
             title="+ Add a standard task"
             onPress={() => setTasks((list) => [...list,
-              { text: '', si: 0, days: [0, 1, 2, 3, 4, 5, 6] }])}
+              { key: uid('pt'), text: '', si: 0, days: [0, 1, 2, 3, 4, 5, 6] }])}
           />
         </Section>
 
@@ -500,7 +567,7 @@ export default function TemplateEditScreen() {
               onPress={() => {
                 const next = copyTemplateInto(tpl, other);
                 setDraft(next);
-                setTaskList(planTaskList(next.plan ?? []));
+                setTaskList(keyed(planTaskList(next.plan ?? [])));
                 setCopying(false);
               }}
               style={{ borderWidth: 1, borderColor: t.rule, borderRadius: radius.md,
