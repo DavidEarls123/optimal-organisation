@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Keyboard, Pressable, ScrollView, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { Text } from '../../src/ui/type';
@@ -21,6 +21,9 @@ import {
 import { useListDrag } from '../../src/ui/useListDrag';
 import { NOTE_LIMIT } from '../../src/domain/types';
 import type { Trip, TripItem } from '../../src/domain/types';
+
+/** As long as a line on a checklist can be. */
+const ITEM_LIMIT = 120;
 
 const unit = (n: number) => (n === 0 ? 'today' : n === 1 ? 'day' : 'days');
 const fmt = (iso: string) =>
@@ -370,6 +373,9 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, draft, setDraft }: 
   const box = useBoxWidth();
   const { update } = useStore();
   const [openItem, setOpenItem] = useState<string | null>(null);
+  /** Which heading has its composer open. Only ever one. */
+  const [adding, setAdding] = useState<string | null>(null);
+  const [heading, setHeading] = useState(false);
   const [newCat, setNewCat] = useState('');
 
   const cats = tripCats(trip);
@@ -389,12 +395,13 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, draft, setDraft }: 
 
   const addCat = () => {
     const name = newCat.trim();
-    if (!name) return;
+    if (!name) { setHeading(false); Keyboard.dismiss(); return; }
     update((d) => {
       const tr = d.trips.find((x) => x.id === trip.id);
       if (tr) addTripCat(tr, name);
     }, 'adding that heading');
     setNewCat('');
+    setHeading(false);
   };
 
   const a = daysUntil(trip.start, today);
@@ -465,8 +472,9 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, draft, setDraft }: 
             const key = `${trip.id}|${cat}`;
             const line = drag.lineIn(cat);
             const add = () => {
-              const text = (draft[key] ?? '').trim();
-              if (!text) return;
+              const text = (draft[key] ?? '').trim().slice(0, ITEM_LIMIT);
+              // Nothing typed and you pressed next: that means you are finished.
+              if (!text) { setAdding(null); Keyboard.dismiss(); return; }
               update((d) => {
                 d.trips.find((x) => x.id === trip.id)?.items
                   .push({ id: uid('c'), cat, text, done: false });
@@ -511,35 +519,86 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, draft, setDraft }: 
                   ) : null}
                 </View>
 
-                <View style={{ flexDirection: 'row', gap: 7, paddingTop: 7 }}>
-                  <Field value={draft[key] ?? ''} placeholder={`Add to ${cat.toLowerCase()}…`}
-                    onChangeText={(v) => setDraft((p) => ({ ...p, [key]: v }))}
-                    returnKeyType="done" onSubmitEditing={add} />
-                  <View style={{ width: box }}>
-                    <Button
-                      title="Add"
-                      disabled={!(draft[key] ?? '').trim()}
-                      onPress={add}
+                {adding === cat ? (
+                  <View style={{ gap: 7, paddingTop: 7 }}>
+                    <Field
+                      value={draft[key] ?? ''}
+                      placeholder={`Add to ${cat.toLowerCase()}…`}
+                      onChangeText={(v) => setDraft((p) => ({ ...p, [key]: v }))}
+                      onSubmitEditing={add}
+                      returnKeyType="next"
+                      // Return files it and leaves the field up for the next
+                      // one; Return on an empty field means you are finished.
+                      blurOnSubmit={false}
+                      autoFocus
+                      maxLength={ITEM_LIMIT}
                     />
+                    <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
+                      <Mono style={{ flex: 1, fontSize: 10.5 }}>
+                        Return adds it and keeps going
+                      </Mono>
+                      <View style={{ width: box }}>
+                        {(draft[key] ?? '').trim() ? (
+                          <Button title="Add" onPress={add} />
+                        ) : (
+                          <Button tone="ghost" title="Done"
+                            onPress={() => { setAdding(null); Keyboard.dismiss(); }} />
+                        )}
+                      </View>
+                    </View>
                   </View>
-                </View>
+                ) : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Add to ${cat}`}
+                    onPress={() => setAdding(cat)}
+                    hitSlop={8}
+                    style={{ paddingTop: 7, paddingBottom: 2 }}
+                  >
+                    <Text style={{ fontSize: 15, color: t.ink3, lineHeight: 18 }}>+</Text>
+                  </Pressable>
+                )}
               </View>
             );
           })}
 
-          <View style={{ flexDirection: 'row', gap: 7, paddingTop: 12 }}>
-            <Field
-              value={newCat}
-              onChangeText={setNewCat}
-              placeholder="Another heading…"
-              maxLength={28}
-              returnKeyType="done"
-              onSubmitEditing={addCat}
-            />
-            <View style={{ width: box }}>
-              <Button tone="ghost" title="+ Head" onPress={addCat} />
+          {/* A heading is a rarer thing to want than an item, so it asks for
+              the room only once you have said you want one. */}
+          {heading ? (
+            <View style={{ gap: 7, paddingTop: 12 }}>
+              <Field
+                value={newCat}
+                onChangeText={setNewCat}
+                placeholder="What to call it…"
+                maxLength={28}
+                returnKeyType="done"
+                onSubmitEditing={addCat}
+                autoFocus
+              />
+              <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
+                <View style={{ flex: 1 }} />
+                <View style={{ width: box }}>
+                  {newCat.trim() ? (
+                    <Button title="Add" onPress={addCat} />
+                  ) : (
+                    <Button tone="ghost" title="Done"
+                      onPress={() => { setHeading(false); Keyboard.dismiss(); }} />
+                  )}
+                </View>
+              </View>
             </View>
-          </View>
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add a heading"
+              onPress={() => setHeading(true)}
+              hitSlop={8}
+              style={{ paddingTop: 12, alignSelf: 'flex-start' }}
+            >
+              <Mono style={{ fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase',
+                color: t.ink3 }}>+ Heading</Mono>
+            </Pressable>
+          )}
         </View>
       ) : null}
     </View>
