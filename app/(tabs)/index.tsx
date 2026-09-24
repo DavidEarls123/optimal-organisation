@@ -19,9 +19,9 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES, dayDateIso, isoOf, parseISO } from '../../src/domain/dates';
 import {
-  dropSlots, marksOn, moveChoices, moveTask, orderedTasks, placeTask, sectionsOf,
-  uid,
+  marksOn, moveChoices, moveTask, orderedTasks, placeTask, sectionsOf, uid,
 } from '../../src/domain/week';
+import { useListDrag } from '../../src/ui/useListDrag';
 import {
   activeHabits, dayOutstanding, fromKg, habitDayStatus, habitDone, habitTarget, pacing,
   planLabel, toKg,
@@ -58,12 +58,6 @@ export default function DayScreen() {
   const [cheer, setCheer] = useState(false);
   const box = useBoxWidth();
   /** The task being dragged, and where it would land. */
-  const [dragId, setDragId] = useState<string | null>(null);
-  /** The place it would land if you let go now, and how far down the list that
-   *  is — the same number the line is drawn at, so the two cannot disagree. */
-  const [drop, setDrop] = useState<(DropSlot & { y: number }) | null>(null);
-  /** Every row's height, so a drag knows how far a place is. */
-  const rowH = useRef<Record<string, number>>({});
   /** Headings whose finished work is showing. Folded away by default, so a
    *  day gets shorter as you get through it rather than longer. */
   const [showDone, setShowDone] = useState<Record<string, boolean>>({});
@@ -145,66 +139,14 @@ export default function DayScreen() {
     }, next === 'done' ? 'ticking that off' : 'unticking that');
   }, [update, weekId, day]);
 
-  /** Where every row sits on the screen, measured rather than assumed: a row
-   *  with its panel open is several times the height of one without, and a
-   *  folded-away row has no height at all. Three numbers because the layout is
-   *  three deep — the heading block, its list of rows, then the row. */
-  const secY = useRef<Record<string, number>>({});
-  const listY = useRef<Record<string, number>>({});
-  const rowY = useRef<Record<string, number>>({});
-
-  /** Every place the dragged task could land, each with the point down the
-   *  screen it belongs to. The gap under one heading's last row and the gap
-   *  above the next heading's first row are different places, which is what
-   *  makes dropping something at the top of a heading possible at all. */
-  const placesFor = useCallback((id: string) => {
-    const slots = dropSlots(drawn, sections.map((x) => x.id), [...hidden], id);
-    const yOf = (slot: (typeof slots)[number]) => {
-      const base = (secY.current[slot.sec] ?? 0) + (listY.current[slot.sec] ?? 0);
-      if (slot.before) return base + (rowY.current[slot.before] ?? 0);
-      if (slot.after) {
-        return base + (rowY.current[slot.after] ?? 0) + (rowH.current[slot.after] ?? 44);
-      }
-      return base;
-    };
-    return slots.map((slot) => ({ ...slot, y: yOf(slot) }));
-  }, [drawn, sections, hidden]);
-
-  /** Where the dragged row's top would be if you let go now, and the place
-   *  nearest to it. The rows below it are still drawn in their old positions,
-   *  so anything past where it started is a row-height too low. */
-  const nearest = useCallback((id: string, dy: number) => {
-    const task = drawn.find((x) => x.id === id);
-    if (!task) return null;
-    const from = (secY.current[task.sec] ?? 0) + (listY.current[task.sec] ?? 0)
-      + (rowY.current[id] ?? 0);
-    const tall = rowH.current[id] ?? 44;
-    const top = from + dy;
-
-    let best: ReturnType<typeof placesFor>[number] | null = null;
-    let gap = Infinity;
-    for (const slot of placesFor(id)) {
-      const y = slot.y > from ? slot.y - tall : slot.y;
-      const d = Math.abs(y - top);
-      if (d < gap) { gap = d; best = slot; }
-    }
-    return best;
-  }, [drawn, placesFor]);
-
-  const onDragMove = useCallback((id: string, dy: number) => {
-    setDragId((cur) => (cur === id ? cur : id));
-    const to = nearest(id, dy);
-    setDrop((cur) => (cur && to && cur.sec === to.sec && cur.before === to.before
-      ? cur : to));
-  }, [nearest]);
-
-  const onDragEnd = useCallback((id: string, dy: number) => {
-    const to = nearest(id, dy);
-    setDragId(null);
-    setDrop(null);
-    if (!to) return;
-    update((d) => { placeTask(d, weekId, day, id, to.at, to.sec); }, 'moving that task');
-  }, [nearest, update, weekId, day]);
+  // One piece of geometry, shared with the trip checklist, which is the same
+  // gesture over the same shape of list.
+  const secIds = useMemo(() => sections.map((x) => x.id), [sections]);
+  const away = useMemo(() => [...hidden], [hidden]);
+  const onDrop = useCallback((id: string, at: number, sec: string) => {
+    update((d) => { placeTask(d, weekId, day, id, at, sec); }, 'moving that task');
+  }, [update, weekId, day]);
+  const drag = useListDrag({ order: drawn, sections: secIds, hidden: away, onDrop });
 
   const deleteTask = useCallback((id: string, text: string) => {
     // One question, and an honest one: Undo puts it straight back.
@@ -476,12 +418,9 @@ export default function DayScreen() {
             const todo = items.filter((x) => x.state !== 'done');
             const finished = items.filter((x) => x.state === 'done');
             const showing = !!showDone[sc.id];
-            /** Where the line goes inside this heading's list, measured from the
-             *  same place the drop itself is worked out from. Null when the
-             *  finger is not over this heading at all. */
-            const end = drop && drop.sec === sc.id
-              ? drop.y - (secY.current[sc.id] ?? 0) - (listY.current[sc.id] ?? 0)
-              : null;
+            /** Where the drop line goes inside this heading's list, if the
+             *  finger is over it at all. */
+            const end = drag.lineIn(sc.id);
             const row = (x: Task) => (
               <React.Fragment key={x.id}>
                 <TaskRow
@@ -502,17 +441,17 @@ export default function DayScreen() {
                   choices={choices}
                   onMoveToDate={(iso) => doMove(x.id, iso)}
                   onPickDate={() => setShowPicker(true)}
-                  onMeasure={(y, h) => { rowY.current[x.id] = y; rowH.current[x.id] = h; }}
-                  onDragMove={(dy) => onDragMove(x.id, dy)}
-                  onDragEnd={(dy) => onDragEnd(x.id, dy)}
-                  dragging={dragId === x.id}
+                  onMeasure={(y, h) => drag.measureRow(x.id, y, h)}
+                  onDragMove={(dy) => drag.onDragMove(x.id, dy)}
+                  onDragEnd={(dy) => drag.onDragEnd(x.id, dy)}
+                  dragging={drag.dragId === x.id}
                 />
               </React.Fragment>
             );
             return (
               <View
                 key={sc.id}
-                onLayout={(e) => { secY.current[sc.id] = e.nativeEvent.layout.y; }}
+                onLayout={(e) => drag.measureSection(sc.id, e.nativeEvent.layout.y)}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
                   paddingTop: si === 0 ? 0 : 13, paddingBottom: 3 }}>
@@ -522,7 +461,7 @@ export default function DayScreen() {
                 </View>
 
                 <View
-                  onLayout={(e) => { listY.current[sc.id] = e.nativeEvent.layout.y; }}
+                  onLayout={(e) => drag.measureList(sc.id, e.nativeEvent.layout.y)}
                   style={{ borderTopWidth: 1, borderTopColor: t.rule }}
                 >
                   {todo.map(row)}

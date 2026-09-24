@@ -1,6 +1,6 @@
 import { DEFAULT_PREFS, NOTE_LIMIT, TEXT_SIZES } from './types';
 import type { AppState, WatchItem, ShopGroup } from './types';
-import { DEFAULT_HABITS, DEFAULT_SECTIONS, DEFAULT_TRACKABLES, TEMPLATES, TEMPLATE_ORDER } from './catalogue';
+import { DEFAULT_HABITS, DEFAULT_SECTIONS, DEFAULT_TRACKABLES, TEMPLATES, TEMPLATE_ORDER, TRIP_CATEGORIES } from './catalogue';
 import { createWeek } from './week';
 import { isoOf, isoWeekId, mondayOf } from './dates';
 
@@ -88,6 +88,25 @@ export function migrate(loaded: Partial<AppState> | null): AppState | null {
     }
   };
   fixShop(s.shopTemplate);
+
+  // A trip's checklist is as editable as a day now: its own headings, and a
+  // note on anything that needs one. Both are repaired rather than trusted.
+  for (const trip of s.trips) {
+    if (!Array.isArray(trip?.items)) { trip.items = []; continue; }
+    if (trip.cats !== undefined) {
+      const cats = Array.isArray(trip.cats)
+        ? trip.cats.filter((x) => typeof x === 'string' && x.trim()) : [];
+      if (cats.length) trip.cats = cats; else delete trip.cats;
+    }
+    for (const it of trip.items) {
+      if (typeof it.cat !== 'string' || !it.cat) it.cat = (trip.cats ?? TRIP_CATEGORIES)[0];
+      it.done = Boolean(it.done);
+      if (it.note !== undefined) {
+        const note = typeof it.note === 'string' ? it.note.slice(0, NOTE_LIMIT).trim() : '';
+        if (note) it.note = note; else delete it.note;
+      }
+    }
+  }
 
   const firstSec = s.sections[0].id;
   for (const w of Object.values(s.weeks)) {

@@ -1,4 +1,4 @@
-import type { AppState, HabitPlan, PlanEntry, ShopGroup, Task, Week, TripItem, Section } from './types';
+import type { AppState, HabitPlan, PlanEntry, ShopGroup, Task, Trip, TripItem, Week, Section } from './types';
 import {
   SHOP_TEMPLATE, TEMPLATES, TRIP_BASE, TRIP_CATEGORIES, TRIP_TEMPLATES,
 } from './catalogue';
@@ -553,6 +553,93 @@ export function tripTemplateOf(state: AppState): Record<string, string[]> {
 /** A new trip's checklist: your standing list, plus whatever that kind of trip
  *  adds on top. The kind's extras are not editable — they are the point of
  *  picking a kind — but nothing stops you deleting them once the trip exists. */
+/** A trip's own headings, in its own order. */
+export function tripCats(trip: Trip): string[] {
+  const own = Array.isArray(trip.cats) ? trip.cats.filter((x) => typeof x === 'string') : [];
+  return own.length ? own : [...TRIP_CATEGORIES];
+}
+
+/** The checklist in the order it is drawn: heading by heading, and anything
+ *  filed under a heading the trip no longer has at the end, where it can still
+ *  be seen and moved rather than quietly lost. */
+export function tripOrdered(trip: Trip): TripItem[] {
+  const cats = tripCats(trip);
+  const out: TripItem[] = [];
+  for (const cat of cats) out.push(...trip.items.filter((x) => x.cat === cat));
+  const known = new Set(cats);
+  out.push(...trip.items.filter((x) => !known.has(x.cat)));
+  return out;
+}
+
+/** Drops an item at a place in that order, under the heading it landed in.
+ *  The same rules as a task on a day, because it is the same gesture. */
+export function placeTripItem(
+  trip: Trip, id: string, toIndex: number, intoCat?: string | null,
+): string | null {
+  const flat = tripOrdered(trip);
+  const item = flat.find((x) => x.id === id);
+  if (!item) return null;
+  const cats = tripCats(trip);
+  const rest = flat.filter((x) => x !== item);
+  const at = Math.max(0, Math.min(rest.length, Math.round(toIndex)));
+  const above = rest[at - 1];
+  const below = rest[at];
+  const cat = intoCat ?? (above ? above.cat : below ? below.cat : item.cat);
+  item.cat = cats.includes(cat) ? cat : cats[0];
+  rest.splice(at, 0, item);
+  trip.items = rest;
+  return item.cat;
+}
+
+/** Adds a heading to a trip, unless it already has one by that name. */
+export function addTripCat(trip: Trip, name: string): boolean {
+  const text = name.trim();
+  if (!text) return false;
+  const cats = tripCats(trip);
+  if (cats.some((x) => x.toLowerCase() === text.toLowerCase())) return false;
+  trip.cats = [...cats, text];
+  return true;
+}
+
+/** Renames one, and everything filed under it with it. */
+export function renameTripCat(trip: Trip, from: string, to: string): boolean {
+  const text = to.trim();
+  const cats = tripCats(trip);
+  const at = cats.indexOf(from);
+  if (!text || at < 0) return false;
+  if (cats.some((x, i) => i !== at && x.toLowerCase() === text.toLowerCase())) return false;
+  const next = [...cats];
+  next[at] = text;
+  trip.cats = next;
+  for (const x of trip.items) if (x.cat === from) x.cat = text;
+  return true;
+}
+
+/** Takes a heading out. What was under it goes to the heading above, or the
+ *  one below when it was the first — never nowhere. */
+export function removeTripCat(trip: Trip, name: string): boolean {
+  const cats = tripCats(trip);
+  const at = cats.indexOf(name);
+  if (at < 0 || cats.length <= 1) return false;
+  const next = cats.filter((x) => x !== name);
+  const home = cats[at - 1] ?? next[0];
+  trip.cats = next;
+  for (const x of trip.items) if (x.cat === name) x.cat = home;
+  return true;
+}
+
+/** Moves a heading one place up or down, taking its items with it. */
+export function moveTripCat(trip: Trip, name: string, dir: -1 | 1): boolean {
+  const cats = tripCats(trip);
+  const at = cats.indexOf(name);
+  const to = at + dir;
+  if (at < 0 || to < 0 || to >= cats.length) return false;
+  const next = [...cats];
+  next.splice(to, 0, next.splice(at, 1)[0]);
+  trip.cats = next;
+  return true;
+}
+
 /** What a trip's checklist is missing, if it were built from that kind now.
  *  Changing what kind of trip it is, or adding to the standing list after a
  *  trip exists, would otherwise leave the trip on the list it was born with. */

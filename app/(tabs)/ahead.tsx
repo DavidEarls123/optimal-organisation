@@ -1,18 +1,25 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { Text } from '../../src/ui/type';
 
 import {
   Body, Button, Chip, CornerMark, DateButton, Empty, Field, Glyph, Mono, Note, Screen, Section,
-  SectionHead, Sheet, Tick,
+  SectionHead, Sheet, Tick, useBoxWidth,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { daysUntil, parseISO } from '../../src/domain/dates';
 import { TRIP_CATEGORIES, TRIP_TEMPLATES } from '../../src/domain/catalogue';
-import { buildTripItems, tripMissing, tripTopUp, uid } from '../../src/domain/week';
+import {
+  addTripCat, buildTripItems, moveTripCat, placeTripItem, removeTripCat, renameTripCat,
+  tripCats, tripMissing, tripOrdered, tripTopUp, uid,
+} from '../../src/domain/week';
+import { useListDrag } from '../../src/ui/useListDrag';
+import { NOTE_LIMIT } from '../../src/domain/types';
 import type { Trip, TripItem } from '../../src/domain/types';
 
 const unit = (n: number) => (n === 0 ? 'today' : n === 1 ? 'day' : 'days');
@@ -160,7 +167,10 @@ export default function AheadScreen() {
                 ? newTrip.end : start;
               const id = uid('tr');
               update((d) => {
-                d.trips.push({ id, name: name.trim(), tplId, start, end, items: buildTripItems(d, tplId) });
+                // Its own copy of the headings from the start, so changing
+                // them here can never reach back into another trip.
+                d.trips.push({ id, name: name.trim(), tplId, start, end,
+                  cats: [...TRIP_CATEGORIES], items: buildTripItems(d, tplId) });
               });
               setOpen(id);
               setAddingTrip(false);
@@ -357,7 +367,36 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, draft, setDraft }: 
   draft: Record<string, string>; setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
   const t = useTheme();
+  const box = useBoxWidth();
   const { update } = useStore();
+  const [openItem, setOpenItem] = useState<string | null>(null);
+  const [newCat, setNewCat] = useState('');
+
+  const cats = tripCats(trip);
+  const drawn = tripOrdered(trip);
+  const onDrop = useCallback((id: string, at: number, cat: string) => {
+    update((d) => {
+      const tr = d.trips.find((x) => x.id === trip.id);
+      if (tr) placeTripItem(tr, id, at, cat);
+    }, 'moving that');
+  }, [update, trip.id]);
+  // The same geometry the day's tasks use, because it is the same gesture.
+  const drag = useListDrag({
+    order: drawn.map((x) => ({ id: x.id, sec: x.cat })),
+    sections: cats,
+    onDrop,
+  });
+
+  const addCat = () => {
+    const name = newCat.trim();
+    if (!name) return;
+    update((d) => {
+      const tr = d.trips.find((x) => x.id === trip.id);
+      if (tr) addTripCat(tr, name);
+    }, 'adding that heading');
+    setNewCat('');
+  };
+
   const a = daysUntil(trip.start, today);
   const b = daysUntil(trip.end, today);
   const here = a <= 0 && b >= 0;
@@ -419,66 +458,350 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, draft, setDraft }: 
         </Text>
       </Pressable>
 
-      {expanded ? TRIP_CATEGORIES.map((cat) => {
-        const items = trip.items.filter((x) => x.cat === cat);
-        const key = `${trip.id}|${cat}`;
-        const add = () => {
-          const text = (draft[key] ?? '').trim();
-          if (!text) return;
-          update((d) => {
-            d.trips.find((x) => x.id === trip.id)?.items.push({ id: uid('c'), cat, text, done: false });
-          });
-          setDraft((p) => ({ ...p, [key]: '' }));
-        };
-        return (
-          <View key={cat} style={{ paddingTop: 9 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between',
-              borderBottomWidth: 1, borderBottomColor: t.rule, paddingBottom: 4 }}>
-              <Mono style={{ fontSize: 10, letterSpacing: 1.3, textTransform: 'uppercase',
-                color: t.ink2, fontWeight: '700' }}>{cat}</Mono>
-              <Mono style={{ fontSize: 10 }}>
-                {`${items.filter((x) => x.done).length}/${items.length}`}
-              </Mono>
-            </View>
-            {items.map((it) => (
-              <View key={it.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 9,
-                paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: t.rule2 }}>
-                <Pressable
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: it.done }}
-                  accessibilityLabel={it.text}
-                  hitSlop={6}
-                  onPress={() => update((d) => {
-                    const x = d.trips.find((y) => y.id === trip.id)?.items.find((y) => y.id === it.id);
-                    if (x) x.done = !x.done;
-                  })}
-                >
-                  <Tick on={it.done} />
-                </Pressable>
-                <Text style={{ flex: 1, fontSize: 13.5, color: it.done ? t.ink3 : t.ink,
-                  textDecorationLine: it.done ? 'line-through' : 'none' }}>{it.text}</Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${it.text}`}
-                  hitSlop={6}
-                  onPress={() => update((d) => {
-                    const tr = d.trips.find((y) => y.id === trip.id);
-                    if (tr) tr.items = tr.items.filter((y) => y.id !== it.id);
-                  })}
-                >
-                  <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
-                </Pressable>
+      {expanded ? (
+        <View>
+          {cats.map((cat, ci) => {
+            const items = drawn.filter((x) => x.cat === cat);
+            const key = `${trip.id}|${cat}`;
+            const line = drag.lineIn(cat);
+            const add = () => {
+              const text = (draft[key] ?? '').trim();
+              if (!text) return;
+              update((d) => {
+                d.trips.find((x) => x.id === trip.id)?.items
+                  .push({ id: uid('c'), cat, text, done: false });
+              }, 'adding that to the list');
+              setDraft((p) => ({ ...p, [key]: '' }));
+            };
+            return (
+              <View
+                key={cat}
+                style={{ paddingTop: 9 }}
+                onLayout={(e) => drag.measureSection(cat, e.nativeEvent.layout.y)}
+              >
+                <TripHeading
+                  trip={trip}
+                  cat={cat}
+                  first={ci === 0}
+                  last={ci === cats.length - 1}
+                  done={items.filter((x) => x.done).length}
+                  total={items.length}
+                />
+
+                <View onLayout={(e) => drag.measureList(cat, e.nativeEvent.layout.y)}>
+                  {items.map((it) => (
+                    <TripRow
+                      key={it.id}
+                      trip={trip}
+                      item={it}
+                      open={openItem === it.id}
+                      onOpen={() => setOpenItem(openItem === it.id ? null : it.id)}
+                      onMeasure={(y, h) => drag.measureRow(it.id, y, h)}
+                      onDragMove={(dy) => drag.onDragMove(it.id, dy)}
+                      onDragEnd={(dy) => drag.onDragEnd(it.id, dy)}
+                      dragging={drag.dragId === it.id}
+                    />
+                  ))}
+                  {line !== null ? (
+                    <View
+                      pointerEvents="none"
+                      style={{ position: 'absolute', left: 0, right: 0, top: line - 1, height: 2,
+                        borderRadius: 1, backgroundColor: t.accent, zIndex: 20 }}
+                    />
+                  ) : null}
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 7, paddingTop: 7 }}>
+                  <Field value={draft[key] ?? ''} placeholder={`Add to ${cat.toLowerCase()}…`}
+                    onChangeText={(v) => setDraft((p) => ({ ...p, [key]: v }))}
+                    returnKeyType="done" onSubmitEditing={add} />
+                  <View style={{ width: box }}>
+                    <Button
+                      title="Add"
+                      disabled={!(draft[key] ?? '').trim()}
+                      onPress={add}
+                    />
+                  </View>
+                </View>
               </View>
-            ))}
-            <View style={{ flexDirection: 'row', gap: 7, paddingTop: 7 }}>
-              <Field value={draft[key] ?? ''} placeholder={`Add to ${cat.toLowerCase()}…`}
-                onChangeText={(v) => setDraft((p) => ({ ...p, [key]: v }))}
-                returnKeyType="done" onSubmitEditing={add} />
-              <Button title="Add" onPress={add} />
+            );
+          })}
+
+          <View style={{ flexDirection: 'row', gap: 7, paddingTop: 12 }}>
+            <Field
+              value={newCat}
+              onChangeText={setNewCat}
+              placeholder="Another heading…"
+              maxLength={28}
+              returnKeyType="done"
+              onSubmitEditing={addCat}
+            />
+            <View style={{ width: box }}>
+              <Button tone="ghost" title="+ Head" onPress={addCat} />
             </View>
           </View>
-        );
-      }) : null}
+        </View>
+      ) : null}
     </View>
+  );
+}
+
+/** One heading on a trip's checklist: what it is called, what is left under
+ *  it, and the two things you can do to it that a day's headings cannot have
+ *  done to them — because a day's headings belong to the week's shape, and
+ *  these belong to this trip alone. */
+function TripHeading({ trip, cat, first, last, done, total }: {
+  trip: Trip; cat: string; first: boolean; last: boolean; done: number; total: number;
+}) {
+  const t = useTheme();
+  const { update } = useStore();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(cat);
+
+  const commit = () => {
+    const next = draft.trim();
+    setEditing(false);
+    if (!next || next === cat) return;
+    update((d) => {
+      const tr = d.trips.find((x) => x.id === trip.id);
+      if (tr) renameTripCat(tr, cat, next);
+    }, 'renaming that heading');
+  };
+
+  const step = (dir: -1 | 1) => update((d) => {
+    const tr = d.trips.find((x) => x.id === trip.id);
+    if (tr) moveTripCat(tr, cat, dir);
+  }, 'moving that heading');
+
+  const arrow = (dir: -1 | 1, off: boolean) => (
+    <Pressable
+      onPress={() => !off && step(dir)}
+      disabled={off}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={`Move ${cat} ${dir === -1 ? 'up' : 'down'}`}
+      style={{ paddingHorizontal: 3, opacity: off ? 0.25 : 1 }}
+    >
+      <Text style={{ fontSize: 11, color: t.ink2, lineHeight: 13 }}>{dir === -1 ? '↑' : '↓'}</Text>
+    </Pressable>
+  );
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+      borderBottomWidth: 1, borderBottomColor: t.rule, paddingBottom: 4 }}>
+      {editing ? (
+        <Field
+          value={draft}
+          onChangeText={setDraft}
+          onBlur={commit}
+          onSubmitEditing={commit}
+          autoFocus
+          maxLength={28}
+          accessibilityLabel={`Rename ${cat}`}
+          style={{ paddingVertical: 2, fontSize: 12.5, letterSpacing: 1.1,
+            textTransform: 'uppercase', fontWeight: '700' }}
+        />
+      ) : (
+        <Pressable
+          onPress={() => { setDraft(cat); setEditing(true); }}
+          accessibilityRole="button"
+          accessibilityLabel={`Rename ${cat}`}
+          style={{ flex: 1 }}
+        >
+          <Mono style={{ fontSize: 10, letterSpacing: 1.3, textTransform: 'uppercase',
+            color: t.ink2, fontWeight: '700' }}>{cat}</Mono>
+        </Pressable>
+      )}
+      {editing ? null : (
+        <>
+          <Mono style={{ fontSize: 10 }}>{`${done}/${total}`}</Mono>
+          {arrow(-1, first)}
+          {arrow(1, last)}
+          <Pressable
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove the heading ${cat}`}
+            onPress={() => Alert.alert(
+              `Remove ${cat}?`,
+              total
+                ? `The ${total} thing${total === 1 ? '' : 's'} under it move to the heading above.`
+                : 'The heading goes; there is nothing under it.',
+              [{ text: 'Cancel', style: 'cancel' },
+               {
+                 text: 'Remove',
+                 style: 'destructive',
+                 onPress: () => update((d) => {
+                   const tr = d.trips.find((x) => x.id === trip.id);
+                   if (tr) removeTripCat(tr, cat);
+                 }, 'removing that heading'),
+               }],
+            )}
+          >
+            <Text style={{ color: t.ink3, fontSize: 13 }}>✕</Text>
+          </Pressable>
+        </>
+      )}
+    </View>
+  );
+}
+
+/** One thing to do before you go. A task in everything but name, so it behaves
+ *  like one: held and dragged by the grip, renamed by its name, and opened for
+ *  a note or to be got rid of. */
+function TripRow({ trip, item, open, onOpen, onMeasure, onDragMove, onDragEnd, dragging }: {
+  trip: Trip; item: TripItem; open: boolean; onOpen: () => void;
+  onMeasure: (y: number, h: number) => void;
+  onDragMove: (dy: number) => void;
+  onDragEnd: (dy: number) => void;
+  dragging: boolean;
+}) {
+  const t = useTheme();
+  const { update } = useStore();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(item.text);
+  const [note, setNote] = useState(item.note ?? '');
+  const lift = useSharedValue(0);
+  const told = useSharedValue(0);
+
+  const onItem = (fn: (x: TripItem) => void, label: string) => update((d) => {
+    const x = d.trips.find((y) => y.id === trip.id)?.items.find((y) => y.id === item.id);
+    if (x) fn(x);
+  }, label);
+
+  const commit = () => {
+    const next = draft.trim().slice(0, 120);
+    setEditing(false);
+    if (next && next !== item.text) onItem((x) => { x.text = next; }, 'renaming that');
+  };
+
+  const saveNote = () => {
+    const next = note.trim().slice(0, NOTE_LIMIT);
+    if (next === (item.note ?? '')) return;
+    onItem((x) => { if (next) x.note = next; else delete x.note; },
+      next ? 'writing that note' : 'clearing that note');
+  };
+  const save = useRef(saveNote);
+  save.current = saveNote;
+  useEffect(() => { if (!open) save.current(); }, [open]);
+  useEffect(() => { setNote(item.note ?? ''); }, [item.note]);
+
+  const pan = useMemo(
+    () => Gesture.Pan()
+      .activateAfterLongPress(220)
+      .onStart((e) => { told.value = e.translationY; runOnJS(onDragMove)(e.translationY); })
+      .onUpdate((e) => {
+        lift.value = e.translationY;
+        if (Math.abs(e.translationY - told.value) < 6) return;
+        told.value = e.translationY;
+        runOnJS(onDragMove)(e.translationY);
+      })
+      .onEnd((e) => { runOnJS(onDragEnd)(e.translationY); lift.value = 0; })
+      .onFinalize(() => { lift.value = 0; }),
+    [lift, told, onDragMove, onDragEnd],
+  );
+  const lifted = useAnimatedStyle(() => ({ transform: [{ translateY: lift.value }] }));
+
+  return (
+    <Animated.View
+      onLayout={(e) => onMeasure(e.nativeEvent.layout.y, e.nativeEvent.layout.height)}
+      style={[{ borderBottomWidth: 1, borderBottomColor: t.rule2, paddingVertical: 6,
+        zIndex: dragging ? 10 : 0,
+        backgroundColor: dragging ? t.sheet2 : 'transparent',
+        borderRadius: dragging ? radius.md : 0 }, lifted]}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+        <GestureDetector gesture={pan}>
+          <View
+            accessible
+            accessibilityRole="adjustable"
+            accessibilityLabel={`Hold to move ${item.text}`}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={{ color: dragging ? t.accent : t.ink3, fontSize: 15, lineHeight: 18,
+              paddingHorizontal: 3 }}>⠿</Text>
+          </View>
+        </GestureDetector>
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: item.done }}
+          accessibilityLabel={item.text}
+          hitSlop={6}
+          onPress={() => onItem((x) => { x.done = !x.done; },
+            item.done ? 'unticking that' : 'ticking that off')}
+        >
+          <Tick on={item.done} />
+        </Pressable>
+        {editing ? (
+          <Field
+            value={draft}
+            onChangeText={setDraft}
+            onBlur={commit}
+            onSubmitEditing={commit}
+            returnKeyType="done"
+            autoFocus
+            maxLength={120}
+            accessibilityLabel="What it is"
+          />
+        ) : (
+          <Pressable
+            onPress={() => { setDraft(item.text); setEditing(true); }}
+            accessibilityRole="button"
+            accessibilityLabel={`Rename ${item.text}`}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+          >
+            <Text style={{ flexShrink: 1, fontSize: 13.5, color: item.done ? t.ink3 : t.ink,
+              textDecorationLine: item.done ? 'line-through' : 'none' }}>{item.text}</Text>
+            {item.note ? (
+              <View
+                accessibilityLabel="Has a note"
+                style={{ width: 5, height: 5, borderRadius: 3,
+                  backgroundColor: item.done ? t.ink3 : t.accent }}
+              />
+            ) : null}
+          </Pressable>
+        )}
+        {editing ? null : (
+          <Pressable onPress={onOpen} hitSlop={8} accessibilityRole="button"
+            accessibilityLabel={open ? `Close options for ${item.text}` : `Options for ${item.text}`}
+            style={{ paddingHorizontal: 2 }}>
+            <Glyph name={open ? 'chevron.up' : 'ellipsis'} fallback={open ? '⌃' : '···'}
+              size={15} colour={open ? t.accent : t.ink3} />
+          </Pressable>
+        )}
+      </View>
+
+      {open ? (
+        <View style={{ gap: 7, paddingTop: 9 }}>
+          <Mono style={{ letterSpacing: 1, textTransform: 'uppercase', fontSize: 10 }}>Notes</Mono>
+          <Field
+            value={note}
+            onChangeText={setNote}
+            onBlur={saveNote}
+            placeholder="Anything that does not fit in the name…"
+            multiline
+            maxLength={NOTE_LIMIT}
+            accessibilityLabel={`Notes for ${item.text}`}
+            style={{ minHeight: 76, textAlignVertical: 'top', paddingTop: 10, lineHeight: 19 }}
+          />
+          <Button
+            tone="ghost"
+            title="Delete"
+            onPress={() => Alert.alert(
+              'Delete this?',
+              `"${item.text}" comes off the checklist. Undo puts it back.`,
+              [{ text: 'Cancel', style: 'cancel' },
+               {
+                 text: 'Delete',
+                 style: 'destructive',
+                 onPress: () => update((d) => {
+                   const tr = d.trips.find((y) => y.id === trip.id);
+                   if (tr) tr.items = tr.items.filter((y) => y.id !== item.id);
+                 }, 'deleting that'),
+               }],
+            )}
+          />
+        </View>
+      ) : null}
+    </Animated.View>
   );
 }

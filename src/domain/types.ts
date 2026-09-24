@@ -106,7 +106,14 @@ export interface Week {
   shopCopiedFrom?: string | null;
 }
 
-export interface TripItem { id: string; cat: string; text: string; done: boolean }
+export interface TripItem {
+  id: string;
+  cat: string;
+  text: string;
+  done: boolean;
+  /** Anything that did not fit in the name. Marked on the row with a dot. */
+  note?: string;
+}
 
 export interface Trip {
   id: string;
@@ -115,6 +122,11 @@ export interface Trip {
   start: string;
   end: string;
   items: TripItem[];
+  /** This trip's own headings, in the order it wants them. A trip takes a copy
+   *  of the standard ones when it is made, and then goes its own way: what a
+   *  week in Lisbon needs headed is not what a race weekend does. Absent on a
+   *  trip made before that was true, which reads as the standard list. */
+  cats?: string[];
 }
 
 export interface CountdownEvent {
