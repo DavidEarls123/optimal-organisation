@@ -11,7 +11,9 @@ import { useStore } from '../store/store';
 import { useTheme } from '../theme/ThemeProvider';
 import type { Theme } from '../theme/tokens';
 import { radius } from '../theme/tokens';
-import { DAY_LETTERS, addDays, isoOf, isoWeekId, parseISO, weekNumber } from '../domain/dates';
+import {
+  DAY_LETTERS, addDays, dayIndexIn, isoOf, isoWeekId, mondayOf, parseISO, weekNumber,
+} from '../domain/dates';
 import { ensureWeek, marksOn } from '../domain/week';
 import { dayScore, isCurrentWeek, templateOf, todayIndex } from '../domain/scoring';
 import { CornerMark, DateButton, Empty, Glyph, Mono, Note, Sheet } from './primitives';
@@ -67,6 +69,13 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
     setWeekId(id);
     // Stay on the same weekday. Landing on Monday every time means counting
     // across to Thursday again on every step.
+  };
+
+  const toToday = () => {
+    const id = isoWeekId(today);
+    update((d) => { ensureWeek(d, isoOf(today)); });
+    setWeekId(id);
+    setDay(Math.max(0, dayIndexIn(isoOf(mondayOf(today)), today)));
   };
 
   return (
@@ -178,21 +187,42 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
         })}
       </View>
 
-      {/* Somewhere to go that is not one week at a time. */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Go to a week"
-        onPress={() => setJumping(true)}
-        hitSlop={8}
-        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-          gap: 6, paddingTop: 2, paddingBottom: 2 }}
-      >
-        <Glyph name="calendar" fallback="▦" size={12} colour={t.ink3} />
-        <Mono style={{ fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase',
-          color: t.ink3 }}>
-          Go to a week
-        </Mono>
-      </Pressable>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        gap: 16, paddingTop: 2, paddingBottom: 2 }}>
+        {/* Somewhere to go that is not one week at a time. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Go to a week"
+          onPress={() => setJumping(true)}
+          hitSlop={8}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+        >
+          <Glyph name="calendar" fallback="▦" size={12} colour={t.ink3} />
+          <Mono style={{ fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase',
+            color: t.ink3 }}>
+            Go to a week
+          </Mono>
+        </Pressable>
+
+        {/* And one way back, which is the way back you want nine times in ten.
+            Offered only when you are somewhere else. */}
+        {!current || day !== ti ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back to today"
+            onPress={toToday}
+            hitSlop={8}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+              borderWidth: 1, borderColor: t.accentLine, backgroundColor: t.accentSoft,
+              borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 }}
+          >
+            <Mono style={{ fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase',
+              color: t.accent }}>
+              Today
+            </Mono>
+          </Pressable>
+        ) : null}
+      </View>
 
       <WeekJump open={jumping} onClose={() => setJumping(false)} />
     </View>
@@ -379,7 +409,9 @@ export function SlimStrip({ scrollY, after }: {
                 : score >= 0.999 ? t.hit
                   : score > 0 ? t.partial : t.rule;
               // A day you are away for says so, here as in the full strip: a
-              // dot that means nothing is worse than no dot at all.
+              // dot that means nothing is worse than no dot at all. It takes
+              // the same colour as the dot would have — being away is not a
+              // reason for a day that went well to look like nothing.
               const on = marksOn(state, isoOf(addDays(parseISO(week.monday), d)));
               const mark = on.trips.length || off ? '✈︎' : on.events.length ? '★' : '';
               return (
@@ -404,7 +436,7 @@ export function SlimStrip({ scrollY, after }: {
                   </Text>
                   {mark ? (
                     <Text style={{ fontSize: 8, lineHeight: 9, height: 9,
-                      color: selected ? look.ink : t.ink2 }}>{mark}</Text>
+                      color: selected ? look.ink : dot === t.rule ? t.ink2 : dot }}>{mark}</Text>
                   ) : (
                     <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: dot,
                       borderWidth: d === ti && current ? 1.5 : 0, borderColor: t.accent }} />

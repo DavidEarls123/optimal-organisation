@@ -352,6 +352,47 @@ export default function TemplateEditScreen() {
                 })}
               </View>
 
+              {/* What kind of session it is, if it is one. This is what the
+                  card on the picker counts, so a week can say what it asks
+                  for before you choose it. */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                flexWrap: 'wrap' }}>
+                <Mono style={{ fontSize: 10 }}>Tag</Mono>
+                <Pressable
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: !task.track }}
+                  onPress={() => setTasks((list) => list.map((x, j) => (
+                    j === i ? { ...x, track: null } : x)))}
+                  style={{ borderWidth: 1, borderRadius: radius.pill,
+                    paddingHorizontal: 9, paddingVertical: 4,
+                    borderColor: !task.track ? t.accentLine : t.rule,
+                    backgroundColor: !task.track ? t.accentSoft : 'transparent' }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: !task.track ? '700' : '500',
+                    color: !task.track ? t.accent : t.ink3 }}>None</Text>
+                </Pressable>
+                {state.trackables.map((k) => {
+                  const on = task.track === k.id;
+                  const [line, soft] = t.track[k.ci % t.track.length];
+                  return (
+                    <Pressable
+                      key={k.id}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: on }}
+                      onPress={() => setTasks((list) => list.map((x, j) => (
+                        j === i ? { ...x, track: on ? null : k.id } : x)))}
+                      style={{ borderWidth: 1, borderRadius: radius.pill,
+                        paddingHorizontal: 9, paddingVertical: 4,
+                        borderColor: on ? line : t.rule,
+                        backgroundColor: on ? soft : 'transparent' }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: on ? '700' : '500',
+                        color: on ? line : t.ink3 }}>{k.name}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                 flexWrap: 'wrap' }}>
                 <Mono style={{ fontSize: 10 }}>
@@ -391,7 +432,7 @@ export default function TemplateEditScreen() {
             tone="ghost"
             title="+ Add a standard task"
             onPress={() => setTasks((list) => [...list,
-              { key: uid('pt'), text: '', si: 0, days: [0, 1, 2, 3, 4, 5, 6] }])}
+              { key: uid('pt'), text: '', track: null, si: 0, days: [0, 1, 2, 3, 4, 5, 6] }])}
           />
         </Section>
 

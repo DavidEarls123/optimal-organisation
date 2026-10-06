@@ -40,6 +40,7 @@ export default function AheadScreen() {
   const [newTrip, setNewTrip] = useState({ name: '', start: '', end: '', tplId: 'weekend' });
   const [addingTrip, setAddingTrip] = useState(false);
   const [addingEvent, setAddingEvent] = useState(false);
+  const [past, setPast] = useState(false);
   /** The trip being changed, held as a draft so nothing moves under you while
    *  you are typing a name or picking a date. */
   const [editing, setEditing] = useState<
@@ -52,6 +53,16 @@ export default function AheadScreen() {
   const events = state.events
     .filter((x) => daysUntil(x.date, today) >= 0)
     .sort((a, b) => a.date.localeCompare(b.date));
+
+  // Gone, not deleted. A trip you have taken is a thing you did, and a
+  // countdown that has run out is a thing that happened: what you packed,
+  // what you forgot, when it was. It stops being news and goes in the back.
+  const been = [
+    ...state.trips.filter((x) => daysUntil(x.end, today) < 0)
+      .map((x) => ({ kind: 'trip' as const, when: x.end, trip: x })),
+    ...state.events.filter((x) => daysUntil(x.date, today) < 0)
+      .map((x) => ({ kind: 'event' as const, when: x.date, event: x })),
+  ].sort((a, b) => b.when.localeCompare(a.when));
 
   const rail = [
     ...trips.map((x) => ({ key: x.id, date: x.start, end: x.end, label: x.name, trip: true })),
@@ -185,6 +196,50 @@ export default function AheadScreen() {
             </Note>
           </Sheet>
         </Section>
+
+        {been.length ? (
+          <Section>
+            <SectionHead title="Been and gone" right={`${been.length}`} />
+            {!past ? (
+              <Button tone="ghost" title={`Show the last ${been.length}`}
+                onPress={() => setPast(true)} />
+            ) : null}
+            {past ? been.map((x) => (x.kind === 'trip' ? (
+              <TripCard
+                key={x.trip.id}
+                trip={x.trip}
+                today={today}
+                expanded={open === x.trip.id}
+                onToggle={() => setOpen(open === x.trip.id ? null : x.trip.id)}
+                onEdit={() => setEditing({ id: x.trip.id, name: x.trip.name,
+                  start: x.trip.start, end: x.trip.end, tplId: x.trip.tplId })}
+                draft={drafts}
+                setDraft={setDrafts}
+              />
+            ) : (
+              <View key={x.event.id} style={{ flexDirection: 'row', alignItems: 'center',
+                gap: 11, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: t.rule2 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14.5, color: t.ink2 }}>{x.event.name}</Text>
+                  <Mono style={{ fontSize: 10.5 }}>{fmt(x.event.date)}</Mono>
+                </View>
+                <Mono style={{ fontSize: 10.5 }}>
+                  {`${Math.abs(daysUntil(x.event.date, today))} ${unit(Math.abs(daysUntil(x.event.date, today)))} ago`}
+                </Mono>
+                <Pressable accessibilityRole="button"
+                  accessibilityLabel={`Remove ${x.event.name}`} hitSlop={6}
+                  onPress={() => update((d) => {
+                    d.events = d.events.filter((y) => y.id !== x.event.id);
+                  }, 'deleting that')}>
+                  <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
+                </Pressable>
+              </View>
+            ))) : null}
+            {past ? (
+              <Button tone="ghost" title="Hide them" onPress={() => setPast(false)} />
+            ) : null}
+          </Section>
+        ) : null}
 
         <Sheet
           open={editing !== null}

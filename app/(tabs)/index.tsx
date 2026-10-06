@@ -253,6 +253,16 @@ export default function DayScreen() {
     setTagFor((p) => ({ ...p, [sectionId]: '' }));
   }, []);
 
+  /** Turning to any task closes the composer. An empty box left open under a
+   *  heading while you are busy somewhere else is a task you did not write. */
+  const shutComposer = useCallback(() => {
+    setAdding((cur) => {
+      if (cur === null) return cur;
+      setDrafts((p) => ({ ...p, [cur]: '' }));
+      return null;
+    });
+  }, []);
+
   if (!week) return <Screen><Body><Empty>Loading…</Empty></Body></Screen>;
 
   const off = Boolean(week.untracked[day]);
@@ -458,7 +468,12 @@ export default function DayScreen() {
                   open={moveId === x.id}
                   onToggle={() => setTaskState(x.id, x.state === 'done' ? 'open' : 'done')}
                   onDelete={() => deleteTask(x.id, x.text)}
-                  onOpenMove={() => { setMoveId(moveId === x.id ? null : x.id); setShowPicker(false); }}
+                  onOpenMove={() => {
+                    shutComposer();
+                    setMoveId(moveId === x.id ? null : x.id);
+                    setShowPicker(false);
+                  }}
+                  onEditing={shutComposer}
                   onRename={(text) => update((d) => {
                     const item = (d.weeks[weekId].tasks[day] ?? []).find((y) => y.id === x.id);
                     if (item) item.text = text;
@@ -468,6 +483,10 @@ export default function DayScreen() {
                     if (!item) return;
                     if (text) item.note = text; else delete item.note;
                   }, text ? 'writing that note' : 'clearing that note')}
+                  onTag={(id) => update((d) => {
+                    const item = (d.weeks[weekId].tasks[day] ?? []).find((y) => y.id === x.id);
+                    if (item) item.track = id || null;
+                  }, id ? 'tagging that' : 'taking that tag off')}
                   choices={choices}
                   onMoveToDate={(iso) => doMove(x.id, iso)}
                   onPickDate={() => setShowPicker(true)}
@@ -952,7 +971,8 @@ function TagPicker({ value, onChange }: { value: string; onChange: (v: string) =
 }
 
 function TaskRow({
-  task, adrift, open, onToggle, onDelete, onOpenMove, onPickDate, onRename, onNote,
+  task, adrift, open, onToggle, onDelete, onOpenMove, onPickDate, onRename, onEditing, onNote,
+  onTag,
   choices, onMoveToDate, onMeasure, onDragMove, onDragEnd, dragging,
 }: {
   task: Task;
@@ -962,7 +982,10 @@ function TaskRow({
   onToggle: () => void; onDelete: () => void; onOpenMove: () => void;
   onPickDate: () => void;
   onRename: (text: string) => void;
+  /** Called the moment this row takes over, so nothing else stays open. */
+  onEditing: () => void;
   onNote: (text: string) => void;
+  onTag: (id: string) => void;
   /** Forward days offered in the strip, computed once by the screen. */
   choices: ReturnType<typeof moveChoices>;
   onMoveToDate: (iso: string) => void;
@@ -1082,7 +1105,7 @@ function TaskRow({
             // while reading down a list is worth more than a second tap target
             // for the box. Tapping it is how you change it, which is where
             // anybody would look first.
-            onPress={() => { setDraft(task.text); setEditing(true); }}
+            onPress={() => { onEditing(); setDraft(task.text); setEditing(true); }}
             accessibilityRole="button"
             accessibilityLabel={`Rename ${task.text}`}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}
@@ -1167,6 +1190,16 @@ function TaskRow({
               <Glyph name="calendar" fallback="▦" size={17} colour={t.accent} />
             </Pressable>
           </View>
+          {/* A tag was something you could only set while typing the task.
+              What a thing turned out to be is often known later. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingTop: 2 }}>
+            <Mono style={{ letterSpacing: 1, textTransform: 'uppercase', fontSize: 10,
+              flex: 1 }}>
+              Tag
+            </Mono>
+            <TagPicker value={task.track ?? ''} onChange={onTag} />
+          </View>
+
           <Mono style={{ letterSpacing: 1, textTransform: 'uppercase', fontSize: 10,
             paddingTop: 2 }}>
             Notes

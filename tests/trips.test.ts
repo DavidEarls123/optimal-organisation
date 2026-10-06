@@ -4,6 +4,7 @@ import { createInitialState } from '../src/domain/state';
 import {
   addTripCat, buildTripItems, moveTripCat, placeTripItem, removeTripCat, renameTripCat,
   tripCats, tripMissing, tripOrdered, tripTopUp, uid,
+  addPackCat, removePackCat, renamePackCat, tripTemplateOf,
 } from '../src/domain/week';
 import { TRIP_CATEGORIES } from '../src/domain/catalogue';
 import type { AppState } from '../src/domain/types';
@@ -194,4 +195,51 @@ test('topping up still works once a trip has headings of its own', () => {
   addTripCat(s.trips[0], 'Documents');
   const missing = tripMissing(s, id, 'race');
   assert.equal(tripTopUp(s, id, 'race'), missing);
+});
+
+test('the standard checklist takes a heading, and keeps the ones it had', () => {
+  const s = createInitialState(TUE, 'run');
+  const before = Object.keys(tripTemplateOf(s));
+  assert.equal(addPackCat(s, 'Documents'), true);
+  assert.deepEqual(Object.keys(tripTemplateOf(s)), [...before, 'Documents']);
+  assert.equal(addPackCat(s, 'documents'), false, 'and not the same one twice');
+});
+
+test('a heading removed from the standard checklist stays removed', () => {
+  // It used to be put back every time the list was read, so removing one
+  // lasted until you next looked at it.
+  const s = createInitialState(TUE, 'run');
+  const [first] = Object.keys(tripTemplateOf(s));
+  assert.equal(removePackCat(s, first), true);
+  assert.ok(!Object.keys(tripTemplateOf(s)).includes(first), 'still gone when read again');
+});
+
+test('renaming a standard heading keeps its place and its items', () => {
+  const s = createInitialState(TUE, 'run');
+  const cats = Object.keys(tripTemplateOf(s));
+  const was = [...tripTemplateOf(s)[cats[1]]];
+  assert.equal(renamePackCat(s, cats[1], 'Getting there'), true);
+  const now = Object.keys(tripTemplateOf(s));
+  assert.equal(now[1], 'Getting there', 'in the same place');
+  assert.deepEqual(tripTemplateOf(s)['Getting there'], was, 'with what was under it');
+  assert.equal(renamePackCat(s, 'Getting there', cats[0]), false, 'and not onto another');
+});
+
+test('the last standard heading will not be removed', () => {
+  const s = createInitialState(TUE, 'run');
+  const cats = Object.keys(tripTemplateOf(s));
+  for (const cat of cats.slice(1)) removePackCat(s, cat);
+  assert.equal(removePackCat(s, cats[0]), false);
+  assert.equal(Object.keys(tripTemplateOf(s)).length, 1);
+});
+
+test('a trip is built from the headings the standard list has now', () => {
+  const s = createInitialState(TUE, 'run');
+  addPackCat(s, 'Documents');
+  tripTemplateOf(s).Documents.push('Passport');
+  const [first] = Object.keys(tripTemplateOf(s));
+  removePackCat(s, first);
+  const items = buildTripItems(s, 'weekend');
+  assert.ok(items.some((x) => x.cat === 'Documents' && x.text === 'Passport'));
+  assert.ok(!items.some((x) => x.cat === first), 'and not the one taken away');
 });

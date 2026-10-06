@@ -497,20 +497,32 @@ test('the training a template card shows is the training it lays down', () => {
   assert.deepEqual(Object.fromEntries(shown.map((k) => [k.id, k.n])), want);
 });
 
-test('a week built from a template arrives with no tags on anything', () => {
-  // A tag says a session happened and counts towards what you track. Only you
-  // can say that, so nothing arrives already wearing one.
+test('what a template card counts is what the week it builds lays down', () => {
+  // A tag on a standard task says what kind of session it is, so the card can
+  // say what the week asks for before you pick it. The two are read off the
+  // same plan, and a card that says four runs has to mean four runs.
   const s = fresh('run');
   ensureWeek(s, '2026-09-21');
   const w = s.weeks['2026-W39'];
-  const tagged = [];
+  const built: Record<string, number> = {};
   for (let d = 0; d < 7; d += 1) {
-    for (const task of w.tasks[d] ?? []) if (task.track) tagged.push(task.text);
+    for (const task of w.tasks[d] ?? []) {
+      if (task.track) built[task.track] = (built[task.track] ?? 0) + 1;
+    }
   }
-  assert.deepEqual(tagged, [], 'nothing came in pre-tagged');
-  const any = Array.from({ length: 7 }, (_, d) => (w.tasks[d] ?? []).length)
-    .reduce((a, b) => a + b, 0);
-  assert.ok(any > 0, 'and the tasks themselves did arrive');
+  assert.deepEqual(
+    Object.fromEntries(templateTraining(s, 'run').map((k) => [k.id, k.n])), built,
+  );
+});
+
+test('nothing a template lays down arrives already ticked', () => {
+  // The tag comes with the task; the claim that it happened does not.
+  const s = fresh('run');
+  ensureWeek(s, '2026-09-21');
+  const w = s.weeks['2026-W39'];
+  for (let d = 0; d < 7; d += 1) {
+    for (const task of w.tasks[d] ?? []) assert.equal(task.state, 'open', task.text);
+  }
 });
 
 test('the template cards distinguish a run block from a deload', () => {

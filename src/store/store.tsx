@@ -6,7 +6,7 @@ import type { AppState } from '../domain/types';
 import { createInitialState, migrate } from '../domain/state';
 import { decideLoad } from '../domain/load';
 import { ensurePlanCoverage, ensureWeek } from '../domain/week';
-import { isoOf, mondayOf, weekIdOf } from '../domain/dates';
+import { dayIndexIn, isoOf, mondayOf, weekIdOf } from '../domain/dates';
 import { todayIndex } from '../domain/scoring';
 
 const KEY = 'optimal-week/state/v1';
@@ -65,7 +65,13 @@ const StoreContext = createContext<Store | null>(null);
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const today = useMemo(() => new Date(), []);
+  // What day it is. Worked out once at launch and then never again, which was
+  // fine for an app you open and close and wrong for one left running: at
+  // midnight it carried on insisting it was yesterday, and every day after
+  // that was yesterday too.
+  const [today, setToday] = useState(() => new Date());
+  const onDate = useRef(today);
+  onDate.current = today;
   const [state, setState] = useState<AppState>(() => createInitialState(today));
   const [ready, setReady] = useState(false);
   const [weekId, setWeekId] = useState(() => weekIdOf(today));
@@ -141,7 +147,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       AsyncStorage.getItem(PREV_KEY).then((v) => { if (alive) setCanUndo(Boolean(v)); }).catch(() => {});
     })();
     return () => { alive = false; };
-  }, [today]);
+    // Once. A new day is not a reason to read the disk again — the state in
+    // hand is newer than anything on it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const write = useCallback(async (s: AppState) => {
     try {
@@ -177,7 +186,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (due && !frozen.current) void write(due);
     };
     const sub = RNAppState.addEventListener('change', (next) => {
-      if (next !== 'active') flush();
+      if (next !== 'active') { flush(); return; }
+      // Back from somewhere, possibly tomorrow. Put it on the day it actually
+      // is, and build that week if it has not been seen before.
+      const now = new Date();
+      if (isoOf(now) === isoOf(onDate.current)) return;
+      setToday(now);
+      setState((s) => {
+        const next2 = clone(s);
+        ensureWeek(next2, isoOf(mondayOf(now)));
+        return next2;
+      });
+      setWeekId(weekIdOf(now));
+      setDay(Math.max(0, dayIndexIn(isoOf(mondayOf(now)), now)));
     });
     return () => { flush(); sub.remove(); };
   }, [write]);

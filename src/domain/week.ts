@@ -46,16 +46,15 @@ export function planTasks(state: AppState, templateId: string, dayIndex: number)
   const from = t.sections?.length ? t.sections : state.sections;
   const secs = from.length ? from : [{ id: 's1', name: 'Morning' }];
   const entries: PlanEntry[] = t.plan[dayIndex] ?? [];
-  // No tag. A tag says a session happened and counts towards what you track,
-  // which is a claim only you can make — a template suggesting the work is not
-  // the same as you having done it, and a week should not start out already
-  // wearing the tags of things nobody has done yet.
-  return entries.map(([text, , si]) => ({
+  // The tag comes with it. A tag only counts once the task is ticked, so a
+  // week laid out with tagged work has not claimed any of it — it has said
+  // what kind of week it is, which is the whole point of a template.
+  return entries.map(([text, track, si]) => ({
     id: uid('p'),
     text,
     state: 'open' as const,
     plan: true,
-    track: null,
+    track: track ?? null,
     sec: (secs[si] ?? secs[0]).id,
   }));
 }
@@ -548,10 +547,50 @@ export function tripTemplateOf(state: AppState): Record<string, string[]> {
       TRIP_CATEGORIES.map((cat) => [cat, [...(TRIP_BASE[cat] ?? [])]]),
     );
   }
-  for (const cat of TRIP_CATEGORIES) {
-    if (!Array.isArray(state.tripTemplate[cat])) state.tripTemplate[cat] = [];
+  // Whatever headings it has, and only those. It used to put the four standard
+  // ones back every time it was read, so a heading you removed was removed
+  // until you looked at the list again.
+  for (const [cat, items] of Object.entries(state.tripTemplate)) {
+    if (!Array.isArray(items)) state.tripTemplate[cat] = [];
+  }
+  if (!Object.keys(state.tripTemplate).length) {
+    state.tripTemplate = Object.fromEntries(
+      TRIP_CATEGORIES.map((cat) => [cat, [...(TRIP_BASE[cat] ?? [])]]),
+    );
   }
   return state.tripTemplate;
+}
+
+/** Adds a heading to the standing checklist, unless it is already there. */
+export function addPackCat(state: AppState, name: string): boolean {
+  const text = name.trim();
+  if (!text) return false;
+  const tpl = tripTemplateOf(state);
+  if (Object.keys(tpl).some((x) => x.toLowerCase() === text.toLowerCase())) return false;
+  tpl[text] = [];
+  return true;
+}
+
+/** Renames one, keeping it where it is in the order. */
+export function renamePackCat(state: AppState, from: string, to: string): boolean {
+  const text = to.trim();
+  const tpl = tripTemplateOf(state);
+  const cats = Object.keys(tpl);
+  if (!text || !cats.includes(from)) return false;
+  if (cats.some((x) => x !== from && x.toLowerCase() === text.toLowerCase())) return false;
+  state.tripTemplate = Object.fromEntries(
+    cats.map((cat) => [cat === from ? text : cat, tpl[cat]]),
+  );
+  return true;
+}
+
+/** And takes one away, with whatever was listed under it. Trips already made
+ *  keep their own copies: this is only what the next one starts from. */
+export function removePackCat(state: AppState, name: string): boolean {
+  const tpl = tripTemplateOf(state);
+  if (!(name in tpl) || Object.keys(tpl).length <= 1) return false;
+  delete tpl[name];
+  return true;
 }
 
 /** A new trip's checklist: your standing list, plus whatever that kind of trip
@@ -683,7 +722,11 @@ export function buildTripItems(state: AppState, tplId: string): TripItem[] {
   const base = tripTemplateOf(state);
   const kind = TRIP_TEMPLATES[tplId] ?? TRIP_TEMPLATES.weekend;
   const out: TripItem[] = [];
-  for (const cat of TRIP_CATEGORIES) {
+  // The headings the standing list actually has, then anything this kind of
+  // trip adds under a heading of its own.
+  const cats = [...Object.keys(base)];
+  for (const cat of Object.keys(kind.extra)) if (!cats.includes(cat)) cats.push(cat);
+  for (const cat of cats) {
     const seen = new Set<string>();
     for (const text of [...(base[cat] ?? []), ...(kind.extra[cat] ?? [])]) {
       const key = text.trim().toLowerCase();
@@ -794,6 +837,10 @@ export function copyTemplateInto(into: WeekTemplate, from: WeekTemplate): WeekTe
  *  to keep in step. So the editor works in these and turns them back. */
 export interface PlanTask {
   text: string;
+  /** What kind of session it is, where it is one. Yours to set: a template
+   *  says what a week asks of you, and a tagged task is how the week ahead
+   *  knows a gym session from a run. */
+  track: string | null;
   /** Which of the template's headings it sits under. */
   si: number;
   /** Weekdays, Monday first. */
@@ -807,11 +854,11 @@ export function planTaskList(plan: PlanEntry[][]): PlanTask[] {
   const out: PlanTask[] = [];
   const seen = new Map<string, PlanTask>();
   for (let d = 0; d < 7; d += 1) {
-    for (const [text, , si] of plan[d] ?? []) {
-      const key = `${text}\u0000${si}`;
+    for (const [text, track, si] of plan[d] ?? []) {
+      const key = `${text}\u0000${track ?? ''}\u0000${si}`;
       const had = seen.get(key);
       if (had) { if (!had.days.includes(d)) had.days.push(d); continue; }
-      const made: PlanTask = { text, si, days: [d] };
+      const made: PlanTask = { text, track: track ?? null, si, days: [d] };
       seen.set(key, made);
       out.push(made);
     }
@@ -822,12 +869,19 @@ export function planTaskList(plan: PlanEntry[][]): PlanTask[] {
 /** And back again. A task on no days is dropped rather than written nowhere. */
 export function planFromList(list: PlanTask[]): PlanEntry[][] {
   const plan: PlanEntry[][] = [[], [], [], [], [], [], []];
+  const seen: Set<string>[] = plan.map(() => new Set<string>());
   for (const task of list) {
     const text = task.text.trim();
     if (!text) continue;
     for (const d of task.days) {
       if (d < 0 || d > 6) continue;
-      plan[d].push([text, null, Math.max(0, task.si)]);
+      // The same thing twice on one day is once. Two rows that have been
+      // edited into saying the same thing would otherwise both be laid down,
+      // and both counted on the card.
+      const key = `${text.toLowerCase()}\u0000${task.track ?? ''}\u0000${task.si}`;
+      if (seen[d].has(key)) continue;
+      seen[d].add(key);
+      plan[d].push([text, task.track ?? null, Math.max(0, task.si)]);
     }
   }
   return plan;

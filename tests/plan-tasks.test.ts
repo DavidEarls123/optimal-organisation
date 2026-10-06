@@ -38,14 +38,29 @@ test('the same words under a different heading stay two tasks', () => {
   assert.deepEqual(list.map((x) => x.si), [0, 2]);
 });
 
-test('a tag a template was written with is not carried into the week', () => {
-  // Older templates have tags written into their plans. They describe what the
-  // week is for on its card; they are not put on your tasks.
+test('the same words with a different tag stay two tasks', () => {
   const plan = empty();
   plan[0].push(['Session', 'gym', 0]);
+  plan[0].push(['Session', 'run', 0]);
+  assert.equal(planTaskList(plan).length, 2, 'a gym session is not a run');
+});
+
+test('a tag survives being read out and written back', () => {
+  const plan = empty();
+  plan[0].push(['Easy 5k', 'run', 1]);
   const list = planTaskList(plan);
-  assert.equal(list.length, 1);
-  assert.deepEqual(planFromList(list)[0], [['Session', null, 0]]);
+  assert.equal(list[0].track, 'run');
+  assert.deepEqual(planFromList(list)[0], [['Easy 5k', 'run', 1]]);
+});
+
+test('the same thing twice on one day is laid down once', () => {
+  // Two rows edited into saying the same thing would otherwise both be put on
+  // the day, and both counted on the template's card.
+  const back = planFromList([
+    { text: 'Easy 5k', track: 'run', si: 0, days: [0] },
+    { text: 'easy 5k', track: 'run', si: 0, days: [0] },
+  ]);
+  assert.equal(back[0].length, 1);
 });
 
 test('order follows where each task first appears', () => {
@@ -70,23 +85,23 @@ test('a scaffold survives being read out and written back', () => {
 });
 
 test('a task on no days is dropped rather than written nowhere', () => {
-  const back = planFromList([{ text: 'Someday', si: 0, days: [] }]);
+  const back = planFromList([{ text: 'Someday', track: null, si: 0, days: [] }]);
   assert.deepEqual(back, empty());
 });
 
 test('a task with no name is dropped', () => {
-  const back = planFromList([{ text: '   ', si: 0, days: [0, 1] }]);
+  const back = planFromList([{ text: '   ', track: null, si: 0, days: [0, 1] }]);
   assert.deepEqual(back, empty());
 });
 
 test('a name is trimmed on the way in, so it matches itself later', () => {
-  const back = planFromList([{ text: '  Physio  ', si: 0, days: [0] }]);
+  const back = planFromList([{ text: '  Physio  ', track: null, si: 0, days: [0] }]);
   assert.deepEqual(back[0], [['Physio', null, 0]]);
   assert.equal(planTaskList(back).length, 1);
 });
 
 test('a day that means nothing is ignored rather than growing the week', () => {
-  const back = planFromList([{ text: 'Physio', si: 0, days: [0, 9, -2] }]);
+  const back = planFromList([{ text: 'Physio', track: null, si: 0, days: [0, 9, -2] }]);
   assert.equal(back.length, 7, 'still seven days');
   assert.equal(back[0].length, 1);
   assert.equal(back.reduce((a, x) => a + x.length, 0), 1, 'and nothing landed anywhere else');
@@ -100,8 +115,8 @@ test('what a template says goes on a day is what a day is built with', () => {
   const s = createInitialState(TUE, 'run');
   const id = Object.keys(s.templates)[0];
   s.templates[id].plan = planFromList([
-    { text: 'Physio', si: 0, days: [0, 1, 2, 3, 4, 5, 6] },
-    { text: 'Big shop', si: 0, days: [5] },
+    { text: 'Physio', track: null, si: 0, days: [0, 1, 2, 3, 4, 5, 6] },
+    { text: 'Big shop', track: null, si: 0, days: [5] },
   ]);
   assert.deepEqual(planTasks(s, id, 2).map((x) => x.text), ['Physio'], 'Wednesday');
   assert.deepEqual(planTasks(s, id, 5).map((x) => x.text), ['Physio', 'Big shop'], 'Saturday');
@@ -112,7 +127,7 @@ test('a standard task lands under the heading it was given', () => {
   const id = Object.keys(s.templates)[0];
   const secs = s.templates[id].sections ?? s.sections;
   s.templates[id].plan = planFromList([
-    { text: 'Evening walk', si: secs.length - 1, days: [0] },
+    { text: 'Evening walk', track: null, si: secs.length - 1, days: [0] },
   ]);
   assert.equal(planTasks(s, id, 0)[0].sec, secs[secs.length - 1].id);
 });

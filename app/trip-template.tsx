@@ -7,7 +7,9 @@ import {
 } from '../src/ui/primitives';
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
-import { tripTemplateOf } from '../src/domain/week';
+import {
+  addPackCat, removePackCat, renamePackCat, tripTemplateOf,
+} from '../src/domain/week';
 import { TRIP_BASE, TRIP_CATEGORIES, TRIP_TEMPLATES } from '../src/domain/catalogue';
 
 const ITEM_LIMIT = 70;
@@ -17,13 +19,15 @@ export default function TripTemplateScreen() {
   const t = useTheme();
   const { state, update } = useStore();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [heading, setHeading] = useState(false);
+  const [newCat, setNewCat] = useState('');
 
   if (!state.tripTemplate) {
     update((d) => { tripTemplateOf(d); });
     return <Screen><Body><Empty>Setting up…</Empty></Body></Screen>;
   }
   const base = state.tripTemplate;
-  const total = TRIP_CATEGORIES.reduce((a, c) => a + (base[c]?.length ?? 0), 0);
+  const total = Object.values(base).reduce((a, c) => a + c.length, 0);
 
   const addItem = (cat: string) => {
     const text = (drafts[cat] ?? '').trim().slice(0, ITEM_LIMIT);
@@ -37,6 +41,16 @@ export default function TripTemplateScreen() {
     setDrafts((p) => ({ ...p, [cat]: '' }));
   };
 
+  const cats = Object.keys(base);
+
+  const addCat = () => {
+    const name = newCat.trim();
+    if (!name) { setHeading(false); return; }
+    update((d) => { addPackCat(d, name); }, 'adding that heading');
+    setNewCat('');
+    setHeading(false);
+  };
+
   return (
     <Screen>
       <Body>
@@ -48,12 +62,40 @@ export default function TripTemplateScreen() {
           </Note>
         </Section>
 
-        {TRIP_CATEGORIES.map((cat) => (
+        {cats.map((cat) => (
           <View key={cat}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 4 }}>
-              <Text style={{ flex: 1, fontSize: 12.5, letterSpacing: 1.1,
-                textTransform: 'uppercase', fontWeight: '700', color: t.ink }}>{cat}</Text>
+              <Field
+                value={cat}
+                onChangeText={(v) => update((d) => { renamePackCat(d, cat, v); },
+                  'renaming that heading')}
+                maxLength={28}
+                accessibilityLabel={`Rename ${cat}`}
+                style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 0,
+                  paddingHorizontal: 0, paddingVertical: 2, fontSize: 12.5, letterSpacing: 1.1,
+                  textTransform: 'uppercase', fontWeight: '700', color: t.ink }}
+              />
               <Mono>{String(base[cat]?.length ?? 0)}</Mono>
+              {cats.length > 1 ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove the heading ${cat}`}
+                  hitSlop={8}
+                  onPress={() => Alert.alert(
+                    `Remove ${cat}?`,
+                    'Only from the standard checklist. Trips already made keep theirs.',
+                    [{ text: 'Cancel', style: 'cancel' },
+                     {
+                       text: 'Remove',
+                       style: 'destructive',
+                       onPress: () => update((d) => { removePackCat(d, cat); },
+                         'removing that heading'),
+                     }],
+                  )}
+                >
+                  <Text style={{ color: t.ink3, fontSize: 15 }}>✕</Text>
+                </Pressable>
+              ) : null}
             </View>
 
             <View style={{ borderTopWidth: 1, borderTopColor: t.rule }}>
@@ -93,6 +135,33 @@ export default function TripTemplateScreen() {
             </View>
           </View>
         ))}
+
+        {/* A heading is a rarer thing to want than an item. */}
+        {heading ? (
+          <View style={{ flexDirection: 'row', gap: 7, paddingTop: 4 }}>
+            <Field
+              value={newCat}
+              onChangeText={setNewCat}
+              placeholder="What to call it…"
+              maxLength={28}
+              returnKeyType="done"
+              onSubmitEditing={addCat}
+              autoFocus
+            />
+            <Button title={newCat.trim() ? 'Add' : 'Done'} onPress={addCat} />
+          </View>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Add a heading"
+            onPress={() => setHeading(true)}
+            hitSlop={8}
+            style={{ paddingTop: 4, alignSelf: 'flex-start' }}
+          >
+            <Mono style={{ fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase',
+              color: t.ink3 }}>+ Heading</Mono>
+          </Pressable>
+        )}
 
         <Section>
           <SectionHead title="What each kind adds" />
