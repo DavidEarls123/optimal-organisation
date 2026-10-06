@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-  Extrapolation, interpolate, useAnimatedStyle, type SharedValue,
+  Extrapolation, interpolate, runOnJS, useAnimatedStyle, type SharedValue,
 } from 'react-native-reanimated';
 import { Text, useTextScale } from './type';
 import { useRouter } from 'expo-router';
@@ -13,7 +14,7 @@ import { radius } from '../theme/tokens';
 import { DAY_LETTERS, addDays, isoOf, isoWeekId, parseISO, weekNumber } from '../domain/dates';
 import { ensureWeek, marksOn } from '../domain/week';
 import { dayScore, isCurrentWeek, templateOf, todayIndex } from '../domain/scoring';
-import { CornerMark, Mono } from './primitives';
+import { CornerMark, DateButton, Empty, Glyph, Mono, Note, Sheet } from './primitives';
 
 function rangeLabel(mondayIso: string): string {
   const mon = parseISO(mondayIso);
@@ -43,6 +44,7 @@ export function dayLook(t: Theme): DayLook {
  *  SlimStrip, pinned under it. */
 export function WeekHeader({ compact }: { compact?: boolean }) {
   const t = useTheme();
+  const [jumping, setJumping] = useState(false);
   const router = useRouter();
   const { state, weekId, setWeekId, day, setDay, today, update } = useStore();
   const week = state.weeks[weekId];
@@ -68,6 +70,7 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
   };
 
   return (
+    <GestureDetector gesture={weeks(shift)}>
     <View style={{ paddingHorizontal: 18, paddingTop: 12, gap: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <CornerMark />
@@ -174,8 +177,123 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
           );
         })}
       </View>
+
+      {/* Somewhere to go that is not one week at a time. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Go to a week"
+        onPress={() => setJumping(true)}
+        hitSlop={8}
+        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+          gap: 6, paddingTop: 2, paddingBottom: 2 }}
+      >
+        <Glyph name="calendar" fallback="▦" size={12} colour={t.ink3} />
+        <Mono style={{ fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase',
+          color: t.ink3 }}>
+          Go to a week
+        </Mono>
+      </Pressable>
+
+      <WeekJump open={jumping} onClose={() => setJumping(false)} />
     </View>
+    </GestureDetector>
   );
+}
+
+/** Somewhere to go that is not one week at a time.
+ *
+ *  Weeks you have are the ones you have written something in, so they are
+ *  offered by name. A date further out is a week that does not exist yet, and
+ *  picking one makes it — but a date back behind the first week you recorded
+ *  is nothing at all, and making an empty week there would put a nought in
+ *  your year that you never lived. It says so instead. */
+function WeekJump({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useTheme();
+  const { state, weekId, setWeekId, today, update } = useStore();
+  const [missed, setMissed] = useState('');
+
+  const ids = Object.keys(state.weeks).sort().reverse();
+  const nowId = isoWeekId(today);
+
+  const go = (id: string) => { setWeekId(id); setMissed(''); onClose(); };
+
+  const pick = (iso: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
+    const id = isoWeekId(parseISO(iso));
+    if (state.weeks[id]) { go(id); return; }
+    // Forward is a week waiting to happen, so it can be made.
+    if (id > nowId) { update((d) => { ensureWeek(d, iso); }); go(id); return; }
+    setMissed(id);
+  };
+
+  return (
+    <Sheet open={open} title="Go to a week" onClose={() => { setMissed(''); onClose(); }}>
+      <DateButton
+        title="Any week"
+        placeholder="Pick a date…"
+        value=""
+        onChange={pick}
+      />
+      {missed ? (
+        <Note>
+          {`Nothing was recorded in week ${weekNumber(missed)} of ${missed.slice(0, 4)}. `}
+          Weeks are kept as you use them, and an empty one put there now would only be a
+          week you never had.
+        </Note>
+      ) : null}
+
+      <Mono style={{ letterSpacing: 1.2, textTransform: 'uppercase', fontSize: 10,
+        paddingTop: 4 }}>
+        Weeks you have
+      </Mono>
+      {ids.length === 0 ? <Empty>None yet.</Empty> : null}
+      {ids.map((id) => {
+        const w = state.weeks[id];
+        const here = id === weekId;
+        return (
+          <Pressable
+            key={id}
+            accessibilityRole="button"
+            accessibilityState={{ selected: here }}
+            accessibilityLabel={`Week ${weekNumber(id)}, ${rangeLabel(w.monday)}`}
+            onPress={() => go(id)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+              borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 10,
+              borderColor: here ? t.accent : t.rule,
+              backgroundColor: here ? t.accentSoft : 'transparent' }}
+          >
+            <Mono style={{ width: 54, fontSize: 11, color: here ? t.accent : t.ink3 }}>
+              {`WK ${weekNumber(id)}`}
+            </Mono>
+            <Text style={{ flex: 1, fontSize: 14, fontWeight: here ? '700' : '500',
+              color: here ? t.accent : t.ink }}>
+              {rangeLabel(w.monday)}
+            </Text>
+            {id === nowId ? (
+              <Mono style={{ fontSize: 10, color: t.hit }}>NOW</Mono>
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </Sheet>
+  );
+}
+
+/** Left and right across a week, as well as the arrows.
+ *
+ *  It has to be sure before it takes over: a drag that is mostly down the page
+ *  is a scroll, and a tap on a day is neither. So it waits for a decided
+ *  sideways movement and gives up the moment the finger goes vertical. */
+function weeks(shift: (delta: number) => void) {
+  return Gesture.Pan()
+    .activeOffsetX([-24, 24])
+    .failOffsetY([-16, 16])
+    .onEnd((e) => {
+      const far = Math.abs(e.translationX) > 56;
+      const fast = Math.abs(e.velocityX) > 420;
+      if (!far && !fast) return;
+      runOnJS(shift)(e.translationX < 0 ? 1 : -1);
+    });
 }
 
 /** The seven days on one line, for the bar that stays put while the week
@@ -208,7 +326,7 @@ export function SlimStrip({ scrollY, after }: {
 }) {
   const t = useTheme();
   const scale = useTextScale();
-  const { state, weekId, day, setDay, today } = useStore();
+  const { state, weekId, setWeekId, day, setDay, today, update } = useStore();
   const week = state.weeks[weekId];
   const look = dayLook(t);
   // Measured off the writing, because the writing is a setting. A fixed height
@@ -235,8 +353,19 @@ export function SlimStrip({ scrollY, after }: {
   const current = isCurrentWeek(week, today);
   const ti = todayIndex(week, today);
 
+  // The same sideways swipe as the week above it: the days are the days,
+  // wherever they happen to be drawn.
+  const shift = (delta: number) => {
+    const target = isoOf(addDays(parseISO(week.monday), delta * 7));
+    const id = isoWeekId(parseISO(target));
+    if (delta > 0) update((d) => { ensureWeek(d, target); });
+    else if (!state.weeks[id]) return;
+    setWeekId(id);
+  };
+
   return (
     <Animated.View style={[{ overflow: 'hidden' }, opening]}>
+      <GestureDetector gesture={weeks(shift)}>
       <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: tall,
         paddingHorizontal: 18, justifyContent: 'center' }}>
           <View style={{ flexDirection: 'row', gap: 3 }}>
@@ -285,6 +414,7 @@ export function SlimStrip({ scrollY, after }: {
             })}
           </View>
       </View>
+      </GestureDetector>
     </Animated.View>
   );
 }
