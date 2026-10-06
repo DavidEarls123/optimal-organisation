@@ -23,6 +23,7 @@ import {
   uid,
 } from '../../src/domain/week';
 import { useListDrag } from '../../src/ui/useListDrag';
+import { WeekSlideProvider, useWeekSlide } from '../../src/ui/weekSlide';
 import {
   activeHabits, dayOutstanding, fromKg, habitDayStatus, habitDone, habitTarget, pacing,
   planLabel, toKg,
@@ -37,7 +38,15 @@ import { askForCalendar, calendarAccess, calendarError, eventsForDay, type Calen
  *  real sentence, short enough that nothing below it moves. */
 export const TASK_LIMIT = 120;
 
+/** The week's arrival is held out here, above everything that takes part in
+ *  it: the week at the top, the strip that stands in for it, and the day's own
+ *  list. A heading that slid while the list under it cut from one week to the
+ *  next looked like two screens, not one. */
 export default function DayScreen() {
+  return <WeekSlideProvider><Day /></WeekSlideProvider>;
+}
+
+function Day() {
   const t = useTheme();
   const router = useRouter();
   const { state, weekId, day, today, update, setWeekId, setDay, undo, undoLabel } = useStore();
@@ -53,6 +62,7 @@ export default function DayScreen() {
   /** How far the list has been scrolled, kept on the thread that draws so the
    *  top can shrink with your thumb rather than in steps behind it. */
   const scrollY = useSharedValue(0);
+  const slide = useWeekSlide();
   /** How tall the week header is. The strip that stands in for it waits until
    *  it has gone, so the two are never on the screen together. */
   const leadH = useSharedValue(0);
@@ -367,6 +377,7 @@ export default function DayScreen() {
   return (
     <Screen>
       <Body top={12} scrollY={scrollY} lead={lead} sticky={pinned}>
+        <Animated.View style={[{ gap: 22 }, slide.style]}>
         {off ? (
           <View style={{ backgroundColor: t.sunk, borderRadius: radius.md, padding: 11 }}>
             <Text style={{ fontSize: 12.5, lineHeight: 18, color: t.ink2 }}>
@@ -702,6 +713,7 @@ export default function DayScreen() {
             })}
           />
         </View>
+        </Animated.View>
       </Body>
 
       <DayDone

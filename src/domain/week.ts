@@ -697,7 +697,13 @@ export function packOffer(
 ): { name: string; adds: number; isNew: boolean }[] {
   const trip = state.trips.find((x) => x.id === tripId);
   if (!trip) return [];
-  const base = tripTemplateOf(state);
+  // Read, not read-and-create. This is called while the page is being drawn,
+  // and a function that writes to the state it is being asked about writes
+  // somewhere nobody is listening — the change is kept by neither the screen
+  // nor the disk. The defaults answer the question just as well.
+  const base = state.tripTemplate && typeof state.tripTemplate === 'object'
+    && Object.keys(state.tripTemplate).length
+    ? state.tripTemplate : defaultPackList();
   const cats = new Set(tripCats(trip));
   const had = new Set(trip.items.map((x) => `${x.cat}\u0000${x.text.trim().toLowerCase()}`));
   return Object.entries(base).map(([name, items]) => {

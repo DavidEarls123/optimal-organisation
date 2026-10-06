@@ -248,3 +248,19 @@ test('a list with no headings at all is given the standard ones back', () => {
   s.tripTemplate = {};
   assert.ok(Object.keys(tripTemplateOf(s)).length > 0);
 });
+
+test('asking what the standard checklist offers does not write anything down', () => {
+  // It is asked while the page is being drawn, and a function that creates
+  // the thing it is asked about creates it where nobody is listening: the
+  // screen does not redraw and the disk never hears about it.
+  const { s, id } = withTrip();
+  s.tripTemplate = undefined;
+  const before = JSON.stringify(s);
+
+  const offer = packOffer(s, id);
+
+  assert.equal(s.tripTemplate, undefined, 'nothing was stored');
+  assert.equal(JSON.stringify(s), before, 'nothing at all changed');
+  assert.deepEqual(offer.map((o) => o.name), Object.keys(defaultPackList()),
+    'and it still answers, from the defaults');
+});

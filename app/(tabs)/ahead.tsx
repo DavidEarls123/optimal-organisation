@@ -41,7 +41,16 @@ export default function AheadScreen() {
   const [addingTrip, setAddingTrip] = useState(false);
   const [addingEvent, setAddingEvent] = useState(false);
   const [past, setPast] = useState(false);
-  const [importing, setImporting] = useState(false);
+  /** Which trip is bringing things in from the standing checklist, or none.
+   *
+   *  It used to be a flag read alongside the trip being edited, and the sheet
+   *  it opened was opened from inside the edit sheet — one sheet over another.
+   *  iOS does not always take the first one away again, and what is left is
+   *  invisible and still catching every tap, so the page behind went dead:
+   *  the checklist would not close, nothing on it would open. One sheet at a
+   *  time, each opened from the page itself.
+   */
+  const [importFor, setImportFor] = useState<string | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   /** The trip being changed, held as a draft so nothing moves under you while
    *  you are typing a name or picking a date. */
@@ -59,7 +68,7 @@ export default function AheadScreen() {
   // Gone, not deleted. A trip you have taken is a thing you did, and a
   // countdown that has run out is a thing that happened: what you packed,
   // what you forgot, when it was. It stops being news and goes in the back.
-  const offer = editing ? packOffer(state, editing.id) : [];
+  const offer = importFor ? packOffer(state, importFor) : [];
 
   const been = [
     ...state.trips.filter((x) => daysUntil(x.end, today) < 0)
@@ -131,6 +140,7 @@ export default function AheadScreen() {
               onToggle={() => setOpen(open === trip.id ? null : trip.id)}
               onEdit={() => setEditing({ id: trip.id, name: trip.name, start: trip.start,
                 end: trip.end, tplId: trip.tplId })}
+              onImport={() => { setPicked([]); setImportFor(trip.id); }}
               draft={drafts}
               setDraft={setDrafts}
             />
@@ -202,10 +212,10 @@ export default function AheadScreen() {
         </Section>
 
         <Sheet
-          open={importing}
+          open={importFor !== null}
           title="Bring in from the standard checklist"
-          onClose={() => setImporting(false)}
-          footer={editing ? (
+          onClose={() => setImportFor(null)}
+          footer={importFor ? (
             <>
               <View style={{ flex: 1 }}>
                 <Button
@@ -219,8 +229,8 @@ export default function AheadScreen() {
                 title={picked.length ? `Add ${picked.length}` : 'Add'}
                 disabled={picked.length === 0}
                 onPress={() => {
-                  update((d) => { packImport(d, editing.id, picked); }, 'bringing those in');
-                  setImporting(false);
+                  update((d) => { packImport(d, importFor, picked); }, 'bringing those in');
+                  setImportFor(null);
                 }}
               />
             </>
@@ -288,6 +298,7 @@ export default function AheadScreen() {
                 onToggle={() => setOpen(open === x.trip.id ? null : x.trip.id)}
                 onEdit={() => setEditing({ id: x.trip.id, name: x.trip.name,
                   start: x.trip.start, end: x.trip.end, tplId: x.trip.tplId })}
+                onImport={() => { setPicked([]); setImportFor(x.trip.id); }}
                 draft={drafts}
                 setDraft={setDrafts}
               />
@@ -403,14 +414,6 @@ export default function AheadScreen() {
                   </Pressable>
                 ))}
               </View>
-
-              {/* Bringing in from the standing checklist, a heading at a
-                  time, the same way the shopping list does it. */}
-              <Button
-                tone="ghost"
-                title="Bring in from the standard checklist"
-                onPress={() => { setPicked([]); setImporting(true); }}
-              />
             </>
           ) : null}
         </Sheet>
@@ -477,8 +480,11 @@ export default function AheadScreen() {
   );
 }
 
-function TripCard({ trip, today, expanded, onToggle, onEdit, draft, setDraft }: {
+function TripCard({ trip, today, expanded, onToggle, onEdit, onImport, draft, setDraft }: {
   trip: Trip; today: Date; expanded: boolean; onToggle: () => void; onEdit: () => void;
+  /** Bring headings in from the standing checklist. Asked for from the card,
+   *  so the sheet it opens is the only one on the screen. */
+  onImport: () => void;
   draft: Record<string, string>; setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
   const t = useTheme();
@@ -570,11 +576,25 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, draft, setDraft }: 
         </Mono>
       </View>
 
-      <Pressable accessibilityRole="button" onPress={onToggle}>
-        <Text style={{ fontSize: 10.5, letterSpacing: 1.2, textTransform: 'uppercase',
+      {/* The whole row opens and closes it, not just the few characters of the
+          word. A target the size of its own label is a target you miss. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        accessibilityLabel={expanded ? `Hide ${trip.name}'s checklist`
+          : `Show ${trip.name}'s checklist`}
+        onPress={onToggle}
+        hitSlop={10}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4,
+          alignSelf: 'stretch' }}
+      >
+        <Glyph name={expanded ? 'chevron.down' : 'chevron.right'}
+          fallback={expanded ? '▾' : '▸'} size={10} colour={t.accent} />
+        <Text style={{ flex: 1, fontSize: 10.5, letterSpacing: 1.2, textTransform: 'uppercase',
           color: t.accent, fontWeight: '600' }}>
-          {expanded ? '▾ Checklist' : '▸ Checklist'}
+          Checklist
         </Text>
+        <Mono style={{ fontSize: 10.5, color: t.ink3 }}>{`${left} left`}</Mono>
       </Pressable>
 
       {expanded ? (
@@ -700,16 +720,28 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, draft, setDraft }: 
               </View>
             </View>
           ) : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add a heading"
-              onPress={() => setHeading(true)}
-              hitSlop={8}
-              style={{ paddingTop: 12, alignSelf: 'flex-start' }}
-            >
-              <Mono style={{ fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase',
-                color: t.ink3 }}>+ Heading</Mono>
-            </Pressable>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingTop: 12 }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Add a heading"
+                onPress={() => setHeading(true)}
+                hitSlop={8}
+              >
+                <Mono style={{ fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase',
+                  color: t.ink3 }}>+ Heading</Mono>
+              </Pressable>
+              {/* The standing checklist, a heading at a time, the same way the
+                  shopping list brings in its own. */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Bring headings into ${trip.name} from the standard checklist`}
+                onPress={onImport}
+                hitSlop={8}
+              >
+                <Mono style={{ fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase',
+                  color: t.accent }}>↓ Standard list</Mono>
+              </Pressable>
+            </View>
           )}
         </View>
       ) : null}

@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-  Extrapolation, interpolate, runOnJS, useAnimatedStyle, useSharedValue, withTiming,
+  Extrapolation, interpolate, runOnJS, useAnimatedStyle, useSharedValue,
   type SharedValue,
 } from 'react-native-reanimated';
 import { Text, useTextScale } from './type';
+import { useWeekSlide } from './weekSlide';
 import { useRouter } from 'expo-router';
 
 import { useStore } from '../store/store';
@@ -64,7 +65,8 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
     // Stay on the same weekday. Landing on Monday every time means counting
     // across to Thursday again on every step.
   };
-  const slider = useWeekSlide(shift);
+  const slider = useWeekSlide();
+  const go = (delta: number) => { shift(delta); slider.run(delta); };
 
   if (!week) return null;
 
@@ -85,7 +87,7 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
   };
 
   return (
-    <GestureDetector gesture={weeks(slider.go)}>
+    <GestureDetector gesture={weeks(go)}>
     <Animated.View style={[{ paddingHorizontal: 18, paddingTop: 12, gap: 12 }, slider.style]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <CornerMark />
@@ -107,7 +109,7 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
       {/* The arrows belong beside the range they move, not on their own row. */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: -4 }}>
         <Pressable
-          onPress={() => hasPrev && slider.go(-1)}
+          onPress={() => hasPrev && go(-1)}
           disabled={!hasPrev}
           accessibilityRole="button"
           accessibilityLabel="Previous week"
@@ -136,7 +138,7 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
           <Glyph name="calendar" fallback="▦" size={13} colour={t.ink3} />
         </Pressable>
         <Pressable
-          onPress={() => slider.go(1)}
+          onPress={() => go(1)}
           accessibilityRole="button"
           accessibilityLabel="Next week"
           hitSlop={8}
@@ -302,36 +304,6 @@ function WeekJump({ open, onClose, onToday }: {
   );
 }
 
-/** A week leaving and the next one arriving, rather than one being replaced by
- *  the other between frames. It goes the way your thumb went: forward, and the
- *  week you were on leaves to the left and the new one comes in from the right.
- *
- *  The change itself happens at the turn, when nothing is where it was, so the
- *  moment the list underneath redraws is the moment it is hidden anyway. */
-function useWeekSlide(shift: (delta: number) => void) {
-  const slide = useSharedValue(0);
-  const fade = useSharedValue(1);
-
-  const style = useAnimatedStyle(() => ({
-    transform: [{ translateX: slide.value }],
-    opacity: fade.value,
-  }));
-
-  const go = (delta: number) => {
-    // The week changes first, then arrives. Hanging the change off the end of
-    // an animation means the animation has to finish for the app to work at
-    // all, and a callback that never fires is a week that never moves.
-    shift(delta);
-    const from = delta > 0 ? 64 : -64;
-    slide.value = from;
-    fade.value = 0.2;
-    slide.value = withTiming(0, { duration: 260 });
-    fade.value = withTiming(1, { duration: 260 });
-  };
-
-  return { style, go };
-}
-
 /** Left and right across a week, as well as the arrows.
  *
  *  It has to be sure before it takes over: a drag that is mostly down the page
@@ -413,7 +385,8 @@ export function SlimStrip({ scrollY, after }: {
     else if (!state.weeks[id]) return;
     setWeekId(id);
   };
-  const slider = useWeekSlide(shift);
+  const slider = useWeekSlide();
+  const go = (delta: number) => { shift(delta); slider.run(delta); };
 
   if (!week) return null;
   const current = isCurrentWeek(week, today);
@@ -421,7 +394,7 @@ export function SlimStrip({ scrollY, after }: {
 
   return (
     <Animated.View style={[{ overflow: 'hidden' }, opening]}>
-      <GestureDetector gesture={weeks(slider.go)}>
+      <GestureDetector gesture={weeks(go)}>
       <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, height: tall,
         paddingHorizontal: 18, justifyContent: 'center' }, slider.style]}>
           <View style={{ flexDirection: 'row', gap: 3 }}>
