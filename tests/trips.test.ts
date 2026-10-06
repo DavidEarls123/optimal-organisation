@@ -4,7 +4,7 @@ import { createInitialState } from '../src/domain/state';
 import {
   addTripCat, buildTripItems, moveTripCat, placeTripItem, removeTripCat, renameTripCat,
   packImport, packOffer, tripCats, tripOrdered, uid,
-  addPackCat, removePackCat, renamePackCat, tripTemplateOf,
+  addPackCat, defaultPackList, removePackCat, renamePackCat, tripTemplateOf,
 } from '../src/domain/week';
 import { TRIP_CATEGORIES } from '../src/domain/catalogue';
 import type { AppState } from '../src/domain/types';
@@ -227,4 +227,24 @@ test('bringing in never disturbs what you have ticked or written', () => {
   for (const had of kept) {
     assert.deepEqual(s.trips[0].items.find((x) => x.id === had.id), had, had.text);
   }
+});
+
+test('the checklist a phone with none starts from is a real list', () => {
+  // The screen draws this before anything is stored, so it has to stand on
+  // its own rather than being a shape waiting to be filled.
+  const d = defaultPackList();
+  assert.ok(Object.keys(d).length > 0);
+  for (const [cat, items] of Object.entries(d)) assert.ok(Array.isArray(items), cat);
+});
+
+test('showing the default list does not write it', () => {
+  const s = createInitialState(TUE, 'run');
+  defaultPackList();
+  assert.equal(s.tripTemplate, undefined, 'nothing was stored by looking');
+});
+
+test('a list with no headings at all is given the standard ones back', () => {
+  const s = createInitialState(TUE, 'run');
+  s.tripTemplate = {};
+  assert.ok(Object.keys(tripTemplateOf(s)).length > 0);
 });

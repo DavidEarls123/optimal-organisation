@@ -7,7 +7,9 @@ import {
 } from '../src/ui/primitives';
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
-import { resetShopFromTemplate, shopTemplateOf, uid } from '../src/domain/week';
+import {
+  defaultShopList, resetShopFromTemplate, shopTemplateOf, uid,
+} from '../src/domain/week';
 
 const ITEM_LIMIT = 60;
 const HEADING_LIMIT = 28;
@@ -19,11 +21,10 @@ export default function ShopTemplateScreen() {
   const { state, weekId, update } = useStore();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
-  if (!Array.isArray(state.shopTemplate)) {
-    update((d) => { shopTemplateOf(d); });
-    return <Screen><Body><Empty>Setting up…</Empty></Body></Screen>;
-  }
-  const groups = state.shopTemplate;
+  // Shown from the defaults until there is something stored. Writing to the
+  // store while the page is being drawn is how you get a page that does
+  // nothing; every edit below creates it on the way past instead.
+  const groups = Array.isArray(state.shopTemplate) ? state.shopTemplate : defaultShopList();
   const total = groups.reduce((a, g) => a + g.items.length, 0);
 
   const addItem = (groupId: string) => {

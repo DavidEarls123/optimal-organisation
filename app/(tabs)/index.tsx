@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Keyboard, Linking, Pressable, View } from 'react-native';
+import { Alert, Keyboard, Linking, Pressable, ScrollView, View } from 'react-native';
 import { Text } from '../../src/ui/type';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -937,14 +937,21 @@ function TagRow({ value, onChange }: { value: string; onChange: (v: string) => v
       </Pressable>
     );
   };
+  // One line, scrolled rather than wrapped: a panel that grows a row taller
+  // every time you add a trackable pushes everything under it down the page.
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingRight: 8 }}
+    >
       {chip('', 'None', t.ink2, t.sunk)}
       {state.trackables.map((k) => {
         const [line, soft] = t.track[k.ci % t.track.length];
         return chip(k.id, k.name, line, soft);
       })}
-    </View>
+    </ScrollView>
   );
 }
 

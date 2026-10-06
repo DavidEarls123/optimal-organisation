@@ -8,7 +8,7 @@ import {
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import {
-  addPackCat, removePackCat, renamePackCat, tripTemplateOf,
+  addPackCat, defaultPackList, removePackCat, renamePackCat, tripTemplateOf,
 } from '../src/domain/week';
 import { TRIP_BASE, TRIP_CATEGORIES } from '../src/domain/catalogue';
 
@@ -22,11 +22,10 @@ export default function TripTemplateScreen() {
   const [heading, setHeading] = useState(false);
   const [newCat, setNewCat] = useState('');
 
-  if (!state.tripTemplate) {
-    update((d) => { tripTemplateOf(d); });
-    return <Screen><Body><Empty>Setting up…</Empty></Body></Screen>;
-  }
-  const base = state.tripTemplate;
+  // Shown from the defaults until there is something stored, rather than
+  // storing something in the middle of drawing the page. Every edit below
+  // creates it on the way past, which is a moment that is allowed to write.
+  const base = state.tripTemplate ?? defaultPackList();
   const total = Object.values(base).reduce((a, c) => a + c.length, 0);
 
   const addItem = (cat: string) => {
@@ -65,15 +64,10 @@ export default function TripTemplateScreen() {
         {cats.map((cat) => (
           <View key={cat}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 4 }}>
-              <Field
-                value={cat}
-                onChangeText={(v) => update((d) => { renamePackCat(d, cat, v); },
+              <PackHeading
+                name={cat}
+                onRename={(v) => update((d) => { renamePackCat(d, cat, v); },
                   'renaming that heading')}
-                maxLength={28}
-                accessibilityLabel={`Rename ${cat}`}
-                style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 0,
-                  paddingHorizontal: 0, paddingVertical: 2, fontSize: 12.5, letterSpacing: 1.1,
-                  textTransform: 'uppercase', fontWeight: '700', color: t.ink }}
               />
               <Mono>{String(base[cat]?.length ?? 0)}</Mono>
               {cats.length > 1 ? (
@@ -180,5 +174,40 @@ export default function TripTemplateScreen() {
         />
       </Body>
     </Screen>
+  );
+}
+
+/** A heading on the standing checklist.
+ *
+ *  Held while you type and written when you stop. Writing on every keystroke
+ *  renamed the heading a letter at a time, and a rename that is refused —
+ *  empty, or the name of another heading — snapped the word back under your
+ *  finger. It is a draft until you are done with it. */
+function PackHeading({ name, onRename }: { name: string; onRename: (v: string) => void }) {
+  const t = useTheme();
+  const [draft, setDraft] = useState(name);
+  const [editing, setEditing] = useState(false);
+
+  const commit = () => {
+    setEditing(false);
+    const next = draft.trim();
+    if (!next || next === name) { setDraft(name); return; }
+    onRename(next);
+  };
+
+  return (
+    <Field
+      value={editing ? draft : name}
+      onFocus={() => { setDraft(name); setEditing(true); }}
+      onChangeText={setDraft}
+      onBlur={commit}
+      onSubmitEditing={commit}
+      returnKeyType="done"
+      maxLength={28}
+      accessibilityLabel={`Rename ${name}`}
+      style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 0, paddingHorizontal: 0,
+        paddingVertical: 2, fontSize: 12.5, letterSpacing: 1.1, textTransform: 'uppercase',
+        fontWeight: '700', color: t.ink }}
+    />
   );
 }

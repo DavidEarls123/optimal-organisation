@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-  Extrapolation, interpolate, runOnJS, useAnimatedStyle, useSharedValue, withSequence,
-  withTiming, type SharedValue,
+  Extrapolation, interpolate, runOnJS, useAnimatedStyle, useSharedValue, withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { Text, useTextScale } from './type';
 import { useRouter } from 'expo-router';
@@ -318,18 +318,15 @@ function useWeekSlide(shift: (delta: number) => void) {
   }));
 
   const go = (delta: number) => {
-    const away = delta > 0 ? -34 : 34;
-    fade.value = withSequence(
-      withTiming(0, { duration: 110 }),
-      withTiming(1, { duration: 190 }),
-    );
-    slide.value = withSequence(
-      withTiming(away, { duration: 110 }, (done) => {
-        if (done) runOnJS(shift)(delta);
-      }),
-      withTiming(-away, { duration: 0 }),
-      withTiming(0, { duration: 190 }),
-    );
+    // The week changes first, then arrives. Hanging the change off the end of
+    // an animation means the animation has to finish for the app to work at
+    // all, and a callback that never fires is a week that never moves.
+    shift(delta);
+    const from = delta > 0 ? 64 : -64;
+    slide.value = from;
+    fade.value = 0.2;
+    slide.value = withTiming(0, { duration: 260 });
+    fade.value = withTiming(1, { duration: 260 });
   };
 
   return { style, go };

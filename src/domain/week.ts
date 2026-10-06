@@ -140,14 +140,18 @@ function copyShop(groups: ShopGroup[]): ShopGroup[] {
 }
 
 /** The standing list, seeded from the built-in headings the first time. */
+/** The standing list a phone that has never had one starts with. Worked out
+ *  rather than stored, so a screen can show it without writing it first. */
+export function defaultShopList(): ShopGroup[] {
+  return SHOP_TEMPLATE.map((g) => ({
+    id: uid('g'),
+    name: g.name,
+    items: g.items.map((text) => ({ id: uid('i'), text, need: false, done: false })),
+  }));
+}
+
 export function shopTemplateOf(state: AppState): ShopGroup[] {
-  if (!Array.isArray(state.shopTemplate)) {
-    state.shopTemplate = SHOP_TEMPLATE.map((g) => ({
-      id: uid('g'),
-      name: g.name,
-      items: g.items.map((text) => ({ id: uid('i'), text, need: false, done: false })),
-    }));
-  }
+  if (!Array.isArray(state.shopTemplate)) state.shopTemplate = defaultShopList();
   return state.shopTemplate;
 }
 
@@ -541,11 +545,17 @@ export function applyTemplate(state: AppState, weekId: string, templateId: strin
 
 /** The standing trip checklist: the things you do for every trip, whatever
  *  kind it is. Seeded from the built-in list the first time, editable after. */
+/** The checklist a phone that has never had one starts with. Worked out
+ *  rather than stored, so a screen can show it without having to write it
+ *  first — writing to the store while a screen is drawing is how you get a
+ *  page that does nothing. */
+export function defaultPackList(): Record<string, string[]> {
+  return Object.fromEntries(TRIP_CATEGORIES.map((cat) => [cat, [...(TRIP_BASE[cat] ?? [])]]));
+}
+
 export function tripTemplateOf(state: AppState): Record<string, string[]> {
   if (!state.tripTemplate || typeof state.tripTemplate !== 'object') {
-    state.tripTemplate = Object.fromEntries(
-      TRIP_CATEGORIES.map((cat) => [cat, [...(TRIP_BASE[cat] ?? [])]]),
-    );
+    state.tripTemplate = defaultPackList();
   }
   // Whatever headings it has, and only those. It used to put the four standard
   // ones back every time it was read, so a heading you removed was removed
@@ -553,11 +563,7 @@ export function tripTemplateOf(state: AppState): Record<string, string[]> {
   for (const [cat, items] of Object.entries(state.tripTemplate)) {
     if (!Array.isArray(items)) state.tripTemplate[cat] = [];
   }
-  if (!Object.keys(state.tripTemplate).length) {
-    state.tripTemplate = Object.fromEntries(
-      TRIP_CATEGORIES.map((cat) => [cat, [...(TRIP_BASE[cat] ?? [])]]),
-    );
-  }
+  if (!Object.keys(state.tripTemplate).length) state.tripTemplate = defaultPackList();
   return state.tripTemplate;
 }
 
