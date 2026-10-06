@@ -10,7 +10,7 @@ import { useTheme } from '../src/theme/ThemeProvider';
 import {
   addPackCat, removePackCat, renamePackCat, tripTemplateOf,
 } from '../src/domain/week';
-import { TRIP_BASE, TRIP_CATEGORIES, TRIP_TEMPLATES } from '../src/domain/catalogue';
+import { TRIP_BASE, TRIP_CATEGORIES } from '../src/domain/catalogue';
 
 const ITEM_LIMIT = 70;
 
@@ -162,25 +162,6 @@ export default function TripTemplateScreen() {
               color: t.ink3 }}>+ Heading</Mono>
           </Pressable>
         )}
-
-        <Section>
-          <SectionHead title="What each kind adds" />
-          <Note>
-            Fixed, and on top of your list. Once a trip exists you can delete anything from it.
-          </Note>
-          {Object.entries(TRIP_TEMPLATES).map(([k, v]) => {
-            const extra = Object.values(v.extra).reduce((a, x) => a + x.length, 0);
-            return (
-              <View key={k} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-                paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: t.rule2 }}>
-                <Text style={{ flex: 1, fontSize: 13.5, color: t.ink }}>{v.name}</Text>
-                <Mono style={{ fontSize: 11 }}>
-                  {extra ? `+${extra}` : 'nothing extra'}
-                </Mono>
-              </View>
-            );
-          })}
-        </Section>
 
         <Button
           tone="ghost"

@@ -554,6 +554,31 @@ export function Sheet({ open, title, onClose, children, footer }: {
   );
 }
 
+/** A month, laid out, to pick a day from. The same picker a DateButton opens,
+ *  but shown where it is wanted rather than behind a button that says what it
+ *  would show you. */
+export function Calendar({ onPick, value }: {
+  onPick: (iso: string) => void;
+  value?: Date;
+}) {
+  const t = useTheme();
+  return (
+    <DateTimePicker
+      value={value ?? new Date()}
+      mode="date"
+      display="inline"
+      themeVariant={t.dark ? 'dark' : 'light'}
+      accentColor={t.accent}
+      style={{ alignSelf: 'stretch' }}
+      onChange={(_e, picked) => {
+        if (!picked) return;
+        const p = (n: number) => String(n).padStart(2, '0');
+        onPick(`${picked.getFullYear()}-${p(picked.getMonth() + 1)}-${p(picked.getDate())}`);
+      }}
+    />
+  );
+}
+
 /** A date you tap rather than type. Typing YYYY-MM-DD by hand is the kind of
  *  thing a phone should never ask for. */
 export function DateButton({ value, placeholder, onChange, title, minimum }: {

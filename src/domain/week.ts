@@ -683,39 +683,51 @@ export function moveTripCat(trip: Trip, name: string, dir: -1 | 1): boolean {
   return true;
 }
 
-/** What a trip's checklist is missing, if it were built from that kind now.
- *  Changing what kind of trip it is, or adding to the standing list after a
- *  trip exists, would otherwise leave the trip on the list it was born with. */
-export function tripTopUp(state: AppState, tripId: string, tplId?: string): number {
+/** What the standing checklist could add to a trip, heading by heading, so you
+ *  can take the headings you want rather than all of them. The same question
+ *  the shopping list asks of its standard list, asked the same way. */
+export function packOffer(
+  state: AppState, tripId: string,
+): { name: string; adds: number; isNew: boolean }[] {
   const trip = state.trips.find((x) => x.id === tripId);
-  if (!trip) return 0;
-  const kind = tplId ?? trip.tplId;
+  if (!trip) return [];
+  const base = tripTemplateOf(state);
+  const cats = new Set(tripCats(trip));
   const had = new Set(trip.items.map((x) => `${x.cat}\u0000${x.text.trim().toLowerCase()}`));
-  let added = 0;
-  // Nothing already on the list is touched, ticked or not: this only ever adds.
-  for (const item of buildTripItems(state, kind)) {
-    const key = `${item.cat}\u0000${item.text.trim().toLowerCase()}`;
-    if (had.has(key)) continue;
-    had.add(key);
-    trip.items.push(item);
-    added += 1;
-  }
-  return added;
+  return Object.entries(base).map(([name, items]) => {
+    const seen = new Set<string>();
+    let adds = 0;
+    for (const text of items) {
+      const key = `${name}\u0000${text.trim().toLowerCase()}`;
+      if (!text.trim() || had.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      adds += 1;
+    }
+    return { name, adds, isNew: !cats.has(name) };
+  });
 }
 
-/** How many of a kind's items a trip has not got, without changing anything. */
-export function tripMissing(state: AppState, tripId: string, tplId?: string): number {
+/** Brings those headings in. A heading the trip has not got is added with
+ *  them; nothing already on the list is touched, ticked or not. */
+export function packImport(state: AppState, tripId: string, only: string[]): number {
   const trip = state.trips.find((x) => x.id === tripId);
   if (!trip) return 0;
+  const base = tripTemplateOf(state);
+  const want = new Set(only);
   const had = new Set(trip.items.map((x) => `${x.cat}\u0000${x.text.trim().toLowerCase()}`));
-  let n = 0;
-  for (const item of buildTripItems(state, tplId ?? trip.tplId)) {
-    const key = `${item.cat}\u0000${item.text.trim().toLowerCase()}`;
-    if (had.has(key)) continue;
-    had.add(key);
-    n += 1;
+  let added = 0;
+  for (const [name, items] of Object.entries(base)) {
+    if (!want.has(name)) continue;
+    addTripCat(trip, name);
+    for (const text of items) {
+      const key = `${name}\u0000${text.trim().toLowerCase()}`;
+      if (!text.trim() || had.has(key)) continue;
+      had.add(key);
+      trip.items.push({ id: uid('c'), cat: name, text, done: false });
+      added += 1;
+    }
   }
-  return n;
+  return added;
 }
 
 export function buildTripItems(state: AppState, tplId: string): TripItem[] {

@@ -912,6 +912,42 @@ function TrackChip({ trackId }: { trackId: string }) {
   return <Chip text={tr.name} colour={line} soft={soft} />;
 }
 
+/** The tags, laid out, for a task that already exists. There are only ever a
+ *  handful, so putting them behind a sheet asks for two taps and a wait to say
+ *  a thing that fits on one line. */
+function TagRow({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const t = useTheme();
+  const { state } = useStore();
+  const chip = (id: string, name: string, line: string, soft: string) => {
+    const on = value === id;
+    return (
+      <Pressable
+        key={id || 'none'}
+        accessibilityRole="radio"
+        accessibilityState={{ selected: on }}
+        accessibilityLabel={name}
+        onPress={() => onChange(on ? '' : id)}
+        style={{ borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 10,
+          paddingVertical: 5,
+          borderColor: on ? line : t.rule,
+          backgroundColor: on ? soft : 'transparent' }}
+      >
+        <Text style={{ fontSize: 11.5, fontWeight: on ? '700' : '500',
+          color: on ? line : t.ink3 }}>{name}</Text>
+      </Pressable>
+    );
+  };
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+      {chip('', 'None', t.ink2, t.sunk)}
+      {state.trackables.map((k) => {
+        const [line, soft] = t.track[k.ci % t.track.length];
+        return chip(k.id, k.name, line, soft);
+      })}
+    </View>
+  );
+}
+
 /** Tagging is a choice from a short list, so it is a list you pick from —
  *  tapping through six options to get back to none was guesswork. */
 function TagPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -1191,14 +1227,13 @@ function TaskRow({
             </Pressable>
           </View>
           {/* A tag was something you could only set while typing the task.
-              What a thing turned out to be is often known later. */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingTop: 2 }}>
-            <Mono style={{ letterSpacing: 1, textTransform: 'uppercase', fontSize: 10,
-              flex: 1 }}>
-              Tag
-            </Mono>
-            <TagPicker value={task.track ?? ''} onChange={onTag} />
-          </View>
+              What a thing turned out to be is often known later — so it is
+              here, laid out, rather than behind a button that opens a list. */}
+          <Mono style={{ letterSpacing: 1, textTransform: 'uppercase', fontSize: 10,
+            paddingTop: 2 }}>
+            Tag
+          </Mono>
+          <TagRow value={task.track ?? ''} onChange={onTag} />
 
           <Mono style={{ letterSpacing: 1, textTransform: 'uppercase', fontSize: 10,
             paddingTop: 2 }}>

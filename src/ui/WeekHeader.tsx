@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-  Extrapolation, interpolate, runOnJS, useAnimatedStyle, type SharedValue,
+  Extrapolation, interpolate, runOnJS, useAnimatedStyle, useSharedValue, withSequence,
+  withTiming, type SharedValue,
 } from 'react-native-reanimated';
 import { Text, useTextScale } from './type';
 import { useRouter } from 'expo-router';
@@ -16,7 +17,7 @@ import {
 } from '../domain/dates';
 import { ensureWeek, marksOn } from '../domain/week';
 import { dayScore, isCurrentWeek, templateOf, todayIndex } from '../domain/scoring';
-import { CornerMark, DateButton, Empty, Glyph, Mono, Note, Sheet } from './primitives';
+import { Calendar, CornerMark, Empty, Glyph, Mono, Note, Sheet } from './primitives';
 
 function rangeLabel(mondayIso: string): string {
   const mon = parseISO(mondayIso);
@@ -50,6 +51,21 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
   const router = useRouter();
   const { state, weekId, setWeekId, day, setDay, today, update } = useStore();
   const week = state.weeks[weekId];
+
+  // Before the way out, because a hook that is sometimes called is not a hook.
+  const shift = (delta: number) => {
+    const from = state.weeks[weekId];
+    if (!from) return;
+    const target = isoOf(addDays(parseISO(from.monday), delta * 7));
+    const id = isoWeekId(parseISO(target));
+    if (delta > 0) update((d) => { ensureWeek(d, target); });
+    else if (!state.weeks[id]) return;
+    setWeekId(id);
+    // Stay on the same weekday. Landing on Monday every time means counting
+    // across to Thursday again on every step.
+  };
+  const slider = useWeekSlide(shift);
+
   if (!week) return null;
 
   const tpl = templateOf(state, week);
@@ -61,16 +77,6 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
 
   const look = dayLook(t);
 
-  const shift = (delta: number) => {
-    const target = isoOf(addDays(parseISO(week.monday), delta * 7));
-    const id = isoWeekId(parseISO(target));
-    if (delta > 0) update((d) => { ensureWeek(d, target); });
-    else if (!state.weeks[id]) return;
-    setWeekId(id);
-    // Stay on the same weekday. Landing on Monday every time means counting
-    // across to Thursday again on every step.
-  };
-
   const toToday = () => {
     const id = isoWeekId(today);
     update((d) => { ensureWeek(d, isoOf(today)); });
@@ -79,8 +85,8 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
   };
 
   return (
-    <GestureDetector gesture={weeks(shift)}>
-    <View style={{ paddingHorizontal: 18, paddingTop: 12, gap: 12 }}>
+    <GestureDetector gesture={weeks(slider.go)}>
+    <Animated.View style={[{ paddingHorizontal: 18, paddingTop: 12, gap: 12 }, slider.style]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <CornerMark />
         <Mono style={{ flex: 1, letterSpacing: 1.6, textTransform: 'uppercase', fontSize: 11 }}>
@@ -101,7 +107,7 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
       {/* The arrows belong beside the range they move, not on their own row. */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: -4 }}>
         <Pressable
-          onPress={() => hasPrev && shift(-1)}
+          onPress={() => hasPrev && slider.go(-1)}
           disabled={!hasPrev}
           accessibilityRole="button"
           accessibilityLabel="Previous week"
@@ -111,15 +117,26 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
         >
           <Text style={{ color: t.ink2, fontSize: 20, lineHeight: 23 }}>‹</Text>
         </Pressable>
-        <Text
-          numberOfLines={1}
-          style={{ flex: 1, fontSize: 21, fontWeight: '700', color: t.ink,
-            letterSpacing: -0.4, textAlign: 'center' }}
-        >
-          {rangeLabel(week.monday)}
-        </Text>
+        {/* The week itself is the way to another one. A heading that is also
+            the button for what it names needs nothing underneath it. */}
         <Pressable
-          onPress={() => shift(1)}
+          onPress={() => setJumping(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`${rangeLabel(week.monday)}. Go to another week.`}
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center',
+            justifyContent: 'center', gap: 7 }}
+        >
+          <Text
+            numberOfLines={1}
+            style={{ fontSize: 21, fontWeight: '700', color: t.ink,
+              letterSpacing: -0.4, textAlign: 'center' }}
+          >
+            {rangeLabel(week.monday)}
+          </Text>
+          <Glyph name="calendar" fallback="▦" size={13} colour={t.ink3} />
+        </Pressable>
+        <Pressable
+          onPress={() => slider.go(1)}
           accessibilityRole="button"
           accessibilityLabel="Next week"
           hitSlop={8}
@@ -187,45 +204,8 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
         })}
       </View>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-        gap: 16, paddingTop: 2, paddingBottom: 2 }}>
-        {/* Somewhere to go that is not one week at a time. */}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Go to a week"
-          onPress={() => setJumping(true)}
-          hitSlop={8}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-        >
-          <Glyph name="calendar" fallback="▦" size={12} colour={t.ink3} />
-          <Mono style={{ fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase',
-            color: t.ink3 }}>
-            Go to a week
-          </Mono>
-        </Pressable>
-
-        {/* And one way back, which is the way back you want nine times in ten.
-            Offered only when you are somewhere else. */}
-        {!current || day !== ti ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Back to today"
-            onPress={toToday}
-            hitSlop={8}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
-              borderWidth: 1, borderColor: t.accentLine, backgroundColor: t.accentSoft,
-              borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 }}
-          >
-            <Mono style={{ fontSize: 10, letterSpacing: 1.2, textTransform: 'uppercase',
-              color: t.accent }}>
-              Today
-            </Mono>
-          </Pressable>
-        ) : null}
-      </View>
-
-      <WeekJump open={jumping} onClose={() => setJumping(false)} />
-    </View>
+      <WeekJump open={jumping} onClose={() => setJumping(false)} onToday={toToday} />
+    </Animated.View>
     </GestureDetector>
   );
 }
@@ -237,13 +217,16 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
  *  picking one makes it — but a date back behind the first week you recorded
  *  is nothing at all, and making an empty week there would put a nought in
  *  your year that you never lived. It says so instead. */
-function WeekJump({ open, onClose }: { open: boolean; onClose: () => void }) {
+function WeekJump({ open, onClose, onToday }: {
+  open: boolean; onClose: () => void; onToday: () => void;
+}) {
   const t = useTheme();
-  const { state, weekId, setWeekId, today, update } = useStore();
+  const { state, weekId, today, setWeekId, update } = useStore();
   const [missed, setMissed] = useState('');
 
   const ids = Object.keys(state.weeks).sort().reverse();
   const nowId = isoWeekId(today);
+  const here = weekId === nowId;
 
   const go = (id: string) => { setWeekId(id); setMissed(''); onClose(); };
 
@@ -258,12 +241,22 @@ function WeekJump({ open, onClose }: { open: boolean; onClose: () => void }) {
 
   return (
     <Sheet open={open} title="Go to a week" onClose={() => { setMissed(''); onClose(); }}>
-      <DateButton
-        title="Any week"
-        placeholder="Pick a date…"
-        value=""
-        onChange={pick}
-      />
+      {/* The way back you want nine times in ten, where the ways out are. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Back to today"
+        onPress={() => { setMissed(''); onToday(); onClose(); }}
+        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+          borderWidth: 1, borderColor: t.accentLine, backgroundColor: t.accentSoft,
+          borderRadius: radius.md, paddingVertical: 11 }}
+      >
+        <Text style={{ fontSize: 14.5, fontWeight: '700', color: t.accent }}>
+          {here ? 'This week' : 'Back to today'}
+        </Text>
+      </Pressable>
+
+      {/* A month you can look at, rather than a button that opens one. */}
+      <Calendar onPick={pick} />
       {missed ? (
         <Note>
           {`Nothing was recorded in week ${weekNumber(missed)} of ${missed.slice(0, 4)}. `}
@@ -307,6 +300,39 @@ function WeekJump({ open, onClose }: { open: boolean; onClose: () => void }) {
       })}
     </Sheet>
   );
+}
+
+/** A week leaving and the next one arriving, rather than one being replaced by
+ *  the other between frames. It goes the way your thumb went: forward, and the
+ *  week you were on leaves to the left and the new one comes in from the right.
+ *
+ *  The change itself happens at the turn, when nothing is where it was, so the
+ *  moment the list underneath redraws is the moment it is hidden anyway. */
+function useWeekSlide(shift: (delta: number) => void) {
+  const slide = useSharedValue(0);
+  const fade = useSharedValue(1);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateX: slide.value }],
+    opacity: fade.value,
+  }));
+
+  const go = (delta: number) => {
+    const away = delta > 0 ? -34 : 34;
+    fade.value = withSequence(
+      withTiming(0, { duration: 110 }),
+      withTiming(1, { duration: 190 }),
+    );
+    slide.value = withSequence(
+      withTiming(away, { duration: 110 }, (done) => {
+        if (done) runOnJS(shift)(delta);
+      }),
+      withTiming(-away, { duration: 0 }),
+      withTiming(0, { duration: 190 }),
+    );
+  };
+
+  return { style, go };
 }
 
 /** Left and right across a week, as well as the arrows.
@@ -379,25 +405,28 @@ export function SlimStrip({ scrollY, after }: {
         Extrapolation.CLAMP),
     };
   }, [tall]);
-  if (!week) return null;
-  const current = isCurrentWeek(week, today);
-  const ti = todayIndex(week, today);
-
-  // The same sideways swipe as the week above it: the days are the days,
-  // wherever they happen to be drawn.
+  // The same sideways swipe as the week above it, and the same slide with it:
+  // the days are the days, wherever they happen to be drawn.
   const shift = (delta: number) => {
-    const target = isoOf(addDays(parseISO(week.monday), delta * 7));
+    const from = state.weeks[weekId];
+    if (!from) return;
+    const target = isoOf(addDays(parseISO(from.monday), delta * 7));
     const id = isoWeekId(parseISO(target));
     if (delta > 0) update((d) => { ensureWeek(d, target); });
     else if (!state.weeks[id]) return;
     setWeekId(id);
   };
+  const slider = useWeekSlide(shift);
+
+  if (!week) return null;
+  const current = isCurrentWeek(week, today);
+  const ti = todayIndex(week, today);
 
   return (
     <Animated.View style={[{ overflow: 'hidden' }, opening]}>
-      <GestureDetector gesture={weeks(shift)}>
-      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: tall,
-        paddingHorizontal: 18, justifyContent: 'center' }}>
+      <GestureDetector gesture={weeks(slider.go)}>
+      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, height: tall,
+        paddingHorizontal: 18, justifyContent: 'center' }, slider.style]}>
           <View style={{ flexDirection: 'row', gap: 3 }}>
             {DAY_LETTERS.map((letter, d) => {
               const selected = d === day;
@@ -445,7 +474,7 @@ export function SlimStrip({ scrollY, after }: {
               );
             })}
           </View>
-      </View>
+      </Animated.View>
       </GestureDetector>
     </Animated.View>
   );

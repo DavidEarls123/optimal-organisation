@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createInitialState } from '../src/domain/state';
 import {
   addTripCat, buildTripItems, moveTripCat, placeTripItem, removeTripCat, renameTripCat,
-  tripCats, tripMissing, tripOrdered, tripTopUp, uid,
+  packImport, packOffer, tripCats, tripOrdered, uid,
   addPackCat, removePackCat, renamePackCat, tripTemplateOf,
 } from '../src/domain/week';
 import { TRIP_CATEGORIES } from '../src/domain/catalogue';
@@ -20,64 +20,6 @@ function withTrip(tplId = 'weekend'): { s: AppState; id: string } {
   });
   return { s, id };
 }
-
-test('a trip built from its kind is missing nothing from it', () => {
-  const { s, id } = withTrip();
-  assert.equal(tripMissing(s, id), 0);
-  assert.equal(tripTopUp(s, id), 0);
-});
-
-test('a kind with more on its list shows what a trip has not got', () => {
-  // A weekend away carries the standing list; a race trip adds to it.
-  const { s, id } = withTrip('weekend');
-  const before = s.trips[0].items.length;
-  const missing = tripMissing(s, id, 'race');
-  assert.ok(missing > 0, 'a race trip asks for things a weekend does not');
-  assert.equal(tripTopUp(s, id, 'race'), missing, 'it adds exactly what it said was missing');
-  assert.equal(s.trips[0].items.length, before + missing);
-  assert.ok(s.trips[0].items.some((x) => x.text.includes('race number')));
-});
-
-test('topping up never touches what is already there', () => {
-  const { s, id } = withTrip('weekend');
-  s.trips[0].items[0].done = true;
-  const kept = s.trips[0].items.map((x) => ({ ...x }));
-  tripTopUp(s, id, 'race');
-  for (const had of kept) {
-    const now = s.trips[0].items.find((x) => x.id === had.id);
-    assert.deepEqual(now, had, `${had.text} is untouched`);
-  }
-});
-
-test('topping up twice adds nothing the second time', () => {
-  const { s, id } = withTrip('weekend');
-  tripTopUp(s, id, 'race');
-  const after = s.trips[0].items.length;
-  assert.equal(tripTopUp(s, id, 'race'), 0);
-  assert.equal(s.trips[0].items.length, after);
-});
-
-test('an item written by hand counts as having it, however it is cased', () => {
-  const { s, id } = withTrip();
-  const one = s.trips[0].items[0];
-  const kind = one.cat;
-  s.trips[0].items = s.trips[0].items.filter((x) => x.id !== one.id);
-  s.trips[0].items.push({ id: uid('c'), cat: kind, text: one.text.toUpperCase(), done: false });
-  assert.equal(tripMissing(s, id), 0, 'the same thing shouted is still the same thing');
-});
-
-test('a trip that is gone tops up nothing rather than throwing', () => {
-  const { s } = withTrip();
-  assert.equal(tripMissing(s, 'nope'), 0);
-  assert.equal(tripTopUp(s, 'nope'), 0);
-});
-
-test('a kind that means nothing falls back rather than emptying the list', () => {
-  const { s, id } = withTrip();
-  const before = s.trips[0].items.length;
-  tripTopUp(s, id, 'not-a-kind');
-  assert.ok(s.trips[0].items.length >= before, 'nothing was taken away');
-});
 
 test('a trip starts on the standard headings and can go its own way', () => {
   const { s, id } = withTrip();
@@ -190,13 +132,6 @@ test('a heading a trip does not have is refused rather than filed under it', () 
   assert.ok(tripCats(trip).includes(trip.items.find((x) => x.id === first.id)?.cat ?? ''));
 });
 
-test('topping up still works once a trip has headings of its own', () => {
-  const { s, id } = withTrip('weekend');
-  addTripCat(s.trips[0], 'Documents');
-  const missing = tripMissing(s, id, 'race');
-  assert.equal(tripTopUp(s, id, 'race'), missing);
-});
-
 test('the standard checklist takes a heading, and keeps the ones it had', () => {
   const s = createInitialState(TUE, 'run');
   const before = Object.keys(tripTemplateOf(s));
@@ -242,4 +177,54 @@ test('a trip is built from the headings the standard list has now', () => {
   const items = buildTripItems(s, 'weekend');
   assert.ok(items.some((x) => x.cat === 'Documents' && x.text === 'Passport'));
   assert.ok(!items.some((x) => x.cat === first), 'and not the one taken away');
+});
+
+test('the standard checklist offers itself a heading at a time', () => {
+  const { s, id } = withTrip();
+  // Built from it, so there is nothing new to bring in.
+  for (const o of packOffer(s, id)) assert.equal(o.adds, 0, o.name);
+
+  addPackCat(s, 'Documents');
+  tripTemplateOf(s).Documents.push('Passport', 'Insurance');
+  const offer = packOffer(s, id);
+  const docs = offer.find((o) => o.name === 'Documents');
+  assert.ok(docs);
+  assert.equal(docs.adds, 2);
+  assert.equal(docs.isNew, true, 'the trip has not got that heading yet');
+});
+
+test('bringing one in adds its heading and only what is missing', () => {
+  const { s, id } = withTrip();
+  addPackCat(s, 'Documents');
+  tripTemplateOf(s).Documents.push('Passport');
+  const before = s.trips[0].items.length;
+
+  assert.equal(packImport(s, id, ['Documents']), 1);
+  assert.equal(s.trips[0].items.length, before + 1);
+  assert.ok(tripCats(s.trips[0]).includes('Documents'));
+  assert.equal(packImport(s, id, ['Documents']), 0, 'and nothing the second time');
+});
+
+test('only the headings you choose come in', () => {
+  const { s, id } = withTrip();
+  addPackCat(s, 'Documents');
+  addPackCat(s, 'Medicines');
+  tripTemplateOf(s).Documents.push('Passport');
+  tripTemplateOf(s).Medicines.push('Antihistamines');
+
+  packImport(s, id, ['Documents']);
+  assert.ok(s.trips[0].items.some((x) => x.text === 'Passport'));
+  assert.ok(!s.trips[0].items.some((x) => x.text === 'Antihistamines'));
+});
+
+test('bringing in never disturbs what you have ticked or written', () => {
+  const { s, id } = withTrip();
+  s.trips[0].items[0].done = true;
+  const kept = s.trips[0].items.map((x) => ({ ...x }));
+  addPackCat(s, 'Documents');
+  tripTemplateOf(s).Documents.push('Passport');
+  packImport(s, id, ['Documents']);
+  for (const had of kept) {
+    assert.deepEqual(s.trips[0].items.find((x) => x.id === had.id), had, had.text);
+  }
 });

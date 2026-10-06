@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Alert, Keyboard, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Keyboard, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { Text } from '../../src/ui/type';
@@ -15,8 +15,8 @@ import { radius } from '../../src/theme/tokens';
 import { daysUntil, parseISO } from '../../src/domain/dates';
 import { TRIP_CATEGORIES, TRIP_TEMPLATES } from '../../src/domain/catalogue';
 import {
-  addTripCat, buildTripItems, moveTripCat, placeTripItem, removeTripCat, renameTripCat,
-  tripCats, tripMissing, tripOrdered, tripTopUp, uid,
+  addTripCat, buildTripItems, moveTripCat, packImport, packOffer, placeTripItem, removeTripCat,
+  renameTripCat, tripCats, tripOrdered, uid,
 } from '../../src/domain/week';
 import { useListDrag } from '../../src/ui/useListDrag';
 import { NOTE_LIMIT } from '../../src/domain/types';
@@ -41,6 +41,8 @@ export default function AheadScreen() {
   const [addingTrip, setAddingTrip] = useState(false);
   const [addingEvent, setAddingEvent] = useState(false);
   const [past, setPast] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
   /** The trip being changed, held as a draft so nothing moves under you while
    *  you are typing a name or picking a date. */
   const [editing, setEditing] = useState<
@@ -57,6 +59,8 @@ export default function AheadScreen() {
   // Gone, not deleted. A trip you have taken is a thing you did, and a
   // countdown that has run out is a thing that happened: what you packed,
   // what you forgot, when it was. It stops being news and goes in the back.
+  const offer = editing ? packOffer(state, editing.id) : [];
+
   const been = [
     ...state.trips.filter((x) => daysUntil(x.end, today) < 0)
       .map((x) => ({ kind: 'trip' as const, when: x.end, trip: x })),
@@ -197,13 +201,84 @@ export default function AheadScreen() {
           </Sheet>
         </Section>
 
+        <Sheet
+          open={importing}
+          title="Bring in from the standard checklist"
+          onClose={() => setImporting(false)}
+          footer={editing ? (
+            <>
+              <View style={{ flex: 1 }}>
+                <Button
+                  tone="ghost"
+                  title={picked.length === offer.length ? 'None' : 'All'}
+                  onPress={() => setPicked(picked.length === offer.length
+                    ? [] : offer.map((o) => o.name))}
+                />
+              </View>
+              <Button
+                title={picked.length ? `Add ${picked.length}` : 'Add'}
+                disabled={picked.length === 0}
+                onPress={() => {
+                  update((d) => { packImport(d, editing.id, picked); }, 'bringing those in');
+                  setImporting(false);
+                }}
+              />
+            </>
+          ) : null}
+        >
+          <Note>
+            Only the headings you choose, and only the things missing from them. Nothing
+            already on this trip is touched, ticked or not.
+          </Note>
+          {offer.map((o) => {
+            const on = picked.includes(o.name);
+            const nothing = o.adds === 0;
+            return (
+              <Pressable
+                key={o.name}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: on }}
+                disabled={nothing}
+                onPress={() => setPicked((p) => (on
+                  ? p.filter((n) => n !== o.name) : [...p, o.name]))}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 11,
+                  borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 12,
+                  paddingVertical: 11,
+                  borderColor: on ? t.accent : t.rule,
+                  backgroundColor: on ? t.accentSoft : 'transparent',
+                  opacity: nothing ? 0.4 : 1 }}
+              >
+                <Tick on={on} tone="accent" />
+                <Text style={{ flex: 1, fontSize: 12.5, letterSpacing: 1.1,
+                  textTransform: 'uppercase', fontWeight: on ? '800' : '700',
+                  color: on ? t.accent : t.ink }}>{o.name}</Text>
+                <Mono style={{ fontSize: 11 }}>
+                  {nothing ? 'all here' : `+${o.adds}${o.isNew ? ' · new' : ''}`}
+                </Mono>
+              </Pressable>
+            );
+          })}
+        </Sheet>
+
         {been.length ? (
           <Section>
-            <SectionHead title="Been and gone" right={`${been.length}`} />
-            {!past ? (
-              <Button tone="ghost" title={`Show the last ${been.length}`}
-                onPress={() => setPast(true)} />
-            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: past }}
+              accessibilityLabel={past ? 'Hide what has been' : 'Show what has been'}
+              onPress={() => setPast(!past)}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                borderBottomWidth: StyleSheet.hairlineWidth * 2, borderBottomColor: t.rule,
+                paddingBottom: 6, gap: 10 }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                <Glyph name={past ? 'chevron.down' : 'chevron.right'}
+                  fallback={past ? '▾' : '▸'} size={10} colour={t.ink3} />
+                <Mono style={{ fontSize: 11.5, letterSpacing: 1.3, textTransform: 'uppercase',
+                  fontWeight: '700', color: t.ink2 }}>Been and gone</Mono>
+              </View>
+              <Mono>{String(been.length)}</Mono>
+            </Pressable>
             {past ? been.map((x) => (x.kind === 'trip' ? (
               <TripCard
                 key={x.trip.id}
@@ -235,9 +310,6 @@ export default function AheadScreen() {
                 </Pressable>
               </View>
             ))) : null}
-            {past ? (
-              <Button tone="ghost" title="Hide them" onPress={() => setPast(false)} />
-            ) : null}
           </Section>
         ) : null}
 
@@ -332,28 +404,13 @@ export default function AheadScreen() {
                 ))}
               </View>
 
-              {/* Changing the kind does not rewrite a list you have been
-                  working through. It offers what that kind would have added. */}
-              {(() => {
-                const missing = tripMissing(state, editing.id, editing.tplId);
-                if (!missing) {
-                  return <Note>Nothing missing from this kind of trip’s checklist.</Note>;
-                }
-                return (
-                  <>
-                    <Button
-                      tone="ghost"
-                      title={`+ Add the ${missing} missing from this kind`}
-                      onPress={() => update((d) => { tripTopUp(d, editing.id, editing.tplId); },
-                        'topping up that trip')}
-                    />
-                    <Note>
-                      Only what is not already on the list. Nothing you have ticked or written
-                      is touched.
-                    </Note>
-                  </>
-                );
-              })()}
+              {/* Bringing in from the standing checklist, a heading at a
+                  time, the same way the shopping list does it. */}
+              <Button
+                tone="ghost"
+                title="Bring in from the standard checklist"
+                onPress={() => { setPicked([]); setImporting(true); }}
+              />
             </>
           ) : null}
         </Sheet>
