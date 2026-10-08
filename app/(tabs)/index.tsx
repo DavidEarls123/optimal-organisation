@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Keyboard, Linking, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, View } from 'react-native';
 import { Text } from '../../src/ui/type';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -11,8 +11,8 @@ import { useRouter } from 'expo-router';
 import { SLIM_RANGE, SlimStrip, WeekHeader } from '../../src/ui/WeekHeader';
 import { DayDone } from '../../src/ui/DayDone';
 import {
-  Bar, Body, Button, Chip, Empty, Field, Glyph, Mono, Note, Screen, Section, SectionHead,
-  Segmented, Sheet, Tick, useBoxWidth,
+  Bar, Body, Button, Chip, Composer, Empty, Field, Glyph, Mono, Note, Screen, Section,
+  SectionHead, Segmented, Sheet, Tick, useBoxWidth,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -55,7 +55,6 @@ function Day() {
   const [showPicker, setShowPicker] = useState(false);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [access, setAccess] = useState<CalendarAccess | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [tagFor, setTagFor] = useState<Record<string, string>>({});
   /** Which section has its composer open. Only ever one. */
   const [adding, setAdding] = useState<string | null>(null);
@@ -243,20 +242,16 @@ function Day() {
     setWeighing(null);
   }, [update, weekId, day]);
 
-  const addTask = useCallback((sectionId: string) => {
-    const text = (drafts[sectionId] ?? '').trim().slice(0, TASK_LIMIT);
-    // Nothing typed and you pressed next: that means you are finished.
-    if (!text) { setAdding(null); Keyboard.dismiss(); return; }
+  const addTask = useCallback((sectionId: string, text: string) => {
     update((d) => {
       const arr = (d.weeks[weekId].tasks[day] ??= []);
       arr.push({ id: uid('n'), text, state: 'open', plan: false,
         track: tagFor[sectionId] || null, sec: sectionId });
-    });
-    // Clear both, so the next task starts blank and untagged rather than
-    // quietly inheriting the last one's tag.
-    setDrafts((p) => ({ ...p, [sectionId]: '' }));
+    }, 'adding that');
+    // Cleared, so the next task starts untagged rather than quietly
+    // inheriting the last one's tag.
     setTagFor((p) => ({ ...p, [sectionId]: '' }));
-  }, [drafts, tagFor, update, weekId, day]);
+  }, [tagFor, update, weekId, day]);
 
   const openComposer = useCallback((sectionId: string) => {
     setAdding(sectionId);
@@ -265,13 +260,7 @@ function Day() {
 
   /** Turning to any task closes the composer. An empty box left open under a
    *  heading while you are busy somewhere else is a task you did not write. */
-  const shutComposer = useCallback(() => {
-    setAdding((cur) => {
-      if (cur === null) return cur;
-      setDrafts((p) => ({ ...p, [cur]: '' }));
-      return null;
-    });
-  }, []);
+  const shutComposer = useCallback(() => { setAdding(null); }, []);
 
   if (!week) return <Screen><Body><Empty>Loading…</Empty></Body></Screen>;
 
@@ -565,50 +554,25 @@ function Day() {
                 </View>
 
                 {adding === sc.id ? (
-                  <View
-                    style={{ gap: 7, paddingTop: 7 }}
-                  >
-                    <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
-                      <Field
-                        value={drafts[sc.id] ?? ''}
-                        onChangeText={(v) => setDrafts((p) => ({ ...p, [sc.id]: v }))}
-                        onSubmitEditing={() => addTask(sc.id)}
-                        placeholder={`Add to ${sc.name.toLowerCase()}…`}
-                        returnKeyType="next"
-                        maxLength={TASK_LIMIT}
-                        // Enter files the task and leaves the field up for the
-                        // next one, rather than closing the whole thing.
-                        blurOnSubmit={false}
-                        autoFocus
-                      />
+                  /* One button, and what it does is whatever there is to do:
+                     write something and it files it, leave it empty and it
+                     closes. Two buttons made you choose between finishing and
+                     finishing. */
+                  <Composer
+                    placeholder={`Add to ${sc.name.toLowerCase()}…`}
+                    limit={TASK_LIMIT}
+                    onAdd={(text) => addTask(sc.id, text)}
+                    onDone={() => setAdding(null)}
+                    hint={(text) => (text.length >= TASK_LIMIT - 20
+                      ? `${TASK_LIMIT - text.length} left`
+                      : 'Return adds it and keeps going')}
+                    beside={(
                       <TagPicker
                         value={tagFor[sc.id] ?? ''}
                         onChange={(v) => setTagFor((p) => ({ ...p, [sc.id]: v }))}
                       />
-                    </View>
-                    {/* One button, and what it does is whatever there is to do:
-                        write something and it files it, leave it empty and it
-                        closes. Two buttons made you choose between finishing
-                        and finishing. */}
-                    <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
-                      <Mono style={{ flex: 1, fontSize: 10.5 }}>
-                        {(drafts[sc.id] ?? '').length >= TASK_LIMIT - 20
-                          ? `${TASK_LIMIT - (drafts[sc.id] ?? '').length} left`
-                          : 'Return adds it and keeps going'}
-                      </Mono>
-                      <View style={{ width: box }}>
-                        {(drafts[sc.id] ?? '').trim() ? (
-                          <Button title="Add" onPress={() => addTask(sc.id)} />
-                        ) : (
-                          <Button
-                            tone="ghost"
-                            title="Done"
-                            onPress={() => { setAdding(null); Keyboard.dismiss(); }}
-                          />
-                        )}
-                      </View>
-                    </View>
-                  </View>
+                    )}
+                  />
                 ) : (
                   <Pressable
                     accessibilityRole="button"

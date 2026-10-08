@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Alert, Keyboard, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { Text } from '../../src/ui/type';
 
 import {
-  Body, Button, Chip, CornerMark, DateButton, Empty, Field, Glyph, Mono, Note, Screen, Section,
-  SectionHead, Sheet, Tick, useBoxWidth,
+  Body, Button, Chip, Composer, CornerMark, DateButton, Empty, Field, Glyph, Mono, Note, Screen,
+  Section, SectionHead, Sheet, Tick,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -36,7 +36,6 @@ export default function AheadScreen() {
   const router = useRouter();
   const { state, today, update } = useStore();
   const [open, setOpen] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [newTrip, setNewTrip] = useState({ name: '', start: '', end: '', tplId: 'weekend' });
   const [addingTrip, setAddingTrip] = useState(false);
   const [addingEvent, setAddingEvent] = useState(false);
@@ -141,8 +140,6 @@ export default function AheadScreen() {
               onEdit={() => setEditing({ id: trip.id, name: trip.name, start: trip.start,
                 end: trip.end, tplId: trip.tplId })}
               onImport={() => { setPicked([]); setImportFor(trip.id); }}
-              draft={drafts}
-              setDraft={setDrafts}
             />
           ))}
 
@@ -299,8 +296,6 @@ export default function AheadScreen() {
                 onEdit={() => setEditing({ id: x.trip.id, name: x.trip.name,
                   start: x.trip.start, end: x.trip.end, tplId: x.trip.tplId })}
                 onImport={() => { setPicked([]); setImportFor(x.trip.id); }}
-                draft={drafts}
-                setDraft={setDrafts}
               />
             ) : (
               <View key={x.event.id} style={{ flexDirection: 'row', alignItems: 'center',
@@ -480,21 +475,18 @@ export default function AheadScreen() {
   );
 }
 
-function TripCard({ trip, today, expanded, onToggle, onEdit, onImport, draft, setDraft }: {
+function TripCard({ trip, today, expanded, onToggle, onEdit, onImport }: {
   trip: Trip; today: Date; expanded: boolean; onToggle: () => void; onEdit: () => void;
   /** Bring headings in from the standing checklist. Asked for from the card,
    *  so the sheet it opens is the only one on the screen. */
   onImport: () => void;
-  draft: Record<string, string>; setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
   const t = useTheme();
-  const box = useBoxWidth();
   const { update } = useStore();
   const [openItem, setOpenItem] = useState<string | null>(null);
   /** Which heading has its composer open. Only ever one. */
   const [adding, setAdding] = useState<string | null>(null);
   const [heading, setHeading] = useState(false);
-  const [newCat, setNewCat] = useState('');
 
   const cats = tripCats(trip);
   const drawn = tripOrdered(trip);
@@ -511,14 +503,11 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, onImport, draft, se
     onDrop,
   });
 
-  const addCat = () => {
-    const name = newCat.trim();
-    if (!name) { setHeading(false); Keyboard.dismiss(); return; }
+  const addCat = (name: string) => {
     update((d) => {
       const tr = d.trips.find((x) => x.id === trip.id);
       if (tr) addTripCat(tr, name);
     }, 'adding that heading');
-    setNewCat('');
     setHeading(false);
   };
 
@@ -601,18 +590,11 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, onImport, draft, se
         <View>
           {cats.map((cat, ci) => {
             const items = drawn.filter((x) => x.cat === cat);
-            const key = `${trip.id}|${cat}`;
             const line = drag.lineIn(cat);
-            const add = () => {
-              const text = (draft[key] ?? '').trim().slice(0, ITEM_LIMIT);
-              // Nothing typed and you pressed next: that means you are finished.
-              if (!text) { setAdding(null); Keyboard.dismiss(); return; }
-              update((d) => {
-                d.trips.find((x) => x.id === trip.id)?.items
-                  .push({ id: uid('c'), cat, text, done: false });
-              }, 'adding that to the list');
-              setDraft((p) => ({ ...p, [key]: '' }));
-            };
+            const add = (text: string) => update((d) => {
+              d.trips.find((x) => x.id === trip.id)?.items
+                .push({ id: uid('c'), cat, text, done: false });
+            }, 'adding that to the list');
             return (
               <View
                 key={cat}
@@ -652,33 +634,12 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, onImport, draft, se
                 </View>
 
                 {adding === cat ? (
-                  <View style={{ gap: 7, paddingTop: 7 }}>
-                    <Field
-                      value={draft[key] ?? ''}
-                      placeholder={`Add to ${cat.toLowerCase()}…`}
-                      onChangeText={(v) => setDraft((p) => ({ ...p, [key]: v }))}
-                      onSubmitEditing={add}
-                      returnKeyType="next"
-                      // Return files it and leaves the field up for the next
-                      // one; Return on an empty field means you are finished.
-                      blurOnSubmit={false}
-                      autoFocus
-                      maxLength={ITEM_LIMIT}
-                    />
-                    <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
-                      <Mono style={{ flex: 1, fontSize: 10.5 }}>
-                        Return adds it and keeps going
-                      </Mono>
-                      <View style={{ width: box }}>
-                        {(draft[key] ?? '').trim() ? (
-                          <Button title="Add" onPress={add} />
-                        ) : (
-                          <Button tone="ghost" title="Done"
-                            onPress={() => { setAdding(null); Keyboard.dismiss(); }} />
-                        )}
-                      </View>
-                    </View>
-                  </View>
+                  <Composer
+                    placeholder={`Add to ${cat.toLowerCase()}…`}
+                    limit={ITEM_LIMIT}
+                    onAdd={add}
+                    onDone={() => setAdding(null)}
+                  />
                 ) : (
                   <Pressable
                     accessibilityRole="button"
@@ -697,28 +658,13 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, onImport, draft, se
           {/* A heading is a rarer thing to want than an item, so it asks for
               the room only once you have said you want one. */}
           {heading ? (
-            <View style={{ gap: 7, paddingTop: 12 }}>
-              <Field
-                value={newCat}
-                onChangeText={setNewCat}
-                placeholder="What to call it…"
-                maxLength={28}
-                returnKeyType="done"
-                onSubmitEditing={addCat}
-                autoFocus
-              />
-              <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
-                <View style={{ flex: 1 }} />
-                <View style={{ width: box }}>
-                  {newCat.trim() ? (
-                    <Button title="Add" onPress={addCat} />
-                  ) : (
-                    <Button tone="ghost" title="Done"
-                      onPress={() => { setHeading(false); Keyboard.dismiss(); }} />
-                  )}
-                </View>
-              </View>
-            </View>
+            <Composer
+              placeholder="What to call it…"
+              limit={28}
+              onAdd={addCat}
+              onDone={() => setHeading(false)}
+              hint={() => 'A heading for this trip only'}
+            />
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingTop: 12 }}>
               <Pressable

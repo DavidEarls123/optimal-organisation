@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Keyboard, Pressable, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { Text } from '../src/ui/type';
 
 import {
-  Body, Button, Field, Mono, Note, Screen, Section, SectionHead,
+  Body, Button, Composer, DraftField, Field, Mono, Note, Screen, Section, SectionHead,
 } from '../src/ui/primitives';
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
@@ -24,7 +24,6 @@ const HEADING_LIMIT = 28;
 export default function ShopTemplateScreen() {
   const t = useTheme();
   const { state, weekId, update } = useStore();
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
   /** Which heading has its composer open. Only ever one. */
   const [adding, setAdding] = useState<string | null>(null);
 
@@ -40,16 +39,10 @@ export default function ShopTemplateScreen() {
   const onList = (fn: (list: ReturnType<typeof shopTemplateOf>) => void, label?: string) =>
     update((d) => { fn(shopTemplateOf(d)); }, label);
 
-  const addItem = (groupId: string) => {
-    const text = (drafts[groupId] ?? '').trim().slice(0, ITEM_LIMIT);
-    // Nothing typed and you pressed next: that means you are finished.
-    if (!text) { setAdding(null); Keyboard.dismiss(); return; }
-    onList((list) => {
-      list.find((g) => g.id === groupId)
-        ?.items.push({ id: uid('i'), text, need: false, done: false });
-    }, 'adding that');
-    setDrafts((p) => ({ ...p, [groupId]: '' }));
-  };
+  const addItem = (groupId: string, text: string) => onList((list) => {
+    list.find((g) => g.id === groupId)
+      ?.items.push({ id: uid('i'), text, need: false, done: false });
+  }, 'adding that');
 
   // The same geometry the week's own list uses, because it is the same gesture.
   const drawn = shopOrdered(groups);
@@ -76,16 +69,12 @@ export default function ShopTemplateScreen() {
             <View key={g.id} onLayout={(e) => drag.measureSection(g.id, e.nativeEvent.layout.y)}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
                 paddingTop: 4, paddingBottom: 3 }}>
-                <Field
+                <DraftField
                   value={g.name}
-                  onChangeText={(v) => onList((list) => {
+                  onCommit={(v) => onList((list) => {
                     const gg = list.find((x) => x.id === g.id);
-                    if (gg) gg.name = v;
-                  })}
-                  onBlur={() => onList((list) => {
-                    const gg = list.find((x) => x.id === g.id);
-                    if (gg) gg.name = gg.name.trim();
-                  })}
+                    if (gg && v.trim()) gg.name = v.trim();
+                  }, 'renaming that heading')}
                   maxLength={HEADING_LIMIT}
                   accessibilityLabel={`Rename ${g.name}`}
                   style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 0,
@@ -147,26 +136,12 @@ export default function ShopTemplateScreen() {
               </View>
 
               {adding === g.id ? (
-                <View style={{ gap: 7, paddingTop: 7 }}>
-                  <Field
-                    value={drafts[g.id] ?? ''}
-                    onChangeText={(v) => setDrafts((p) => ({ ...p, [g.id]: v }))}
-                    placeholder={`Add to ${g.name.toLowerCase()}…`}
-                    returnKeyType="next"
-                    blurOnSubmit={false}
-                    maxLength={ITEM_LIMIT}
-                    autoFocus
-                    onSubmitEditing={() => addItem(g.id)}
-                  />
-                  <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
-                    <Mono style={{ flex: 1, fontSize: 10.5 }}>Return adds it and keeps going</Mono>
-                    <Button
-                      title={(drafts[g.id] ?? '').trim() ? 'Add' : 'Done'}
-                      tone={(drafts[g.id] ?? '').trim() ? 'soft' : 'ghost'}
-                      onPress={() => addItem(g.id)}
-                    />
-                  </View>
-                </View>
+                <Composer
+                  placeholder={`Add to ${g.name.toLowerCase()}…`}
+                  limit={ITEM_LIMIT}
+                  onAdd={(text) => addItem(g.id, text)}
+                  onDone={() => setAdding(null)}
+                />
               ) : (
                 <Pressable
                   accessibilityRole="button"

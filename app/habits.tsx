@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { Alert, Pressable, View } from 'react-native';
 import { Text } from '../src/ui/type';
 
-import { Body, Button, Field, Mono, Note, Screen, SectionHead } from '../src/ui/primitives';
+import {
+  Body, Button, DraftField, Field, Mono, Note, Screen, SectionHead,
+} from '../src/ui/primitives';
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
@@ -54,12 +56,12 @@ export default function HabitsScreen() {
           Set from {tpl.name}. Changes here apply to this week only — every other week keeps its own plan.
         </Note>
         <View style={{ gap: 8 }}>
-          <Field
+          <DraftField
             value={tpl.name}
-            onChangeText={(v) => update((d) => {
+            onCommit={(v) => update((d) => {
               const x = d.templates[d.weeks[weekId].templateId];
-              if (x) x.name = v;
-            })}
+              if (x && v.trim()) x.name = v.trim();
+            }, 'renaming that')}
             maxLength={40}
             accessibilityLabel="Template name"
             style={{ fontSize: 15, fontWeight: '700', color: t.ink }}

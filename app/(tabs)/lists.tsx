@@ -7,8 +7,8 @@ import { useRouter } from 'expo-router';
 
 import { WeekHeader } from '../../src/ui/WeekHeader';
 import {
-  Body, Button, Chip, Empty, Field, Glyph, IconButton, Mono, Note, Screen, Section,
-  SectionHead, Segmented, Sheet, Tick, useBoxWidth,
+  Body, Button, Chip, Composer, DraftField, Empty, Field, Glyph, IconButton, Mono, Note,
+  Screen, Section, SectionHead, Segmented, Sheet, Tick,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -178,10 +178,8 @@ function ShopRow({ item, onNeed, onRename, onDelete, onMeasure, onDragMove, onDr
 
 function Shopping() {
   const t = useTheme();
-  const box = useBoxWidth();
   const router = useRouter();
   const { state, weekId, update } = useStore();
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
   /** Which heading has its composer open. Only ever one. */
   const [adding, setAdding] = useState<string | null>(null);
   /** Shopping mode: only what is needed, and only the got tick. */
@@ -228,17 +226,11 @@ function Shopping() {
     if (item) Object.assign(item, patch);
   });
 
-  const addItem = (groupId: string) => {
-    const text = (drafts[groupId] ?? '').trim().slice(0, 60);
-    // Nothing typed and you pressed next: that means you are finished.
-    if (!text) { setAdding(null); Keyboard.dismiss(); return; }
-    update((d) => {
-      d.weeks[weekId].shop?.find((x) => x.id === groupId)
-        // Typing something in is itself saying you need it.
-        ?.items.push({ id: uid('i'), text, need: true, done: false });
-    });
-    setDrafts((p) => ({ ...p, [groupId]: '' }));
-  };
+  const addItem = (groupId: string, text: string) => update((d) => {
+    d.weeks[weekId].shop?.find((x) => x.id === groupId)
+      // Typing something in is itself saying you need it.
+      ?.items.push({ id: uid('i'), text, need: true, done: false });
+  }, 'adding that');
 
   // ---- shopping mode: the short list, and only the tick that matters in a shop
   if (inShop) {
@@ -321,16 +313,12 @@ function Shopping() {
           <View key={g.id} onLayout={(e) => drag.measureSection(g.id, e.nativeEvent.layout.y)}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
               paddingTop: 15, paddingBottom: 3 }}>
-              <Field
+              <DraftField
                 value={g.name}
-                onChangeText={(v) => update((d) => {
+                onCommit={(v) => update((d) => {
                   const gg = d.weeks[weekId].shop?.find((x) => x.id === g.id);
-                  if (gg) gg.name = v;
-                })}
-                onBlur={() => update((d) => {
-                  const gg = d.weeks[weekId].shop?.find((x) => x.id === g.id);
-                  if (gg) gg.name = gg.name.trim();
-                })}
+                  if (gg && v.trim()) gg.name = v.trim();
+                }, 'renaming that heading')}
                 maxLength={28}
                 style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 0, paddingHorizontal: 0,
                   paddingVertical: 2, fontSize: 12.5, letterSpacing: 1.1, textTransform: 'uppercase',
@@ -389,31 +377,12 @@ function Shopping() {
             </View>
 
             {adding === g.id ? (
-              <View style={{ gap: 7, paddingTop: 7 }}>
-                <Field
-                  value={drafts[g.id] ?? ''}
-                  onChangeText={(v) => setDrafts((p) => ({ ...p, [g.id]: v }))}
-                  placeholder={`Add to ${g.name.toLowerCase()}…`}
-                  returnKeyType="next"
-                  blurOnSubmit={false}
-                  maxLength={60}
-                  autoFocus
-                  onSubmitEditing={() => addItem(g.id)}
-                />
-                <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
-                  <Mono style={{ flex: 1, fontSize: 10.5 }}>Return adds it and keeps going</Mono>
-                  {/* The same one button as a task's: it files what you wrote,
-                      or closes if you wrote nothing. */}
-                  <View style={{ width: box }}>
-                    {(drafts[g.id] ?? '').trim() ? (
-                      <Button title="Add" onPress={() => addItem(g.id)} />
-                    ) : (
-                      <Button tone="ghost" title="Done"
-                        onPress={() => { setAdding(null); Keyboard.dismiss(); }} />
-                    )}
-                  </View>
-                </View>
-              </View>
+              <Composer
+                placeholder={`Add to ${g.name.toLowerCase()}…`}
+                limit={60}
+                onAdd={(text) => addItem(g.id, text)}
+                onDone={() => setAdding(null)}
+              />
             ) : (
               <Pressable
                 accessibilityRole="button"

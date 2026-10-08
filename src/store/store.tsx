@@ -226,14 +226,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const update = useCallback((mutator: (draft: AppState) => void, label = 'that change') => {
     setState((prev) => {
-      const draft = clone(prev);
+      // Written out once and read back, rather than copied and then written
+      // out twice more to see whether anything changed. Every keystroke in a
+      // box whose value is kept here used to serialise the whole of the app's
+      // state three times over, and that is the stutter you feel.
+      const was = JSON.stringify(prev);
+      const draft = JSON.parse(was) as AppState;
       mutator(draft);
       // Only remember a step that actually changed something, so Undo never
       // sits there doing nothing. The guard on `prev` also means a double
       // invocation of this updater cannot push the same step twice.
       const stack = history.current;
-      if (stack[stack.length - 1]?.state !== prev
-          && JSON.stringify(draft) !== JSON.stringify(prev)) {
+      if (stack[stack.length - 1]?.state !== prev && JSON.stringify(draft) !== was) {
         history.current = [...stack, { state: prev, label }].slice(-UNDO_DEPTH);
       }
       persist(draft);

@@ -3,7 +3,7 @@ import { Alert, Pressable, View } from 'react-native';
 import { Text } from '../src/ui/type';
 
 import {
-  Body, Button, Empty, Field, Mono, Note, Screen, Section, SectionHead,
+  Body, Button, Composer, DraftField, Mono, Note, Screen, Section, SectionHead,
 } from '../src/ui/primitives';
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
@@ -18,9 +18,9 @@ const ITEM_LIMIT = 70;
 export default function TripTemplateScreen() {
   const t = useTheme();
   const { state, update } = useStore();
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  /** Which heading has its composer open. Only ever one. */
+  const [adding, setAdding] = useState<string | null>(null);
   const [heading, setHeading] = useState(false);
-  const [newCat, setNewCat] = useState('');
 
   // Shown from the defaults until there is something stored, rather than
   // storing something in the middle of drawing the page. Every edit below
@@ -28,25 +28,17 @@ export default function TripTemplateScreen() {
   const base = state.tripTemplate ?? defaultPackList();
   const total = Object.values(base).reduce((a, c) => a + c.length, 0);
 
-  const addItem = (cat: string) => {
-    const text = (drafts[cat] ?? '').trim().slice(0, ITEM_LIMIT);
-    if (!text) return;
-    update((d) => {
-      const tpl = tripTemplateOf(d);
-      if (!tpl[cat].some((x) => x.trim().toLowerCase() === text.toLowerCase())) {
-        tpl[cat].push(text);
-      }
-    });
-    setDrafts((p) => ({ ...p, [cat]: '' }));
-  };
+  const addItem = (cat: string, text: string) => update((d) => {
+    const tpl = tripTemplateOf(d);
+    if (!tpl[cat].some((x) => x.trim().toLowerCase() === text.toLowerCase())) {
+      tpl[cat].push(text);
+    }
+  }, 'adding that');
 
   const cats = Object.keys(base);
 
-  const addCat = () => {
-    const name = newCat.trim();
-    if (!name) { setHeading(false); return; }
+  const addCat = (name: string) => {
     update((d) => { addPackCat(d, name); }, 'adding that heading');
-    setNewCat('');
     setHeading(false);
   };
 
@@ -64,10 +56,16 @@ export default function TripTemplateScreen() {
         {cats.map((cat) => (
           <View key={cat}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 4 }}>
-              <PackHeading
-                name={cat}
-                onRename={(v) => update((d) => { renamePackCat(d, cat, v); },
+              <DraftField
+                value={cat}
+                onCommit={(v) => update((d) => { renamePackCat(d, cat, v.trim()); },
                   'renaming that heading')}
+                maxLength={28}
+                returnKeyType="done"
+                accessibilityLabel={`Rename ${cat}`}
+                style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 0,
+                  paddingHorizontal: 0, paddingVertical: 2, fontSize: 12.5, letterSpacing: 1.1,
+                  textTransform: 'uppercase', fontWeight: '700', color: t.ink }}
               />
               <Mono>{String(base[cat]?.length ?? 0)}</Mono>
               {cats.length > 1 ? (
@@ -115,35 +113,36 @@ export default function TripTemplateScreen() {
               ) : null}
             </View>
 
-            <View style={{ flexDirection: 'row', gap: 7, paddingTop: 7 }}>
-              <Field
-                value={drafts[cat] ?? ''}
-                onChangeText={(v) => setDrafts((p) => ({ ...p, [cat]: v }))}
+            {adding === cat ? (
+              <Composer
                 placeholder={`Add to ${cat.toLowerCase()}…`}
-                returnKeyType="next"
-                blurOnSubmit={false}
-                maxLength={ITEM_LIMIT}
-                onSubmitEditing={() => addItem(cat)}
+                limit={ITEM_LIMIT}
+                onAdd={(text) => addItem(cat, text)}
+                onDone={() => setAdding(null)}
               />
-              <Button title="Add" onPress={() => addItem(cat)} />
-            </View>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Add to ${cat}`}
+                onPress={() => setAdding(cat)}
+                hitSlop={8}
+                style={{ paddingTop: 7, paddingBottom: 2 }}
+              >
+                <Text style={{ fontSize: 15, color: t.ink3, lineHeight: 18 }}>+</Text>
+              </Pressable>
+            )}
           </View>
         ))}
 
         {/* A heading is a rarer thing to want than an item. */}
         {heading ? (
-          <View style={{ flexDirection: 'row', gap: 7, paddingTop: 4 }}>
-            <Field
-              value={newCat}
-              onChangeText={setNewCat}
-              placeholder="What to call it…"
-              maxLength={28}
-              returnKeyType="done"
-              onSubmitEditing={addCat}
-              autoFocus
-            />
-            <Button title={newCat.trim() ? 'Add' : 'Done'} onPress={addCat} />
-          </View>
+          <Composer
+            placeholder="What to call it…"
+            limit={28}
+            onAdd={addCat}
+            onDone={() => setHeading(false)}
+            hint={() => 'A heading every new trip starts with'}
+          />
         ) : (
           <Pressable
             accessibilityRole="button"
@@ -174,40 +173,5 @@ export default function TripTemplateScreen() {
         />
       </Body>
     </Screen>
-  );
-}
-
-/** A heading on the standing checklist.
- *
- *  Held while you type and written when you stop. Writing on every keystroke
- *  renamed the heading a letter at a time, and a rename that is refused —
- *  empty, or the name of another heading — snapped the word back under your
- *  finger. It is a draft until you are done with it. */
-function PackHeading({ name, onRename }: { name: string; onRename: (v: string) => void }) {
-  const t = useTheme();
-  const [draft, setDraft] = useState(name);
-  const [editing, setEditing] = useState(false);
-
-  const commit = () => {
-    setEditing(false);
-    const next = draft.trim();
-    if (!next || next === name) { setDraft(name); return; }
-    onRename(next);
-  };
-
-  return (
-    <Field
-      value={editing ? draft : name}
-      onFocus={() => { setDraft(name); setEditing(true); }}
-      onChangeText={setDraft}
-      onBlur={commit}
-      onSubmitEditing={commit}
-      returnKeyType="done"
-      maxLength={28}
-      accessibilityLabel={`Rename ${name}`}
-      style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 0, paddingHorizontal: 0,
-        paddingVertical: 2, fontSize: 12.5, letterSpacing: 1.1, textTransform: 'uppercase',
-        fontWeight: '700', color: t.ink }}
-    />
   );
 }

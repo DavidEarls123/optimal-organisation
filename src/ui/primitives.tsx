@@ -342,6 +342,122 @@ export function Field(props: React.ComponentProps<typeof TextInput>) {
   );
 }
 
+/** A text box whose value is kept somewhere expensive.
+ *
+ *  A controlled TextInput whose value has to travel to the store and back on
+ *  every keystroke is a race, and the box loses it: the store copies the whole
+ *  of the app's state, works out whether anything changed, and redraws the
+ *  page — and while that is happening you are still typing. What comes back is
+ *  a character or two behind what is on the screen, and iOS answers a value it
+ *  was not expecting by putting the caret back at the start. Type "task" and
+ *  you get "skta".
+ *
+ *  So what you type is held here, where nothing is waiting on it, and the
+ *  store is told when you stop: on Return, and when you tap away. While you
+ *  are typing, what you typed wins; the moment you are not, whatever is stored
+ *  wins again, so an undo or a change made elsewhere still shows up. */
+export function DraftField({ value, onCommit, ...rest }: {
+  value: string;
+  /** Called with what was typed, once, when you are done with it. */
+  onCommit: (text: string) => void;
+} & Omit<React.ComponentProps<typeof TextInput>, 'value' | 'onChangeText'>) {
+  const [draft, setDraft] = useState(value);
+  /** A ref rather than state: it is read when the stored value changes, and
+   *  nothing about it needs a redraw of its own. */
+  const typing = useRef(false);
+
+  useEffect(() => { if (!typing.current) setDraft(value); }, [value]);
+
+  const commit = useCallback(() => {
+    typing.current = false;
+    if (draft !== value) onCommit(draft);
+  }, [draft, value, onCommit]);
+
+  return (
+    <Field
+      {...rest}
+      value={draft}
+      onChangeText={(v) => { typing.current = true; setDraft(v); }}
+      onBlur={(e) => { commit(); rest.onBlur?.(e); }}
+      onSubmitEditing={(e) => { commit(); rest.onSubmitEditing?.(e); }}
+    />
+  );
+}
+
+/** The box you add a line to a list in, wherever the list is.
+ *
+ *  It keeps what you are writing to itself. Held one level up — in the screen,
+ *  beside everything else it knows — every character redrew every row on the
+ *  page, which is both the stutter and, on a long list, the caret going back
+ *  to the start. The screen only hears from this when a line is actually
+ *  filed.
+ *
+ *  Return files what you wrote and leaves the box up for the next one; Return
+ *  on an empty box means you are finished, which is the same thing the one
+ *  button beside it says. */
+export function Composer({ placeholder, limit, onAdd, onDone, hint, beside,
+  autoFocus = true }: {
+  placeholder: string;
+  limit: number;
+  onAdd: (text: string) => void;
+  onDone: () => void;
+  /** What the row beside the button says, given what has been typed so far. */
+  hint?: (text: string) => string;
+  /** Anything that belongs on the same line as the box — a tag to put on what
+   *  you are writing, for instance. */
+  beside?: React.ReactNode;
+  autoFocus?: boolean;
+}) {
+  const box = useBoxWidth();
+  const [text, setText] = useState('');
+  const ready = text.trim().length > 0;
+
+  const file = () => {
+    const next = text.trim().slice(0, limit);
+    if (!next) { onDone(); Keyboard.dismiss(); return; }
+    onAdd(next);
+    setText('');
+  };
+
+  const field = (
+    <Field
+      value={text}
+      onChangeText={setText}
+      placeholder={placeholder}
+      returnKeyType="next"
+      blurOnSubmit={false}
+      maxLength={limit}
+      autoFocus={autoFocus}
+      onSubmitEditing={file}
+    />
+  );
+
+  return (
+    <View style={{ gap: 7, paddingTop: 7 }}>
+      {beside ? (
+        <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
+          {field}
+          {beside}
+        </View>
+      ) : field}
+      <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
+        <Mono style={{ flex: 1, fontSize: 10.5 }}>
+          {hint?.(text) ?? 'Return adds it and keeps going'}
+        </Mono>
+        {/* One button, the same width whichever of the two things it is. */}
+        <View style={{ width: box }}>
+          {ready ? (
+            <Button title="Add" onPress={file} />
+          ) : (
+            <Button tone="ghost" title="Done"
+              onPress={() => { onDone(); Keyboard.dismiss(); }} />
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export function Button({ title, onPress, tone = 'soft', disabled }: {
   title: string; onPress: () => void; tone?: 'soft' | 'ghost' | 'big'; disabled?: boolean;
 }) {

@@ -6,7 +6,7 @@ import { Text } from '../src/ui/type';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import {
-  Body, Button, Empty, Field, Mono, Note, Screen, Section, SectionHead, Sheet,
+  Body, Button, DraftField, Empty, Field, Mono, Note, Screen, Section, SectionHead, Sheet,
 } from '../src/ui/primitives';
 import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
@@ -175,15 +175,15 @@ export default function TemplateEditScreen() {
       <Body>
         <Section>
           <SectionHead title="Name" />
-          <Field
+          <DraftField
             value={tpl.name}
-            onChangeText={(v) => edit((d) => { d.name = v; })}
+            onCommit={(v) => edit((d) => { d.name = v; })}
             accessibilityLabel="Template name"
             style={{ fontSize: 16, fontWeight: '700', color: t.ink }}
           />
-          <Field
+          <DraftField
             value={tpl.blurb}
-            onChangeText={(v) => edit((d) => { d.blurb = v; })}
+            onCommit={(v) => edit((d) => { d.blurb = v; })}
             accessibilityLabel="What this week is for"
             placeholder="What this kind of week is for…"
             multiline
@@ -214,9 +214,9 @@ export default function TemplateEditScreen() {
               );
             })}
           </View>
-          <Field
+          <DraftField
             value={tpl.tag}
-            onChangeText={(v) => edit((d) => { d.tag = v; })}
+            onCommit={(v) => edit((d) => { d.tag = v; })}
             placeholder="Or your own…"
             maxLength={20}
             accessibilityLabel="Goal"
@@ -710,10 +710,9 @@ function SectionRow({
       <Mono style={{ width: 14 }}>{String(index + 1)}</Mono>
       {/* Typed as it will be drawn: a day shouts its headings, so this does
           too, and what you type is what you get rather than a surprise. */}
-      <Field
+      <DraftField
         value={name}
-        onChangeText={onRename}
-        onBlur={() => onRename(name.trim())}
+        onCommit={(v) => onRename(v.trim())}
         maxLength={24}
         accessibilityLabel={`Rename ${name}`}
         style={{ letterSpacing: 1.1, textTransform: 'uppercase', fontWeight: '700',
