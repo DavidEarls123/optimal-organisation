@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Keyboard, Pressable, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { Text } from '../../src/ui/type';
 import { useRouter } from 'expo-router';
 
@@ -12,12 +14,13 @@ import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import {
-  mergeTemplateInto, missingRegulars, mostBought, shopCounts, shopListFor, shopTemplateOf,
-  shoppingList, templateOffer, uid,
+  mergeTemplateInto, missingRegulars, mostBought, placeShopItem, shopCounts, shopListFor,
+  shopOrdered, shopTemplateOf, shoppingList, templateOffer, uid,
 } from '../../src/domain/week';
+import { useListDrag } from '../../src/ui/useListDrag';
 import { watchCount } from '../../src/domain/scoring';
 import { weekNumber } from '../../src/domain/dates';
-import type { ShopItem, WatchItem } from '../../src/domain/types';
+import type { ShopGroup, ShopItem, WatchItem } from '../../src/domain/types';
 
 export default function ListsScreen() {
   const [view, setView] = useState<'shop' | 'fun'>('shop');
@@ -36,17 +39,26 @@ export default function ListsScreen() {
   );
 }
 
-/** One line on the list. Two ticks: needed this week, and got it. */
-function ShopRow({ item, onNeed, onRename, onDelete }: {
+/** One line on the list: whether you need it this week, and the handle that
+ *  moves it. Held together in one block that reports its own height, because
+ *  a row being renamed is a different height from one that is not and the drag
+ *  has to know which it is looking at. */
+function ShopRow({ item, onNeed, onRename, onDelete, onMeasure, onDragMove, onDragEnd, dragging }: {
   item: ShopItem;
   onNeed: () => void;
   onRename: (text: string) => void;
   onDelete: () => void;
+  onMeasure: (y: number, h: number) => void;
+  onDragMove: (dy: number) => void;
+  onDragEnd: (dy: number) => void;
+  dragging: boolean;
 }) {
   const t = useTheme();
   const [editing, setEditing] = useState(false);
   const [menu, setMenu] = useState(false);
   const [draft, setDraft] = useState(item.text);
+  const lift = useSharedValue(0);
+  const told = useSharedValue(0);
 
   const commit = () => {
     const next = draft.trim().slice(0, 60);
@@ -54,56 +66,100 @@ function ShopRow({ item, onNeed, onRename, onDelete }: {
     setEditing(false);
   };
 
-  if (editing) {
-    return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9,
-        paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: t.rule2 }}>
-        <Field
-          value={draft}
-          onChangeText={setDraft}
-          onSubmitEditing={commit}
-          onBlur={commit}
-          maxLength={60}
-          returnKeyType="done"
-          autoFocus
-          accessibilityLabel="Item name"
-        />
-        <Pressable onPress={commit} hitSlop={8} accessibilityRole="button"
-          accessibilityLabel="Save the name">
-          <Text style={{ color: t.hit, fontSize: 17, fontWeight: '800' }}>✓</Text>
-        </Pressable>
+  // The same gesture as a task on a day and an item on a trip: hold, then move.
+  // A plain pan here would fight the list's own scrolling.
+  const pan = useMemo(
+    () => Gesture.Pan()
+      .activateAfterLongPress(220)
+      .onStart((e) => { told.value = e.translationY; runOnJS(onDragMove)(e.translationY); })
+      .onUpdate((e) => {
+        lift.value = e.translationY;
+        if (Math.abs(e.translationY - told.value) < 6) return;
+        told.value = e.translationY;
+        runOnJS(onDragMove)(e.translationY);
+      })
+      .onEnd((e) => { runOnJS(onDragEnd)(e.translationY); lift.value = 0; })
+      .onFinalize(() => { lift.value = 0; }),
+    [lift, told, onDragMove, onDragEnd],
+  );
+  const lifted = useAnimatedStyle(() => ({ transform: [{ translateY: lift.value }] }));
+
+  const grip = (
+    <GestureDetector gesture={pan}>
+      <View
+        accessible
+        accessibilityRole="adjustable"
+        accessibilityLabel={`Hold to move ${item.text}`}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Text style={{ color: dragging ? t.accent : t.ink3, fontSize: 15, lineHeight: 18,
+          paddingHorizontal: 3 }}>⠿</Text>
       </View>
-    );
-  }
+    </GestureDetector>
+  );
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-      paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: t.rule2 }}>
-      <Pressable
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: item.need }}
-        accessibilityLabel={`Need ${item.text} this week`}
-        hitSlop={6}
-        onPress={onNeed}
-        style={{ width: 34, alignItems: 'center' }}
-      >
-        <Tick on={item.need} tone="accent" />
-      </Pressable>
+    <Animated.View
+      onLayout={(e) => onMeasure(e.nativeEvent.layout.y, e.nativeEvent.layout.height)}
+      style={[{ flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 7,
+        borderBottomWidth: 1, borderBottomColor: t.rule2,
+        zIndex: dragging ? 10 : 0,
+        backgroundColor: dragging ? t.sheet2 : 'transparent',
+        borderRadius: dragging ? radius.md : 0 }, lifted]}
+    >
+      {grip}
+      {editing ? (
+        <>
+          <Field
+            value={draft}
+            onChangeText={setDraft}
+            onSubmitEditing={commit}
+            onBlur={commit}
+            maxLength={60}
+            returnKeyType="done"
+            autoFocus
+            accessibilityLabel="Item name"
+          />
+          <Pressable onPress={commit} hitSlop={8} accessibilityRole="button"
+            accessibilityLabel="Save the name">
+            <Text style={{ color: t.hit, fontSize: 17, fontWeight: '800' }}>✓</Text>
+          </Pressable>
+        </>
+      ) : (
+        <>
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: item.need }}
+            accessibilityLabel={`Need ${item.text} this week`}
+            hitSlop={6}
+            onPress={onNeed}
+            style={{ width: 28, alignItems: 'center' }}
+          >
+            <Tick on={item.need} tone="accent" />
+          </Pressable>
 
-      <Pressable onPress={onNeed} style={{ flex: 1 }}>
-        <Text style={{ fontSize: 14, color: item.need ? t.ink : t.ink3 }}>{item.text}</Text>
-      </Pressable>
+          {/* Tapping the name is how you rename anything else in the app. */}
+          <Pressable
+            onPress={() => { setDraft(item.text); setEditing(true); }}
+            accessibilityRole="button"
+            accessibilityLabel={`Rename ${item.text}`}
+            style={{ flex: 1 }}
+          >
+            <Text style={{ fontSize: 14, color: item.need ? t.ink : t.ink3 }}>{item.text}</Text>
+          </Pressable>
 
-      {/* An actual button, rather than a long-press nobody would find. */}
-      <Pressable
-        onPress={() => setMenu(true)}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={`Options for ${item.text}`}
-        style={{ paddingHorizontal: 3 }}
-      >
-        <Glyph name="ellipsis" fallback="···" size={15} colour={t.ink3} />
-      </Pressable>
+          {/* An actual button, rather than a long-press nobody would find. */}
+          <Pressable
+            onPress={() => setMenu(true)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Options for ${item.text}`}
+            style={{ paddingHorizontal: 3 }}
+          >
+            <Glyph name="ellipsis" fallback="···" size={15} colour={t.ink3} />
+          </Pressable>
+        </>
+      )}
 
       <Sheet open={menu} title={item.text} onClose={() => setMenu(false)}>
         <Button
@@ -116,7 +172,7 @@ function ShopRow({ item, onNeed, onRename, onDelete }: {
           onPress={() => { setMenu(false); onDelete(); }}
         />
       </Sheet>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -134,14 +190,32 @@ function Shopping() {
   const [importing, setImporting] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const week = state.weeks[weekId];
-  if (!week) return null;
+  const built = Array.isArray(week?.shop);
 
-  // Reading the list is what builds it, once.
-  if (!Array.isArray(week.shop)) {
-    update((d) => { shopListFor(d, weekId); });
-    return <Empty>Setting up this week&apos;s list…</Empty>;
-  }
-  const groups = week.shop;
+  // Opening the list is what builds it, once — but on the way past rather than
+  // in the middle of drawing the page. Writing to the store while a page is
+  // being drawn is how you get a page that quietly does nothing.
+  useEffect(() => {
+    if (week && !built) update((d) => { shopListFor(d, weekId); });
+  }, [week, built, weekId, update]);
+
+  // Held before the ways out below, because a hook that is sometimes called is
+  // not a hook: the drag has to be set up on every single render.
+  const groups = built ? week.shop as ShopGroup[] : [];
+  const drawn = shopOrdered(groups);
+  const drag = useListDrag({
+    order: drawn.map((x) => ({ id: x.id, sec: x.gid })),
+    sections: groups.map((g) => g.id),
+    // The same geometry the day's tasks use, because it is the same gesture.
+    onDrop: (id, at, gid) => update((d) => {
+      const list = d.weeks[weekId]?.shop;
+      if (list) placeShopItem(list, id, at, gid);
+    }, 'moving that'),
+  });
+
+  if (!week) return null;
+  if (!built) return <Empty>Setting up this week&apos;s list…</Empty>;
+
   const { need, got } = shopCounts(groups);
   const trolley = shoppingList(groups);
   const bought = mostBought(state);
@@ -242,8 +316,9 @@ function Shopping() {
 
       {groups.map((g) => {
         const gNeed = g.items.filter((i) => i.need).length;
+        const line = drag.lineIn(g.id);
         return (
-          <View key={g.id}>
+          <View key={g.id} onLayout={(e) => drag.measureSection(g.id, e.nativeEvent.layout.y)}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
               paddingTop: 15, paddingBottom: 3 }}>
               <Field
@@ -285,7 +360,7 @@ function Shopping() {
                 textTransform: 'uppercase' }}>this week</Mono>
             </View>
 
-            <View>
+            <View onLayout={(e) => drag.measureList(g.id, e.nativeEvent.layout.y)}>
               {g.items.map((it) => (
                 <ShopRow
                   key={it.id}
@@ -296,8 +371,21 @@ function Shopping() {
                     const gg = d.weeks[weekId].shop?.find((x) => x.id === g.id);
                     if (gg) gg.items = gg.items.filter((y) => y.id !== it.id);
                   })}
+                  onMeasure={(y, h) => drag.measureRow(it.id, y, h)}
+                  onDragMove={(dy) => drag.onDragMove(it.id, dy)}
+                  onDragEnd={(dy) => drag.onDragEnd(it.id, dy)}
+                  dragging={drag.dragId === it.id}
                 />
               ))}
+              {/* Drawn where the drop was worked out, not where the rows
+                  happen to fall, so the two can never disagree. */}
+              {line !== null ? (
+                <View
+                  pointerEvents="none"
+                  style={{ position: 'absolute', left: 0, right: 0, top: line - 1, height: 2,
+                    borderRadius: 1, backgroundColor: t.accent, zIndex: 20 }}
+                />
+              ) : null}
             </View>
 
             {adding === g.id ? (

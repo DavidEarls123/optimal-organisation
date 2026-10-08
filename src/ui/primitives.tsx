@@ -1,4 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  createContext, useCallback, useContext, useEffect, useRef, useState,
+} from 'react';
 import {
   Dimensions, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View,
   useWindowDimensions, type StyleProp, type TextStyle, type ViewStyle,
@@ -22,6 +24,17 @@ export function Screen({ children }: { children: React.ReactNode }) {
     </SafeAreaView>
   );
 }
+
+/** How a text box asks the list it is in to bring it into view.
+ *
+ *  Nothing in React Native says "the focus moved"; the keyboard says it
+ *  appeared and the list says it grew, and between them they miss the case
+ *  that matters most — a second box tapped while the keyboard is already up,
+ *  which is most of renaming anything. So the box itself says so. Every Field
+ *  below asks whatever list it happens to be in, and a list that is not asking
+ *  is a Sheet, which looks after its own.
+ */
+const KeepVisible = createContext<(() => void) | null>(null);
 
 export function Body({ children, scrollRef, top, scrollY, onCondensed, lead, sticky }: {
   children: React.ReactNode;
@@ -79,9 +92,11 @@ export function Body({ children, scrollRef, top, scrollY, onCondensed, lead, sti
       onScroll={onScroll}
       stickyHeaderIndices={sticky ? [1] : undefined}
     >
-      {lead ?? <View />}
-      {sticky ?? <View />}
-      <View style={{ padding: 18, paddingTop: top ?? 18, gap: 22 }}>{children}</View>
+      <KeepVisible.Provider value={keep}>
+        {lead ?? <View />}
+        {sticky ?? <View />}
+        <View style={{ padding: 18, paddingTop: top ?? 18, gap: 22 }}>{children}</View>
+      </KeepVisible.Provider>
     </Animated.ScrollView>
   );
 }
@@ -299,13 +314,25 @@ export function useBoxWidth(): number {
 export function Field(props: React.ComponentProps<typeof TextInput>) {
   const t = useTheme();
   const scale = useTextScale();
+  const keep = useContext(KeepVisible);
   // Flattened first, because what you type in has to come out the same size as
   // everything around it — including whatever size the caller asked for.
   const given = scaleType(StyleSheet.flatten(props.style) as TextStyle | undefined, scale);
+  // Twice: once for a keyboard already up, which needs only a moment for the
+  // layout to settle, and once after one would have finished coming up, for
+  // the box that put it there. Asking twice costs nothing — the second asks
+  // for a move of nought and is refused.
+  const onFocus = useCallback((e: Parameters<NonNullable<typeof props.onFocus>>[0]) => {
+    props.onFocus?.(e);
+    if (!keep) return;
+    setTimeout(keep, 50);
+    setTimeout(keep, 320);
+  }, [keep, props.onFocus]);
   return (
     <TextInput
       placeholderTextColor={t.ink3}
       {...props}
+      onFocus={onFocus}
       style={[{
         flex: 1, minWidth: 0, fontSize: 14 * scale, color: t.ink, backgroundColor: t.sheet2,
         borderWidth: 1, borderColor: t.rule, borderRadius: radius.md,
@@ -510,6 +537,9 @@ export function Sheet({ open, title, onClose, children, footer }: {
   const bodyMax = Math.max(140, Math.min(520, height - kb - 260));
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
+      {/* A sheet lifts itself clear of the keyboard, so a field inside one must
+          not also go asking the page behind it to scroll. */}
+      <KeepVisible.Provider value={null}>
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 22,
         paddingBottom: 22 + kb }}>
         {/* The backdrop sits behind the card rather than around it: wrapping the
@@ -550,6 +580,7 @@ export function Sheet({ open, title, onClose, children, footer }: {
           ) : null}
         </View>
       </View>
+      </KeepVisible.Provider>
     </Modal>
   );
 }

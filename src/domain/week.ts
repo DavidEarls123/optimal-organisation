@@ -275,6 +275,41 @@ export function shoppingList(groups: ShopGroup[]): ShopGroup[] {
     .filter((g) => g.items.length > 0);
 }
 
+/** The list as one run of lines, heading by heading, which is what a drag
+ *  through it works in: the finger does not know the items are kept in
+ *  separate baskets. Headings are identified by id rather than name, because
+ *  two headings are allowed to be called the same thing while you are still
+ *  typing the second one. */
+export function shopOrdered(groups: ShopGroup[]): { id: string; gid: string }[] {
+  const out: { id: string; gid: string }[] = [];
+  for (const g of groups) for (const it of g.items) out.push({ id: it.id, gid: g.id });
+  return out;
+}
+
+/** Drops a line at a place in that order, under the heading it landed in.
+ *  The same rules as a task on a day and an item on a trip, because it is the
+ *  same gesture: the heading you were given wins, and failing that the line
+ *  above, and failing that the line below. */
+export function placeShopItem(
+  groups: ShopGroup[], id: string, toIndex: number, intoGroup?: string | null,
+): string | null {
+  const flat = groups.flatMap((g) => g.items.map((it) => ({ it, gid: g.id })));
+  const me = flat.find((x) => x.it.id === id);
+  if (!me) return null;
+  const rest = flat.filter((x) => x !== me);
+  const at = Math.max(0, Math.min(rest.length, Math.round(toIndex)));
+  const above = rest[at - 1];
+  const below = rest[at];
+  const want = intoGroup ?? (above ? above.gid : below ? below.gid : me.gid);
+  const home = groups.some((g) => g.id === want) ? want : groups[0]?.id;
+  if (!home) return null;
+  rest.splice(at, 0, { it: me.it, gid: home });
+  // Written back heading by heading, so each keeps the lines that landed in it
+  // in the order they landed.
+  for (const g of groups) g.items = rest.filter((x) => x.gid === g.id).map((x) => x.it);
+  return home;
+}
+
 export function shopCounts(groups: ShopGroup[]): { need: number; got: number } {
   let need = 0;
   let got = 0;

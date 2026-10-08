@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { createInitialState, migrate } from '../src/domain/state';
 import {
   buildTripItems, ensureWeek, marksOn, mergeTemplateInto, missingRegulars, mostBought,
-  resetShopFromTemplate, shopCounts, shopListFor, shopTemplateOf, shoppingList, templateOffer,
-  tripTemplateOf,
+  placeShopItem, resetShopFromTemplate, shopCounts, shopListFor, shopOrdered, shopTemplateOf,
+  shoppingList, templateOffer, tripTemplateOf,
 } from '../src/domain/week';
 import { TRIP_CATEGORIES } from '../src/domain/catalogue';
 import type { AppState, ShopGroup } from '../src/domain/types';
@@ -301,4 +301,61 @@ test('something already on the list is not offered as missing', () => {
   ] }];
   assert.deepEqual(missingRegulars(s, WEEK, 3), [],
     'written down is written down, even unticked');
+});
+
+function twoGroups(): ShopGroup[] {
+  const mk = (id: string, text: string) => ({ id, text, need: false, done: false });
+  return [
+    { id: 'a', name: 'Breakfast', items: [mk('a1', 'Oats'), mk('a2', 'Milk'), mk('a3', 'Eggs')] },
+    { id: 'b', name: 'Dinner', items: [mk('b1', 'Rice'), mk('b2', 'Chicken')] },
+  ];
+}
+const names = (gs: ShopGroup[]) => gs.map((g) => g.items.map((i) => i.text));
+
+test('the list reads as one run of lines, heading by heading', () => {
+  assert.deepEqual(shopOrdered(twoGroups()), [
+    { id: 'a1', gid: 'a' }, { id: 'a2', gid: 'a' }, { id: 'a3', gid: 'a' },
+    { id: 'b1', gid: 'b' }, { id: 'b2', gid: 'b' },
+  ]);
+});
+
+test('a line moves within its own heading', () => {
+  const gs = twoGroups();
+  assert.equal(placeShopItem(gs, 'a3', 0, 'a'), 'a');
+  assert.deepEqual(names(gs), [['Eggs', 'Oats', 'Milk'], ['Rice', 'Chicken']]);
+});
+
+test('the top of a heading is reachable, not the heading above it', () => {
+  // The whole reason the drop slots exist: index 3 is both the end of
+  // Breakfast and the start of Dinner, and the heading decides which.
+  const gs = twoGroups();
+  assert.equal(placeShopItem(gs, 'b2', 3, 'b'), 'b');
+  assert.deepEqual(names(gs), [['Oats', 'Milk', 'Eggs'], ['Chicken', 'Rice']]);
+
+  const gs2 = twoGroups();
+  assert.equal(placeShopItem(gs2, 'b2', 3, 'a'), 'a');
+  assert.deepEqual(names(gs2), [['Oats', 'Milk', 'Eggs', 'Chicken'], ['Rice']]);
+});
+
+test('a line dragged to another heading is filed under it', () => {
+  const gs = twoGroups();
+  assert.equal(placeShopItem(gs, 'a1', 4, 'b'), 'b');
+  assert.deepEqual(names(gs), [['Milk', 'Eggs'], ['Rice', 'Chicken', 'Oats']]);
+});
+
+test('a heading that is gone, and a line that is not, are both refused quietly', () => {
+  const gs = twoGroups();
+  // No such heading: it falls back to the first rather than losing the line.
+  assert.equal(placeShopItem(gs, 'a1', 0, 'nope'), 'a');
+  assert.equal(placeShopItem(gs, 'nope', 0, 'a'), null);
+  assert.equal(shopOrdered(gs).length, 5, 'nothing was lost either way');
+  assert.equal(placeShopItem([], 'a1', 0, 'a'), null);
+});
+
+test('an index past either end lands at the end', () => {
+  const gs = twoGroups();
+  assert.equal(placeShopItem(gs, 'a1', 99, 'b'), 'b');
+  assert.deepEqual(names(gs), [['Milk', 'Eggs'], ['Rice', 'Chicken', 'Oats']]);
+  assert.equal(placeShopItem(gs, 'b2', -5, 'a'), 'a');
+  assert.deepEqual(names(gs), [['Chicken', 'Milk', 'Eggs'], ['Rice', 'Oats']]);
 });
