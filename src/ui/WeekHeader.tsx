@@ -81,7 +81,7 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
 
   const toToday = () => {
     const id = isoWeekId(today);
-    update((d) => { ensureWeek(d, isoOf(today)); });
+    update((d) => { ensureWeek(d, isoOf(mondayOf(today))); });
     setWeekId(id);
     setDay(Math.max(0, dayIndexIn(isoOf(mondayOf(today)), today)));
   };
@@ -237,7 +237,12 @@ function WeekJump({ open, onClose, onToday }: {
     const id = isoWeekId(parseISO(iso));
     if (state.weeks[id]) { go(id); return; }
     // Forward is a week waiting to happen, so it can be made.
-    if (id > nowId) { update((d) => { ensureWeek(d, iso); }); go(id); return; }
+    if (id > nowId) {
+      // The Monday of the week you picked a day in, not the day itself.
+      update((d) => { ensureWeek(d, isoOf(mondayOf(parseISO(iso)))); });
+      go(id);
+      return;
+    }
     setMissed(id);
   };
 

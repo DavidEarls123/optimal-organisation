@@ -2,7 +2,7 @@ import { DEFAULT_PREFS, NOTE_LIMIT, TEXT_SIZES } from './types';
 import type { AppState, WatchItem, ShopGroup } from './types';
 import { DEFAULT_HABITS, DEFAULT_SECTIONS, DEFAULT_TRACKABLES, TEMPLATES, TEMPLATE_ORDER, TRIP_CATEGORIES } from './catalogue';
 import { createWeek } from './week';
-import { isoOf, isoWeekId, mondayOf } from './dates';
+import { isoOf, isoWeekId, mondayOf, mondayOfWeekId } from './dates';
 
 export const STATE_VERSION = 1;
 
@@ -114,7 +114,17 @@ export function migrate(loaded: Partial<AppState> | null): AppState | null {
   }
 
   const firstSec = s.sections[0].id;
-  for (const w of Object.values(s.weeks)) {
+  for (const [id, w] of Object.entries(s.weeks)) {
+    // A week is anchored to its Monday, and its id is which week it is. Weeks
+    // made before that was true were anchored to whatever date they were made
+    // from — today, if you pressed the button that goes back to today, or the
+    // day you picked in the calendar — so they ran from a Wednesday or a
+    // Thursday and handed the week after them a start seven days past the
+    // wrong one. The id is the week's identity, so it says what the anchor
+    // should have been. Nothing else moves: which of the seven days a task is
+    // on is its own, and that is what was shown and what was meant.
+    const monday = mondayOfWeekId(id);
+    if (monday) w.monday = monday;
     w.untracked ??= {};
     w.complete ??= {};
     w.watched ??= {};

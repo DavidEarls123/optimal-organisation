@@ -69,6 +69,20 @@ export function weekNumber(weekId: string): string {
   return weekId.slice(-2);
 }
 
+/** The Monday a week id names, or null if it is not one.
+ *
+ *  The 4th of January is always in week one — that is what ISO-8601 says — so
+ *  the Monday of the week containing it is where a year's weeks start counting
+ *  from. This is the way back from an id to a date, which is what repairing a
+ *  week filed under the right id with the wrong anchor needs. */
+export function mondayOfWeekId(id: string): string | null {
+  const m = /^(\d{4})-W(\d{2})$/.exec(id);
+  if (!m) return null;
+  const wk = Number(m[2]);
+  if (wk < 1 || wk > 53) return null;
+  return isoOf(addDays(mondayOf(new Date(Number(m[1]), 0, 4)), (wk - 1) * 7));
+}
+
 /** The week id seven days earlier. */
 export function previousWeekId(mondayIso: string): string {
   return isoWeekId(addDays(parseISO(mondayIso), -7));

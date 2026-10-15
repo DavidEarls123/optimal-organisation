@@ -59,9 +59,19 @@ export function planTasks(state: AppState, templateId: string, dayIndex: number)
   }));
 }
 
-export function createWeek(state: AppState, mondayIso: string, templateId: string): Week {
+/** Takes any date in the week, not just its Monday.
+ *
+ *  It used to take the caller's word for it, and two callers did not have a
+ *  Monday to give: the button that goes back to today handed it today, and
+ *  picking a date in the calendar handed it the date you picked. A week
+ *  anchored to a Thursday runs Thursday to Wednesday, labels those seven days
+ *  Monday to Sunday, and hands the week after it a start seven days past the
+ *  wrong one — so the week after today's looked like it began on the 22nd when
+ *  it began on the 19th. A week is anchored to its Monday, and this is now the
+ *  one place that decides which Monday that is. */
+export function createWeek(state: AppState, dateIso: string, templateId: string): Week {
   const w: Week = {
-    monday: mondayIso,
+    monday: isoOf(mondayOf(parseISO(dateIso))),
     templateId,
     focus: '',
     habitPlan: planFromTemplate(state, templateId),
@@ -80,11 +90,12 @@ export function createWeek(state: AppState, mondayIso: string, templateId: strin
 }
 
 /** A week springs into existence the moment something is scheduled into it.
- *  It inherits the template of the most recent earlier week. Mutates `state`. */
-export function ensureWeek(state: AppState, mondayIso: string): string {
-  const id = isoWeekId(parseISO(mondayIso));
+ *  It inherits the template of the most recent earlier week. Mutates `state`.
+ *  Any date in the week will do; it is anchored to that week's Monday. */
+export function ensureWeek(state: AppState, dateIso: string): string {
+  const id = isoWeekId(parseISO(dateIso));
   if (!state.weeks[id]) {
-    state.weeks[id] = createWeek(state, mondayIso, latestTemplateId(state));
+    state.weeks[id] = createWeek(state, dateIso, latestTemplateId(state));
   }
   return id;
 }
