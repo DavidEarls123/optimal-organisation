@@ -3,27 +3,18 @@ import { Alert, Pressable, View } from 'react-native';
 import { Text } from '../../src/ui/type';
 import { useRouter } from 'expo-router';
 
-import { WeekHeader } from '../../src/ui/WeekHeader';
+import { WeekTag } from '../../src/ui/WeekHeader';
 import {
   Body, Button, Chip, Empty, Mono, Note, Screen, Section, SectionHead,
 } from '../../src/ui/primitives';
 import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
-import { DAY_LETTERS, DAY_NAMES, addDays, parseISO, weekNumber } from '../../src/domain/dates';
+import { DAY_LETTERS, DAY_NAMES, addDays, parseISO } from '../../src/domain/dates';
 import {
   activeHabits, habitDone, habitTarget, isCurrentWeek, planLabel, scheduledOn, templateOf, todayIndex,
 } from '../../src/domain/scoring';
 import { clearWeekTasks } from '../../src/domain/week';
-
-/** 15 – 21 September, or 28 September – 4 October when it straddles two. */
-function rangeLabel(mondayIso: string): string {
-  const mon = parseISO(mondayIso);
-  const sun = addDays(mon, 6);
-  const m = (d: Date) => d.toLocaleDateString('en-GB', { month: 'long' });
-  const same = m(mon) === m(sun);
-  return `${mon.getDate()}${same ? '' : ` ${m(mon)}`} \u2013 ${sun.getDate()} ${m(sun)}`;
-}
 
 export default function WeekScreen() {
   const t = useTheme();
@@ -40,25 +31,11 @@ export default function WeekScreen() {
 
   return (
     <Screen>
-      <WeekHeader compact />
-
-      {/* Same treatment as the Day: the range stays put and shrinks once the
-          page moves under it, with the week number small on the right. */}
-      <View style={{ paddingHorizontal: 18, paddingTop: condensed ? 4 : 10,
-        paddingBottom: condensed ? 6 : 8, borderBottomWidth: 1,
-        borderBottomColor: condensed ? t.rule : 'transparent',
-        backgroundColor: t.sheet, flexDirection: 'row', alignItems: 'baseline', gap: 10 }}>
-        <Text
-          numberOfLines={1}
-          style={{ flex: 1, fontWeight: '700', color: t.ink,
-            fontSize: condensed ? 15 : 21, letterSpacing: -0.3 }}
-        >
-          {rangeLabel(week.monday)}
-        </Text>
-        <Mono style={{ fontSize: condensed ? 10.5 : 11.5 }}>
-          {`week ${weekNumber(weekId)}`}
-        </Mono>
-      </View>
+      {/* No seven days and no arrows up here: this page is about the week, so
+          saying which week it is is the whole job. It stays put and shrinks
+          once the page moves under it, and it is the way to another week the
+          same way the heading on the Day is. */}
+      <WeekTag condensed={condensed} />
 
       <Body onCondensed={setCondensed}>
         <Section>

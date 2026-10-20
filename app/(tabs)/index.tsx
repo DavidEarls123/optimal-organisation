@@ -1056,8 +1056,12 @@ function TaskRow({
 
   const lifted = useAnimatedStyle(() => ({ transform: [{ translateY: lift.value }] }));
 
-  const commit = () => {
-    const next = draft.trim().slice(0, TASK_LIMIT);
+  /** `said` is what the box itself holds: Return accepts the keyboard's
+   *  correction into the box before it reports Return, and the change reaches
+   *  here afterwards, if at all. What the box says wins over what we remember.
+   */
+  const commit = (said?: string) => {
+    const next = (said ?? draft).trim().slice(0, TASK_LIMIT);
     if (next && next !== task.text) onRename(next);
     setEditing(false);
   };
@@ -1111,8 +1115,8 @@ function TaskRow({
           <Field
             value={draft}
             onChangeText={setDraft}
-            onSubmitEditing={commit}
-            onBlur={commit}
+            onSubmitEditing={(e) => commit(e.nativeEvent?.text)}
+            onBlur={() => commit()}
             maxLength={TASK_LIMIT}
             returnKeyType="done"
             autoFocus
@@ -1147,7 +1151,7 @@ function TaskRow({
           </Pressable>
         )}
         {editing ? (
-          <Pressable onPress={commit} hitSlop={6} accessibilityRole="button"
+          <Pressable onPress={() => commit()} hitSlop={6} accessibilityRole="button"
             accessibilityLabel="Save the name">
             <Text style={{ color: t.hit, fontSize: 17, fontWeight: '800' }}>✓</Text>
           </Pressable>

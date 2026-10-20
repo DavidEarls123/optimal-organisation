@@ -212,6 +212,93 @@ export function WeekHeader({ compact }: { compact?: boolean }) {
   );
 }
 
+/** Which week you are looking at, and the way to another one — without the
+ *  week itself.
+ *
+ *  The seven days, the arrows and the template belong on the day you are
+ *  planning, where you act on them. On the page about the week as a whole, and
+ *  on the one about the year, the whole header was the same thing said twice
+ *  and a row of days with nothing to do. All that is wanted there is which
+ *  week this is, and a way to another one — which is the heading itself, as it
+ *  is on the Day.
+ *
+ *  `head` is the top of a page: the range large, shrinking as the page moves
+ *  under it. `line` is a line within one: quiet, and the same height always. */
+export function WeekTag({ as = 'head', condensed }: {
+  as?: 'head' | 'line';
+  /** The page has moved under it. Only read by `head`. */
+  condensed?: boolean;
+}) {
+  const t = useTheme();
+  const { state, weekId, today, setWeekId, setDay, update } = useStore();
+  const [jumping, setJumping] = useState(false);
+  const week = state.weeks[weekId];
+
+  const toToday = () => {
+    const id = isoWeekId(today);
+    update((d) => { ensureWeek(d, isoOf(mondayOf(today))); });
+    setWeekId(id);
+    setDay(Math.max(0, dayIndexIn(isoOf(mondayOf(today)), today)));
+  };
+
+  if (!week) return null;
+  const current = isCurrentWeek(week, today);
+  const label = `Week ${weekNumber(weekId)}, ${rangeLabel(week.monday)}${
+    current ? ', this week' : ''}. Go to another week.`;
+
+  const jump = (
+    <WeekJump open={jumping} onClose={() => setJumping(false)} onToday={toToday} />
+  );
+
+  if (as === 'line') {
+    return (
+      <>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          onPress={() => setJumping(true)}
+          hitSlop={6}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}
+        >
+          <Mono style={{ letterSpacing: 1.3, textTransform: 'uppercase', fontSize: 10.5,
+            color: current ? t.ink2 : t.accent, fontWeight: '700' }}>
+            {`Week ${weekNumber(weekId)} · ${rangeLabel(week.monday)}`}
+          </Mono>
+          <Glyph name="calendar" fallback="▦" size={11} colour={t.ink3} />
+        </Pressable>
+        {jump}
+      </>
+    );
+  }
+
+  return (
+    <View style={{ paddingHorizontal: 18, paddingTop: condensed ? 4 : 10,
+      paddingBottom: condensed ? 6 : 8, borderBottomWidth: 1,
+      borderBottomColor: condensed ? t.rule : 'transparent',
+      backgroundColor: t.sheet }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        onPress={() => setJumping(true)}
+        style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10 }}
+      >
+        <Text
+          numberOfLines={1}
+          style={{ flex: 1, fontWeight: '700', color: t.ink,
+            fontSize: condensed ? 15 : 21, letterSpacing: -0.3 }}
+        >
+          {rangeLabel(week.monday)}
+        </Text>
+        <Glyph name="calendar" fallback="▦" size={12} colour={t.ink3} />
+        <Mono style={{ fontSize: condensed ? 10.5 : 11.5 }}>
+          {`week ${weekNumber(weekId)}${current ? '' : ` · ${weekId.slice(0, 4)}`}`}
+        </Mono>
+      </Pressable>
+      {jump}
+    </View>
+  );
+}
+
 /** Somewhere to go that is not one week at a time.
  *
  *  Weeks you have are the ones you have written something in, so they are

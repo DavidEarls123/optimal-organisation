@@ -4,7 +4,7 @@ import { Text } from '../../src/ui/type';
 import { Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 
-import { WeekHeader } from '../../src/ui/WeekHeader';
+import { WeekTag } from '../../src/ui/WeekHeader';
 import {
   Bar, Body, Button, Chip, Empty, Mono, Note, Screen, Section, SectionHead, Segmented, Tile,
   Wordmark,
@@ -25,9 +25,14 @@ export default function HubScreen() {
   const [view, setView] = useState<'week' | 'year'>('week');
   return (
     <Screen>
-      <WeekHeader compact />
       <Body>
-        <Wordmark name={APP_NAME} by={APP_BY} />
+        <View style={{ gap: 9 }}>
+          <Wordmark name={APP_NAME} by={APP_BY} />
+          {/* The week the numbers below are about, said once and quietly, and
+              under the name because that is what it belongs to. The whole
+              header was a row of days with nothing on this page to do. */}
+          <WeekTag as="line" />
+        </View>
         <Segmented
           value={view}
           onChange={setView}

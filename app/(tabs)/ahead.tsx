@@ -707,8 +707,12 @@ function TripHeading({ trip, cat, first, last, done, total }: {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(cat);
 
-  const commit = () => {
-    const next = draft.trim();
+  /** `said` is what the box itself holds: Return accepts the keyboard's
+   *  correction into the box before it reports Return, and the change reaches
+   *  here afterwards, if at all. What the box says wins over what we remember.
+   */
+  const commit = (said?: string) => {
+    const next = (said ?? draft).trim();
     setEditing(false);
     if (!next || next === cat) return;
     update((d) => {
@@ -742,8 +746,8 @@ function TripHeading({ trip, cat, first, last, done, total }: {
         <Field
           value={draft}
           onChangeText={setDraft}
-          onBlur={commit}
-          onSubmitEditing={commit}
+          onBlur={() => commit()}
+          onSubmitEditing={(e) => commit(e.nativeEvent?.text)}
           autoFocus
           maxLength={28}
           accessibilityLabel={`Rename ${cat}`}
@@ -817,8 +821,12 @@ function TripRow({ trip, item, open, onOpen, onMeasure, onDragMove, onDragEnd, d
     if (x) fn(x);
   }, label);
 
-  const commit = () => {
-    const next = draft.trim().slice(0, 120);
+  /** `said` is what the box itself holds: Return accepts the keyboard's
+   *  correction into the box before it reports Return, and the change reaches
+   *  here afterwards, if at all. What the box says wins over what we remember.
+   */
+  const commit = (said?: string) => {
+    const next = (said ?? draft).trim().slice(0, 120);
     setEditing(false);
     if (next && next !== item.text) onItem((x) => { x.text = next; }, 'renaming that');
   };
@@ -884,8 +892,8 @@ function TripRow({ trip, item, open, onOpen, onMeasure, onDragMove, onDragEnd, d
           <Field
             value={draft}
             onChangeText={setDraft}
-            onBlur={commit}
-            onSubmitEditing={commit}
+            onBlur={() => commit()}
+            onSubmitEditing={(e) => commit(e.nativeEvent?.text)}
             returnKeyType="done"
             autoFocus
             maxLength={120}

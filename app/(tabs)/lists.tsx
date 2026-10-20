@@ -60,8 +60,12 @@ function ShopRow({ item, onNeed, onRename, onDelete, onMeasure, onDragMove, onDr
   const lift = useSharedValue(0);
   const told = useSharedValue(0);
 
-  const commit = () => {
-    const next = draft.trim().slice(0, 60);
+  /** `said` is what the box itself holds: Return accepts the keyboard's
+   *  correction into the box before it reports Return, and the change reaches
+   *  here afterwards, if at all. What the box says wins over what we remember.
+   */
+  const commit = (said?: string) => {
+    const next = (said ?? draft).trim().slice(0, 60);
     if (next && next !== item.text) onRename(next);
     setEditing(false);
   };
@@ -113,14 +117,14 @@ function ShopRow({ item, onNeed, onRename, onDelete, onMeasure, onDragMove, onDr
           <Field
             value={draft}
             onChangeText={setDraft}
-            onSubmitEditing={commit}
-            onBlur={commit}
+            onSubmitEditing={(e) => commit(e.nativeEvent?.text)}
+            onBlur={() => commit()}
             maxLength={60}
             returnKeyType="done"
             autoFocus
             accessibilityLabel="Item name"
           />
-          <Pressable onPress={commit} hitSlop={8} accessibilityRole="button"
+          <Pressable onPress={() => commit()} hitSlop={8} accessibilityRole="button"
             accessibilityLabel="Save the name">
             <Text style={{ color: t.hit, fontSize: 17, fontWeight: '800' }}>✓</Text>
           </Pressable>

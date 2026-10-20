@@ -208,8 +208,12 @@ function TemplateRow({ item, onRename, onDelete, onMeasure, onDragMove, onDragEn
   const lift = useSharedValue(0);
   const told = useSharedValue(0);
 
-  const commit = () => {
-    const next = draft.trim().slice(0, ITEM_LIMIT);
+  /** `said` is what the box itself holds: Return accepts the keyboard's
+   *  correction into the box before it reports Return, and the change reaches
+   *  here afterwards, if at all. What the box says wins over what we remember.
+   */
+  const commit = (said?: string) => {
+    const next = (said ?? draft).trim().slice(0, ITEM_LIMIT);
     setEditing(false);
     if (next && next !== item.text) onRename(next);
   };
@@ -255,14 +259,14 @@ function TemplateRow({ item, onRename, onDelete, onMeasure, onDragMove, onDragEn
           <Field
             value={draft}
             onChangeText={setDraft}
-            onSubmitEditing={commit}
-            onBlur={commit}
+            onSubmitEditing={(e) => commit(e.nativeEvent?.text)}
+            onBlur={() => commit()}
             maxLength={ITEM_LIMIT}
             returnKeyType="done"
             autoFocus
             accessibilityLabel="Item name"
           />
-          <Pressable onPress={commit} hitSlop={8} accessibilityRole="button"
+          <Pressable onPress={() => commit()} hitSlop={8} accessibilityRole="button"
             accessibilityLabel="Save the name">
             <Text style={{ color: t.hit, fontSize: 17, fontWeight: '800' }}>✓</Text>
           </Pressable>

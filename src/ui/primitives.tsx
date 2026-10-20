@@ -59,7 +59,7 @@ export function Body({ children, scrollRef, top, scrollY, onCondensed, lead, sti
    *  for a screen that only wants to know which side of it we are on. */
   onCondensed?: (past: boolean) => void;
 }) {
-  const { ref, at, keep } = useKeepVisible();
+  const { ref, at, keep, pad } = useKeepVisible();
   const hold = useCallback((node: ScrollView | null) => {
     (ref as React.MutableRefObject<ScrollView | null>).current = node;
     if (typeof scrollRef === 'function') scrollRef(node);
@@ -78,26 +78,36 @@ export function Body({ children, scrollRef, top, scrollY, onCondensed, lead, sti
   });
 
   return (
-    <Animated.ScrollView
-      ref={hold}
-      style={{ flex: 1 }}
-      contentContainerStyle={{ paddingBottom: 48 }}
-      keyboardShouldPersistTaps="handled"
-      keyboardDismissMode="interactive"
-      scrollEventThrottle={16}
-      // Adding a task keeps the composer open and pushes it down the page, and
-      // the keyboard never moved so it never says anything. The list growing is
-      // the signal: look again at whatever is being typed in.
-      onContentSizeChange={keep}
-      onScroll={onScroll}
-      stickyHeaderIndices={sticky ? [1] : undefined}
-    >
-      <KeepVisible.Provider value={keep}>
+    // The provider is outside the list, not around its children. A ScrollView
+    // counts its own children to know which one to pin, so wrapping the three
+    // of them in anything at all — even something that draws nothing — leaves
+    // it with one child and an index pointing past the end. Nothing looks
+    // wrong until you scroll, and then the week that should stay goes by with
+    // everything else.
+    <KeepVisible.Provider value={keep}>
+      <Animated.ScrollView
+        ref={hold}
+        style={{ flex: 1 }}
+        // Room under the last thing on the page for the keyboard to sit in.
+        // Without it the box you are typing in is already as far up the page
+        // as the list can take it, and no amount of scrolling will lift it
+        // clear — which is a text box behind a keyboard.
+        contentContainerStyle={{ paddingBottom: 48 + pad }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        scrollEventThrottle={16}
+        // Adding a task keeps the composer open and pushes it down the page,
+        // and the keyboard never moved so it never says anything. The list
+        // growing is the signal: look again at whatever is being typed in.
+        onContentSizeChange={keep}
+        onScroll={onScroll}
+        stickyHeaderIndices={sticky ? [1] : undefined}
+      >
         {lead ?? <View />}
         {sticky ?? <View />}
         <View style={{ padding: 18, paddingTop: top ?? 18, gap: 22 }}>{children}</View>
-      </KeepVisible.Provider>
-    </Animated.ScrollView>
+      </Animated.ScrollView>
+    </KeepVisible.Provider>
   );
 }
 
@@ -268,6 +278,10 @@ export function useKeepVisible() {
    *  and read here when it is needed — which is only when the keyboard moves. */
   const at = useSharedValue(0);
   const kb = useRef(0);
+  /** The same height again, as state, because the list needs that much room
+   *  under its last line to be able to lift it clear. A ref cannot ask for a
+   *  redraw and the padding is drawn. */
+  const [pad, setPad] = useState(0);
   // Tabs stay mounted behind the one you are looking at, and the keyboard
   // shouts at all of them. Only the screen in front of you may move.
   const here = useIsFocused();
@@ -294,13 +308,22 @@ export function useKeepVisible() {
   useEffect(() => {
     const shown = Keyboard.addListener('keyboardDidShow', (e) => {
       kb.current = e.endCoordinates.height;
+      // Only the screen in front of you pads itself out. The tabs behind it
+      // hear the same keyboard and have no box in it.
+      if (showing.current) setPad(e.endCoordinates.height);
       keep();
     });
-    const gone = Keyboard.addListener('keyboardDidHide', () => { kb.current = 0; });
+    const gone = Keyboard.addListener('keyboardDidHide', () => {
+      kb.current = 0;
+      setPad(0);
+    });
     return () => { shown.remove(); gone.remove(); };
   }, [keep]);
 
-  return { ref, at, keep };
+  // Leaving the screen with the keyboard up leaves the room it needed behind.
+  useEffect(() => { if (!here) setPad(0); }, [here]);
+
+  return { ref, at, keep, pad: here ? pad : 0 };
 }
 
 /** The width of the small boxes that sit at the end of a row — the one button
@@ -368,9 +391,20 @@ export function DraftField({ value, onCommit, ...rest }: {
 
   useEffect(() => { if (!typing.current) setDraft(value); }, [value]);
 
-  const commit = useCallback(() => {
+  /** `said` is what the box itself contains, when the box has told us.
+   *
+   *  Pressing Return accepts whatever correction the keyboard was offering,
+   *  and that lands in the box before Return is reported — but the change
+   *  reaches here afterwards, if at all. Reading what we were last told is
+   *  reading the word before it was corrected, so "taks" is what gets saved.
+   *  What the box says it holds wins over what we remember typing. Losing
+   *  focus needs no such help: the correction has already come through as a
+   *  change by then, and blurring carries no text to read anyway. */
+  const commit = useCallback((said?: string) => {
     typing.current = false;
-    if (draft !== value) onCommit(draft);
+    const next = said ?? draft;
+    if (next !== draft) setDraft(next);
+    if (next !== value) onCommit(next);
   }, [draft, value, onCommit]);
 
   return (
@@ -379,7 +413,7 @@ export function DraftField({ value, onCommit, ...rest }: {
       value={draft}
       onChangeText={(v) => { typing.current = true; setDraft(v); }}
       onBlur={(e) => { commit(); rest.onBlur?.(e); }}
-      onSubmitEditing={(e) => { commit(); rest.onSubmitEditing?.(e); }}
+      onSubmitEditing={(e) => { commit(e.nativeEvent?.text); rest.onSubmitEditing?.(e); }}
     />
   );
 }
@@ -412,8 +446,12 @@ export function Composer({ placeholder, limit, onAdd, onDone, hint, beside,
   const [text, setText] = useState('');
   const ready = text.trim().length > 0;
 
-  const file = () => {
-    const next = text.trim().slice(0, limit);
+  /** `said` is what the box itself contains, for the same reason DraftField
+   *  asks: Return accepts the keyboard's correction into the box, and the
+   *  change reaches here after Return has already been reported. A task saved
+   *  with Return kept the word as you mistyped it. */
+  const file = (said?: string) => {
+    const next = (said ?? text).trim().slice(0, limit);
     if (!next) { onDone(); Keyboard.dismiss(); return; }
     onAdd(next);
     setText('');
@@ -428,7 +466,7 @@ export function Composer({ placeholder, limit, onAdd, onDone, hint, beside,
       blurOnSubmit={false}
       maxLength={limit}
       autoFocus={autoFocus}
-      onSubmitEditing={file}
+      onSubmitEditing={(e) => file(e.nativeEvent?.text)}
     />
   );
 
@@ -447,7 +485,7 @@ export function Composer({ placeholder, limit, onAdd, onDone, hint, beside,
         {/* One button, the same width whichever of the two things it is. */}
         <View style={{ width: box }}>
           {ready ? (
-            <Button title="Add" onPress={file} />
+            <Button title="Add" onPress={() => file()} />
           ) : (
             <Button tone="ghost" title="Done"
               onPress={() => { onDone(); Keyboard.dismiss(); }} />
