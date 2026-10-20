@@ -1,4 +1,4 @@
-import type { AppState, Habit, Week } from './types';
+import type { AppState, Habit, Task, Week } from './types';
 import { TEMPLATES } from './catalogue';
 import { DAY_NAMES, dayDateIso, dayIndexIn, isoOf } from './dates';
 import type { WeekTemplate } from './types';
@@ -233,15 +233,47 @@ export function streak(week: Week, habitId: string, today: Date): number {
   return n;
 }
 
-/** Sessions of one trackable logged in one week; untracked days are excluded. */
+/** Every tagged task on a day, in the order they are drawn, whether the day is
+ *  tracked or not. The one place that decides what counts as a session. */
+export function sessionsOn(week: Week, day: number): Task[] {
+  return (week.tasks[day] ?? []).filter((x) => x.track);
+}
+
+/** Sessions of one trackable logged in one week, on every day of it.
+ *
+ *  A tagged session is a thing you did, and doing it on a day that asks
+ *  nothing of you does not undo it: a gym session on a day off is a gym
+ *  session. It used to be dropped along with everything else on an untracked
+ *  day, so a week with the gym in it could read as a week without.
+ *
+ *  What an untracked day still does not do is ask. None of this reaches pace
+ *  or the week's score, which count only the days that count — so a session
+ *  logged on one is credit without a debt, which is the whole point of
+ *  marking the day untracked in the first place. */
 export function trackWeekCount(week: Week, trackId: string): number {
   let n = 0;
-  for (const d of trackedDays(week)) {
-    for (const x of week.tasks[d] ?? []) {
+  for (const d of ALL_DAYS) {
+    for (const x of sessionsOn(week, d)) {
       if (x.track === trackId && x.state === 'done') n += 1;
     }
   }
   return n;
+}
+
+/** The same count, and how much of it was done on days that asked nothing.
+ *  For saying so where the number is shown, rather than leaving someone to
+ *  wonder why the week's tally is ahead of the days it owns. */
+export function trackWeekSplit(
+  week: Week, trackId: string,
+): { done: number; spare: number } {
+  let spare = 0;
+  for (const d of ALL_DAYS) {
+    if (!week.untracked[d]) continue;
+    for (const x of sessionsOn(week, d)) {
+      if (x.track === trackId && x.state === 'done') spare += 1;
+    }
+  }
+  return { done: trackWeekCount(week, trackId), spare };
 }
 
 /** Evenings this title has been picked, across every week. */

@@ -371,7 +371,8 @@ function Day() {
           <View style={{ backgroundColor: t.sunk, borderRadius: radius.md, padding: 11 }}>
             <Text style={{ fontSize: 12.5, lineHeight: 18, color: t.ink2 }}>
               <Text style={{ fontWeight: '700' }}>Not tracked. </Text>
-              Nothing on this day counts towards the week — targets drop to match.
+              Nothing on this day is owed — targets drop to match. A tagged session you tick is
+              still logged: the gym on a day off is still the gym.
             </Text>
           </View>
         ) : null}

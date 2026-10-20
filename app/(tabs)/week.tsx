@@ -12,7 +12,8 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { DAY_LETTERS, DAY_NAMES, addDays, parseISO } from '../../src/domain/dates';
 import {
-  activeHabits, habitDone, habitTarget, isCurrentWeek, planLabel, scheduledOn, templateOf, todayIndex,
+  activeHabits, habitDone, habitTarget, isCurrentWeek, planLabel, scheduledOn, sessionsOn,
+  templateOf, todayIndex,
 } from '../../src/domain/scoring';
 import { clearWeekTasks } from '../../src/domain/week';
 
@@ -154,22 +155,28 @@ export default function WeekScreen() {
           <SectionHead title="Training this week" right="tagged sessions" />
           <View>
             {DAY_NAMES.map((name, d) => {
-              const sessions = (week.tasks[d] ?? [])
-                .filter((x) => x.track);
+              const sessions = sessionsOn(week, d);
               const doneCount = sessions.filter((x) => x.state === 'done').length;
               const offDay = Boolean(week.untracked[d]);
               return (
                 <View key={d} style={{ flexDirection: 'row', gap: 10, paddingVertical: 9,
-                  borderBottomWidth: 1, borderBottomColor: t.rule2, opacity: offDay ? 0.5 : 1,
+                  borderBottomWidth: 1, borderBottomColor: t.rule2,
+                  // Faded because the day asks nothing — but not when there is
+                  // something on it that counted.
+                  opacity: offDay && !sessions.length ? 0.5 : 1,
                   alignItems: 'flex-start' }}>
                   <Mono style={{ width: 34, color: d === ti && current ? t.accent : t.ink3,
                     fontWeight: '700', fontSize: 12, paddingTop: 2 }}>{name}</Mono>
                   <View style={{ flex: 1, gap: 4 }}>
-                    {offDay ? (
-                      <Mono style={{ fontSize: 12 }}>untracked</Mono>
-                    ) : sessions.length === 0 ? (
+                    {/* An untracked day used to show the word and nothing
+                        else, so a gym session done on a day off vanished from
+                        the one page that is about sessions. The day still
+                        says it asks nothing; what you did on it still shows. */}
+                    {offDay ? <Mono style={{ fontSize: 12 }}>untracked · nothing owed</Mono> : null}
+                    {sessions.length === 0 && !offDay ? (
                       <Mono style={{ fontSize: 12 }}>rest</Mono>
-                    ) : sessions.map((x) => {
+                    ) : null}
+                    {sessions.map((x) => {
                       const tr = state.trackables.find((y) => y.id === x.track);
                       const [line, soft] = tr ? t.track[tr.ci % t.track.length] : [t.ink3, 'transparent'];
                       return (
@@ -201,6 +208,8 @@ export default function WeekScreen() {
           <Note>
             Only tagged sessions appear here. Tag a task with Gym, Run, Recovery and the rest from
             the box beside it on the Day tab; everything else stays on the day it belongs to.
+            A session ticked on an untracked day still counts — the day asks nothing of you,
+            which is not the same as nothing you do on it counting.
           </Note>
         </Section>
 
@@ -236,7 +245,8 @@ export default function WeekScreen() {
           </View>
           <Note>
             A day marked untracked asks nothing of you: its habits and tasks drop out of the week&apos;s
-            targets entirely, so a holiday cannot dent your score.
+            targets entirely, so a holiday cannot dent your score. A tagged session ticked on one
+            still counts towards the week&apos;s sessions — nothing owed, but what you did stands.
           </Note>
         </Section>
       </Body>

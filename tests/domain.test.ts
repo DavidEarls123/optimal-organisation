@@ -11,7 +11,7 @@ import {
 import {
   activeHabits, dayAllDone, dayOutstanding, elapsedDays, habitDone, habitTarget,
   habitDayStatus, planLabel, plannedOn, scheduledOn, streak, templateOf,
-  trackWeekCount, watchCount, weekScore,
+  sessionsOn, trackWeekCount, trackWeekSplit, watchCount, weekScore,
 } from '../src/domain/scoring';
 import { isoWeekId, mondayOf, isoOf, daysUntil, previousWeekId } from '../src/domain/dates';
 
@@ -174,8 +174,62 @@ test('a tagged task logs a session when ticked, and not before', () => {
   assert.equal(trackWeekCount(w, 'run'), 0);
   w.tasks[1][0].state = 'done';
   assert.equal(trackWeekCount(w, 'run'), 1);
+});
+
+test('a session ticked on an untracked day is still a session', () => {
+  // The gym on a day off is still the gym. It used to be dropped along with
+  // everything else on the day, so a week with the gym in it read as a week
+  // without one.
+  const s = fresh();
+  const w = s.weeks[WEEK38];
   w.untracked[1] = true;
-  assert.equal(trackWeekCount(w, 'run'), 0, 'untracked days drop out of the session count');
+  w.tasks[1] = [{ id: 'r', text: 'Gym', state: 'done', plan: true, track: 'run', sec: 's3' }];
+  assert.equal(trackWeekCount(w, 'run'), 1);
+  assert.deepEqual(trackWeekSplit(w, 'run'), { done: 1, spare: 1 },
+    'and it says how much of the tally came from a day that asked nothing');
+
+  // Still only when ticked, untracked or not.
+  w.tasks[1][0].state = 'open';
+  assert.equal(trackWeekCount(w, 'run'), 0);
+});
+
+test('a session on an untracked day is credit without a debt', () => {
+  // The whole point of marking a day untracked: nothing on it is owed. So a
+  // session logged there must not reach pace, in either direction. Measured
+  // against the same week with that day already untracked and empty, so the
+  // only difference between the two is the session itself.
+  const SUN = new Date(2026, 8, 20);
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.untracked[1] = true;
+  w.tasks[1] = [];
+  const bare = weekScore(s, w, SUN);
+
+  w.tasks[1] = [
+    { id: 'g', text: 'Gym', state: 'done', plan: true, track: 'run', sec: 's3' },
+    { id: 'x', text: 'Something else', state: 'open', plan: false, track: null, sec: 's1' },
+  ];
+  const after = weekScore(s, w, SUN);
+
+  assert.equal(after.pace, bare.pace, 'pace is untouched');
+  assert.equal(after.tasksDone, bare.tasksDone, 'and so is what the week counts as done');
+  assert.equal(after.tasksTotal, bare.tasksTotal, 'and what it counts as asked for');
+  assert.equal(trackWeekCount(w, 'run'), 1, 'but the session is logged');
+});
+
+test('sessions on a day are the tagged ones, tracked day or not', () => {
+  const s = fresh();
+  const w = s.weeks[WEEK38];
+  w.tasks[2] = [
+    { id: 'a', text: 'Gym', state: 'open', plan: true, track: 'run', sec: 's3' },
+    { id: 'b', text: 'Emails', state: 'open', plan: false, track: null, sec: 's1' },
+  ];
+  assert.deepEqual(sessionsOn(w, 2).map((x) => x.id), ['a']);
+  w.untracked[2] = true;
+  assert.deepEqual(sessionsOn(w, 2).map((x) => x.id), ['a'],
+    'the page about sessions still has something to show');
+  w.tasks[6] = [];
+  assert.deepEqual(sessionsOn(w, 6), []);
 });
 
 test('moving a task to another week creates that week and keeps the section', () => {

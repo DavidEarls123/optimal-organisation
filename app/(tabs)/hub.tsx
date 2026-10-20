@@ -15,7 +15,7 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 import { bandColour, radius } from '../../src/theme/tokens';
 import {
   activeHabits, clockLabel, fromKg, habitDone, habitTarget, planLabel, readings, streak,
-  templateOf, timing, trackWeekCount, weekScore,
+  templateOf, timing, trackWeekCount, trackWeekSplit, weekScore,
 } from '../../src/domain/scoring';
 import { applyUpdate, checkForUpdate, currentVersion, updatesEnabled } from '../../src/services/updates';
 
@@ -155,7 +155,7 @@ function ThisWeek() {
       <Section>
         <SectionHead title="Sessions this week" right="by type" />
         {state.trackables.map((tr) => {
-          const n = trackWeekCount(week, tr.id);
+          const { done: n, spare } = trackWeekSplit(week, tr.id);
           const [line] = t.track[tr.ci % t.track.length];
           return (
             <View key={tr.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -166,13 +166,18 @@ function ThisWeek() {
               <View style={{ flex: 1 }}>
                 <Bar value={Math.min(1, n / 5)} colour={line} />
               </View>
-              <Mono style={{ width: 24, textAlign: 'right', fontSize: 12, color: t.ink2 }}>{n}</Mono>
+              {/* An asterisk on a count that is partly made up of days the
+                  week asked nothing of, so the tally is never a puzzle. */}
+              <Mono style={{ width: 28, textAlign: 'right', fontSize: 12, color: t.ink2 }}>
+                {spare ? `${n}*` : String(n)}
+              </Mono>
             </View>
           );
         })}
         <Note>
-          Tag a task with a session type on the Day tab. Ticking it logs the session; untracked days
-          are left out of the count.
+          Tag a task with a session type on the Day tab. Ticking it logs the session, whatever day
+          it was — a session on an untracked day is still a session, marked * here. What an
+          untracked day does not do is ask: none of this reaches the week&apos;s pace.
         </Note>
       </Section>
 
