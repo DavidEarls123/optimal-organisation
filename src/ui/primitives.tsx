@@ -14,6 +14,7 @@ import { SymbolView, type SFSymbol } from 'expo-symbols';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeProvider';
+import { emptyBox, fileLine, typed } from '../domain/composing';
 import { radius } from '../theme/tokens';
 
 export function Screen({ children }: { children: React.ReactNode }) {
@@ -385,9 +386,14 @@ export function DraftField({ value, onCommit, ...rest }: {
   onCommit: (text: string) => void;
 } & Omit<React.ComponentProps<typeof TextInput>, 'value' | 'onChangeText'>) {
   const [draft, setDraft] = useState(value);
-  /** A ref rather than state: it is read when the stored value changes, and
-   *  nothing about it needs a redraw of its own. */
+  /** Refs rather than state: both are read when something else happens, and
+   *  neither needs a redraw of its own. */
   const typing = useRef(false);
+  /** What was committed, until one change has gone by — the same one-shot
+   *  guard the box you add lines in uses, and for the same reason. The change
+   *  carrying the correction Return accepted arrives after the commit, and
+   *  taking it for typing would leave this box deaf to an undo. */
+  const echo = useRef<string | null>(null);
 
   useEffect(() => { if (!typing.current) setDraft(value); }, [value]);
 
@@ -403,6 +409,7 @@ export function DraftField({ value, onCommit, ...rest }: {
   const commit = useCallback((said?: string) => {
     typing.current = false;
     const next = said ?? draft;
+    echo.current = next;
     if (next !== draft) setDraft(next);
     if (next !== value) onCommit(next);
   }, [draft, value, onCommit]);
@@ -411,7 +418,13 @@ export function DraftField({ value, onCommit, ...rest }: {
     <Field
       {...rest}
       value={draft}
-      onChangeText={(v) => { typing.current = true; setDraft(v); }}
+      onChangeText={(v) => {
+        const was = echo.current;
+        echo.current = null;
+        if (v === was) return;
+        typing.current = true;
+        setDraft(v);
+      }}
       onBlur={(e) => { commit(); rest.onBlur?.(e); }}
       onSubmitEditing={(e) => { commit(e.nativeEvent?.text); rest.onSubmitEditing?.(e); }}
     />
@@ -442,30 +455,31 @@ export function Composer({ placeholder, limit, onAdd, onDone, hint, beside,
   beside?: React.ReactNode;
   autoFocus?: boolean;
 }) {
-  const box = useBoxWidth();
-  const [text, setText] = useState('');
-  const ready = text.trim().length > 0;
+  const width = useBoxWidth();
+  /** What the box holds, and the one thing it last filed — see the model in
+   *  the domain for the order these arrive in and why that matters. */
+  const [box, setBox] = useState(emptyBox);
+  const ready = box.text.trim().length > 0;
 
-  /** `said` is what the box itself contains, for the same reason DraftField
-   *  asks: Return accepts the keyboard's correction into the box, and the
-   *  change reaches here after Return has already been reported. A task saved
-   *  with Return kept the word as you mistyped it. */
   const file = (said?: string) => {
-    const next = (said ?? text).trim().slice(0, limit);
-    if (!next) { onDone(); Keyboard.dismiss(); return; }
-    onAdd(next);
-    setText('');
+    const r = fileLine(box, said, limit);
+    setBox(r.box);
+    if (r.add) onAdd(r.add);
+    if (r.done) { onDone(); Keyboard.dismiss(); }
   };
 
   const field = (
     <Field
-      value={text}
-      onChangeText={setText}
+      value={box.text}
+      onChangeText={(v) => setBox((b) => typed(b, v))}
       placeholder={placeholder}
       returnKeyType="next"
       blurOnSubmit={false}
       maxLength={limit}
       autoFocus={autoFocus}
+      // What the box itself reports holding beats what we last remembered of
+      // it: Return accepts the keyboard's correction into the box and reports
+      // the Return before telling us about the change.
       onSubmitEditing={(e) => file(e.nativeEvent?.text)}
     />
   );
@@ -480,10 +494,10 @@ export function Composer({ placeholder, limit, onAdd, onDone, hint, beside,
       ) : field}
       <View style={{ flexDirection: 'row', gap: 7, alignItems: 'center' }}>
         <Mono style={{ flex: 1, fontSize: 10.5 }}>
-          {hint?.(text) ?? 'Return adds it and keeps going'}
+          {hint?.(box.text) ?? 'Return adds it and keeps going'}
         </Mono>
         {/* One button, the same width whichever of the two things it is. */}
-        <View style={{ width: box }}>
+        <View style={{ width }}>
           {ready ? (
             <Button title="Add" onPress={() => file()} />
           ) : (
