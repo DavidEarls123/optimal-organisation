@@ -1,6 +1,6 @@
-import type { AppState, HabitPlan, PlanEntry, ShopGroup, Task, Trip, TripItem, Week, WeekTemplate, Section } from './types';
+import type { AppState, HabitPlan, PackGroup, PlanEntry, ShopGroup, Task, Trip, TripItem, Week, WeekTemplate, Section } from './types';
 import {
-  SHOP_TEMPLATE, TEMPLATES, TRIP_BASE, TRIP_CATEGORIES, TRIP_TEMPLATES,
+  PACK_BASE, SHOP_TEMPLATE, TEMPLATES, TRIP_BASE, TRIP_CATEGORIES, TRIP_TEMPLATES,
 } from './catalogue';
 import { addDays, isoOf, isoWeekId, mondayOf, parseISO, previousWeekId } from './dates';
 
@@ -153,11 +153,23 @@ function copyShop(groups: ShopGroup[]): ShopGroup[] {
 /** The standing list, seeded from the built-in headings the first time. */
 /** The standing list a phone that has never had one starts with. Worked out
  *  rather than stored, so a screen can show it without writing it first. */
+/** Ids worked out from the names rather than made up fresh.
+ *
+ *  A default list is read while a screen is being drawn, over and over, and
+ *  made-up ids would be different every time. The screen would draw a row,
+ *  you would tap it, and the edit would go looking for an id that had already
+ *  stopped existing — so the first thing you did on a list you had never
+ *  edited quietly did nothing. Worked out from the name, an id is the same one
+ *  every time, and it survives the list being written down for real. */
+const slug = (...parts: string[]) => parts.join('\u0000').toLowerCase();
+
 export function defaultShopList(): ShopGroup[] {
   return SHOP_TEMPLATE.map((g) => ({
-    id: uid('g'),
+    id: `g:${slug(g.name)}`,
     name: g.name,
-    items: g.items.map((text) => ({ id: uid('i'), text, need: false, done: false })),
+    items: g.items.map((text) => ({
+      id: `i:${slug(g.name, text)}`, text, need: false, done: false,
+    })),
   }));
 }
 
@@ -286,12 +298,19 @@ export function shoppingList(groups: ShopGroup[]): ShopGroup[] {
     .filter((g) => g.items.length > 0);
 }
 
+/** Any list kept as headings with lines under them: the shopping list, and
+ *  now the standing packing list. The two below only move lines about, and
+ *  moving a line about is the same job whatever the line says. */
+export interface Grouped<I extends { id: string }> { id: string; items: I[] }
+
 /** The list as one run of lines, heading by heading, which is what a drag
  *  through it works in: the finger does not know the items are kept in
  *  separate baskets. Headings are identified by id rather than name, because
  *  two headings are allowed to be called the same thing while you are still
  *  typing the second one. */
-export function shopOrdered(groups: ShopGroup[]): { id: string; gid: string }[] {
+export function groupedOrder<I extends { id: string }>(
+  groups: Grouped<I>[],
+): { id: string; gid: string }[] {
   const out: { id: string; gid: string }[] = [];
   for (const g of groups) for (const it of g.items) out.push({ id: it.id, gid: g.id });
   return out;
@@ -301,8 +320,8 @@ export function shopOrdered(groups: ShopGroup[]): { id: string; gid: string }[] 
  *  The same rules as a task on a day and an item on a trip, because it is the
  *  same gesture: the heading you were given wins, and failing that the line
  *  above, and failing that the line below. */
-export function placeShopItem(
-  groups: ShopGroup[], id: string, toIndex: number, intoGroup?: string | null,
+export function placeInGroups<I extends { id: string }>(
+  groups: Grouped<I>[], id: string, toIndex: number, intoGroup?: string | null,
 ): string | null {
   const flat = groups.flatMap((g) => g.items.map((it) => ({ it, gid: g.id })));
   const me = flat.find((x) => x.it.id === id);
@@ -591,67 +610,101 @@ export function applyTemplate(state: AppState, weekId: string, templateId: strin
 
 /** The standing trip checklist: the things you do for every trip, whatever
  *  kind it is. Seeded from the built-in list the first time, editable after. */
-/** The checklist a phone that has never had one starts with. Worked out
- *  rather than stored, so a screen can show it without having to write it
- *  first — writing to the store while a screen is drawing is how you get a
- *  page that does nothing. */
-export function defaultPackList(): Record<string, string[]> {
-  return Object.fromEntries(TRIP_CATEGORIES.map((cat) => [cat, [...(TRIP_BASE[cat] ?? [])]]));
+/** The standing packing list a phone that has never had one starts with.
+ *  Worked out rather than stored, so a screen can show it without having to
+ *  write it first — writing to the store while a screen is drawing is how you
+ *  get a page that does nothing. */
+export function defaultPackList(): PackGroup[] {
+  const group = (name: string, lines: [string, boolean][]): PackGroup => ({
+    id: `pg:${slug(name)}`,
+    name,
+    items: lines.map(([text, qty]) => ({
+      id: `pi:${slug(name, text)}`, text, ...(qty ? { qty: true } : {}),
+    })),
+  });
+  return [
+    ...TRIP_CATEGORIES.map((name) => group(
+      name, (TRIP_BASE[name] ?? []).map((text) => [text, false] as [string, boolean]),
+    )),
+    ...Object.entries(PACK_BASE).map(([name, lines]) => group(name, lines)),
+  ];
 }
 
-export function tripTemplateOf(state: AppState): Record<string, string[]> {
-  if (!state.tripTemplate || typeof state.tripTemplate !== 'object') {
-    state.tripTemplate = defaultPackList();
-  }
-  // Whatever headings it has, and only those. It used to put the four standard
-  // ones back every time it was read, so a heading you removed was removed
-  // until you looked at the list again.
-  for (const [cat, items] of Object.entries(state.tripTemplate)) {
-    if (!Array.isArray(items)) state.tripTemplate[cat] = [];
-  }
-  if (!Object.keys(state.tripTemplate).length) state.tripTemplate = defaultPackList();
-  return state.tripTemplate;
+/** The stored list, read only: what it says, or the defaults when there is
+ *  nothing stored yet. Safe to call while a screen is being drawn. */
+export function packGroupsOf(state: AppState): PackGroup[] {
+  const own = state.packList;
+  return Array.isArray(own) && own.length ? own : defaultPackList();
 }
 
-/** Adds a heading to the standing checklist, unless it is already there. */
-export function addPackCat(state: AppState, name: string): boolean {
+/** The stored list, created if it is not there. Only inside an update. */
+export function packListOf(state: AppState): PackGroup[] {
+  if (!Array.isArray(state.packList) || !state.packList.length) {
+    state.packList = defaultPackList();
+  }
+  for (const g of state.packList) if (!Array.isArray(g.items)) g.items = [];
+  return state.packList;
+}
+
+/** Adds a heading to the standing list, unless it is already there. */
+export function addPackCat(state: AppState, name: string): string | null {
   const text = name.trim();
-  if (!text) return false;
-  const tpl = tripTemplateOf(state);
-  if (Object.keys(tpl).some((x) => x.toLowerCase() === text.toLowerCase())) return false;
-  tpl[text] = [];
-  return true;
+  if (!text) return null;
+  const list = packListOf(state);
+  if (list.some((g) => g.name.toLowerCase() === text.toLowerCase())) return null;
+  const id = uid('pg');
+  list.push({ id, name: text, items: [] });
+  return id;
 }
 
-/** Renames one, keeping it where it is in the order. */
-export function renamePackCat(state: AppState, from: string, to: string): boolean {
+/** Renames one, keeping it and its lines where they are. */
+export function renamePackCat(state: AppState, id: string, to: string): boolean {
   const text = to.trim();
-  const tpl = tripTemplateOf(state);
-  const cats = Object.keys(tpl);
-  if (!text || !cats.includes(from)) return false;
-  if (cats.some((x) => x !== from && x.toLowerCase() === text.toLowerCase())) return false;
-  state.tripTemplate = Object.fromEntries(
-    cats.map((cat) => [cat === from ? text : cat, tpl[cat]]),
-  );
+  const list = packListOf(state);
+  const g = list.find((x) => x.id === id);
+  if (!text || !g) return false;
+  if (list.some((x) => x.id !== id && x.name.toLowerCase() === text.toLowerCase())) return false;
+  g.name = text;
   return true;
 }
 
 /** And takes one away, with whatever was listed under it. Trips already made
  *  keep their own copies: this is only what the next one starts from. */
-export function removePackCat(state: AppState, name: string): boolean {
-  const tpl = tripTemplateOf(state);
-  if (!(name in tpl) || Object.keys(tpl).length <= 1) return false;
-  delete tpl[name];
+export function removePackCat(state: AppState, id: string): boolean {
+  const list = packListOf(state);
+  const at = list.findIndex((x) => x.id === id);
+  if (at < 0 || list.length <= 1) return false;
+  list.splice(at, 1);
   return true;
+}
+
+/** Whether a line on the standing list asks how many. */
+export function askHowMany(state: AppState, itemId: string, qty: boolean): boolean {
+  for (const g of packListOf(state)) {
+    const it = g.items.find((x) => x.id === itemId);
+    if (!it) continue;
+    if (qty) it.qty = true; else delete it.qty;
+    return true;
+  }
+  return false;
 }
 
 /** A new trip's checklist: your standing list, plus whatever that kind of trip
  *  adds on top. The kind's extras are not editable — they are the point of
  *  picking a kind — but nothing stops you deleting them once the trip exists. */
-/** A trip's own headings, in its own order. */
+/** A trip's own headings, in its own order.
+ *
+ *  Without any of its own it takes the headings its lines are actually filed
+ *  under, in the order they first appear — which is the standing list's order,
+ *  because that is where they came from. It used to fall back to the four
+ *  built-in ones, and now that a trip arrives with the whole standing list,
+ *  that would file most of it under nothing. */
 export function tripCats(trip: Trip): string[] {
   const own = Array.isArray(trip.cats) ? trip.cats.filter((x) => typeof x === 'string') : [];
-  return own.length ? own : [...TRIP_CATEGORIES];
+  if (own.length) return own;
+  const seen: string[] = [];
+  for (const it of trip.items) if (it.cat && !seen.includes(it.cat)) seen.push(it.cat);
+  return seen.length ? seen : [...TRIP_CATEGORIES];
 }
 
 /** The checklist in the order it is drawn: heading by heading, and anything
@@ -735,77 +788,126 @@ export function moveTripCat(trip: Trip, name: string, dir: -1 | 1): boolean {
   return true;
 }
 
-/** What the standing checklist could add to a trip, heading by heading, so you
- *  can take the headings you want rather than all of them. The same question
- *  the shopping list asks of its standard list, asked the same way. */
-export function packOffer(
-  state: AppState, tripId: string,
-): { name: string; adds: number; isNew: boolean }[] {
-  const trip = state.trips.find((x) => x.id === tripId);
-  if (!trip) return [];
-  // Read, not read-and-create. This is called while the page is being drawn,
-  // and a function that writes to the state it is being asked about writes
-  // somewhere nobody is listening — the change is kept by neither the screen
-  // nor the disk. The defaults answer the question just as well.
-  const base = state.tripTemplate && typeof state.tripTemplate === 'object'
-    && Object.keys(state.tripTemplate).length
-    ? state.tripTemplate : defaultPackList();
-  const cats = new Set(tripCats(trip));
-  const had = new Set(trip.items.map((x) => `${x.cat}\u0000${x.text.trim().toLowerCase()}`));
-  return Object.entries(base).map(([name, items]) => {
-    const seen = new Set<string>();
-    let adds = 0;
-    for (const text of items) {
-      const key = `${name}\u0000${text.trim().toLowerCase()}`;
-      if (!text.trim() || had.has(key) || seen.has(key)) continue;
-      seen.add(key);
-      adds += 1;
-    }
-    return { name, adds, isNew: !cats.has(name) };
-  });
+/** The lines on this trip you are actually taking, in the order they are
+ *  drawn. What you look at when you are packing. */
+export function packNeeded(trip: Trip): TripItem[] {
+  return tripOrdered(trip).filter((x) => x.need);
 }
 
-/** Brings those headings in. A heading the trip has not got is added with
- *  them; nothing already on the list is touched, ticked or not. */
-export function packImport(state: AppState, tripId: string, only: string[]): number {
+/** How many you are taking, and how many of those are in the bag. */
+export function packCounts(trip: Trip): { need: number; done: number } {
+  const want = trip.items.filter((x) => x.need);
+  return { need: want.length, done: want.filter((x) => x.done).length };
+}
+
+/** Taking a line on this trip, or not.
+ *
+ *  Taking it off clears how many and whether it was packed: a line you are not
+ *  taking is not a line you packed, and an amount left behind would come back
+ *  as a surprise the next time you chose it. */
+export function pickPackItem(
+  trip: Trip, itemId: string, need: boolean, amount?: string,
+): boolean {
+  const it = trip.items.find((x) => x.id === itemId);
+  if (!it) return false;
+  it.need = need;
+  if (!need) {
+    it.done = false;
+    delete it.amount;
+    return true;
+  }
+  const text = (amount ?? '').trim().slice(0, AMOUNT_LIMIT);
+  if (text) it.amount = text; else delete it.amount;
+  return true;
+}
+
+/** How much of something, when the line asks. Short on purpose: it is a
+ *  number, or a number and a word. */
+export const AMOUNT_LIMIT = 12;
+
+/** What is on the standing list that this trip has never seen.
+ *
+ *  Everything on the list reaches a trip when the trip is made, so this is
+ *  only ever what you added to the list afterwards. Read only — safe while a
+ *  screen is being drawn. */
+export function packNew(state: AppState, tripId: string): number {
   const trip = state.trips.find((x) => x.id === tripId);
   if (!trip) return 0;
-  const base = tripTemplateOf(state);
-  const want = new Set(only);
+  const had = new Set(trip.items.map((x) => `${x.cat}\u0000${x.text.trim().toLowerCase()}`));
+  let n = 0;
+  for (const g of packGroupsOf(state)) {
+    for (const it of g.items) {
+      const key = `${g.name}\u0000${it.text.trim().toLowerCase()}`;
+      if (!it.text.trim() || had.has(key)) continue;
+      had.add(key);
+      n += 1;
+    }
+  }
+  return n;
+}
+
+/** Brings those in, under their headings, as lines you are not taking yet.
+ *  Nothing already on the trip is touched, chosen or packed. */
+export function packCatchUp(state: AppState, tripId: string): number {
+  const trip = state.trips.find((x) => x.id === tripId);
+  if (!trip) return 0;
   const had = new Set(trip.items.map((x) => `${x.cat}\u0000${x.text.trim().toLowerCase()}`));
   let added = 0;
-  for (const [name, items] of Object.entries(base)) {
-    if (!want.has(name)) continue;
-    addTripCat(trip, name);
-    for (const text of items) {
-      const key = `${name}\u0000${text.trim().toLowerCase()}`;
-      if (!text.trim() || had.has(key)) continue;
+  for (const g of packListOf(state)) {
+    let anything = false;
+    for (const it of g.items) {
+      const key = `${g.name}\u0000${it.text.trim().toLowerCase()}`;
+      if (!it.text.trim() || had.has(key)) continue;
       had.add(key);
-      trip.items.push({ id: uid('c'), cat: name, text, done: false });
+      if (!anything) { addTripCat(trip, g.name); anything = true; }
+      trip.items.push({
+        id: uid('c'), cat: g.name, text: it.text, done: false, need: false,
+        ...(it.qty ? { qty: true } : {}),
+      });
       added += 1;
     }
   }
   return added;
 }
 
+/** A new trip's list: the whole standing list, nothing chosen yet, plus
+ *  whatever that kind of trip adds — and those are chosen, because picking the
+ *  kind is what says this trip has them. */
 export function buildTripItems(state: AppState, tplId: string): TripItem[] {
-  const base = tripTemplateOf(state);
+  const base = packGroupsOf(state);
   const kind = TRIP_TEMPLATES[tplId] ?? TRIP_TEMPLATES.weekend;
   const out: TripItem[] = [];
-  // The headings the standing list actually has, then anything this kind of
-  // trip adds under a heading of its own.
-  const cats = [...Object.keys(base)];
-  for (const cat of Object.keys(kind.extra)) if (!cats.includes(cat)) cats.push(cat);
-  for (const cat of cats) {
+  const names = base.map((g) => g.name);
+  for (const cat of Object.keys(kind.extra)) if (!names.includes(cat)) names.push(cat);
+  for (const cat of names) {
     const seen = new Set<string>();
-    for (const text of [...(base[cat] ?? []), ...(kind.extra[cat] ?? [])]) {
-      const key = text.trim().toLowerCase();
+    const mine = base.filter((g) => g.name === cat).flatMap((g) => g.items);
+    for (const it of mine) {
+      const key = it.text.trim().toLowerCase();
       if (!key || seen.has(key)) continue;
       seen.add(key);
-      out.push({ id: uid('c'), cat, text, done: false });
+      out.push({
+        id: uid('c'), cat, text: it.text, done: false, need: false,
+        ...(it.qty ? { qty: true } : {}),
+      });
+    }
+    for (const text of kind.extra[cat] ?? []) {
+      const key = text.trim().toLowerCase();
+      if (!key) continue;
+      const already = out.find((x) => x.cat === cat && x.text.trim().toLowerCase() === key);
+      // The kind of trip pre-ticks what it is for, whether or not the line was
+      // already on your standing list.
+      if (already) { already.need = true; continue; }
+      seen.add(key);
+      out.push({ id: uid('c'), cat, text, done: false, need: true });
     }
   }
   return out;
+}
+
+/** The headings a new trip gets, in the standing list's order. */
+export function packCatNames(state: AppState): string[] {
+  return packGroupsOf(state).map((g) => g.name);
 }
 
 /** Trips and countdowns falling on a given date, for marking up a day. */

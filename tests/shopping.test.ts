@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { createInitialState, migrate } from '../src/domain/state';
 import {
   buildTripItems, ensureWeek, marksOn, mergeTemplateInto, missingRegulars, mostBought,
-  placeShopItem, resetShopFromTemplate, shopCounts, shopListFor, shopOrdered, shopTemplateOf,
-  shoppingList, templateOffer, tripTemplateOf,
+  placeInGroups, resetShopFromTemplate, shopCounts, shopListFor, groupedOrder, shopTemplateOf,
+  packListOf, shoppingList, templateOffer,
 } from '../src/domain/week';
 import { TRIP_CATEGORIES } from '../src/domain/catalogue';
 import type { AppState, ShopGroup } from '../src/domain/types';
@@ -122,36 +122,41 @@ test('a list saved with one tick is read as needed, not as already bought', () =
   assert.equal(items[1].done, false);
 });
 
-test('the standard trip checklist starts from the built-in one', () => {
+test('the standard packing list starts from the built-in one', () => {
   const s = fresh();
-  const tpl = tripTemplateOf(s);
-  assert.deepEqual(Object.keys(tpl), TRIP_CATEGORIES);
-  assert.ok(tpl.Flights.includes('Check in online'));
+  const list = packListOf(s);
+  assert.deepEqual(list.slice(0, TRIP_CATEGORIES.length).map((g) => g.name), TRIP_CATEGORIES);
+  assert.ok(list.find((g) => g.name === 'Flights')?.items.some((x) => x.text === 'Check in online'));
+  assert.ok(list.some((g) => g.items.some((x) => x.qty)), 'and some of it asks how many');
 });
 
-test('a trip is built from your checklist plus what that kind adds', () => {
+test('a trip is built from your list plus what that kind adds', () => {
   const s = fresh();
-  tripTemplateOf(s).Flights.push('Seat booked');
+  packListOf(s).find((g) => g.name === 'Flights')?.items.push({ id: 'x1', text: 'Seat booked' });
   const items = buildTripItems(s, 'race');
-  const flights = items.filter((x) => x.cat === 'Flights').map((x) => x.text);
-  assert.ok(flights.includes('Seat booked'), 'yours');
-  assert.ok(flights.includes('Race kit in hand luggage — never the hold'), 'and the kind’s');
+  const flights = items.filter((x) => x.cat === 'Flights');
+  assert.ok(flights.some((x) => x.text === 'Seat booked'), 'yours');
+  assert.ok(flights.some((x) => x.text === 'Race kit in hand luggage — never the hold'),
+    'and the kind’s');
 });
 
-test('an item in both your list and the kind is only added once', () => {
+test('a line in both your list and the kind is one line, and the kind ticks it', () => {
   const s = fresh();
-  tripTemplateOf(s).Flights.push('Race kit in hand luggage — never the hold');
+  packListOf(s).find((g) => g.name === 'Flights')?.items
+    .push({ id: 'x1', text: 'Race kit in hand luggage — never the hold' });
   const flights = buildTripItems(s, 'race').filter((x) => x.cat === 'Flights');
   const dupes = flights.filter((x) => x.text.startsWith('Race kit'));
   assert.equal(dupes.length, 1);
+  assert.equal(dupes[0].need, true, 'picking a race trip says this trip has it');
 });
 
-test('removing something from the checklist keeps it off new trips', () => {
+test('removing something from the standard list keeps it off new trips', () => {
   const s = fresh();
-  const tpl = tripTemplateOf(s);
-  tpl.Flights = tpl.Flights.filter((x) => x !== 'Check in online');
-  const flights = buildTripItems(s, 'weekend').map((x) => x.text);
-  assert.ok(!flights.includes('Check in online'));
+  const g = packListOf(s).find((x) => x.name === 'Flights');
+  assert.ok(g);
+  g.items = g.items.filter((x) => x.text !== 'Check in online');
+  const texts = buildTripItems(s, 'weekend').map((x) => x.text);
+  assert.ok(!texts.includes('Check in online'));
 });
 
 test('a day inside a trip is marked, and so is the day a countdown lands on', () => {
@@ -313,7 +318,7 @@ function twoGroups(): ShopGroup[] {
 const names = (gs: ShopGroup[]) => gs.map((g) => g.items.map((i) => i.text));
 
 test('the list reads as one run of lines, heading by heading', () => {
-  assert.deepEqual(shopOrdered(twoGroups()), [
+  assert.deepEqual(groupedOrder(twoGroups()), [
     { id: 'a1', gid: 'a' }, { id: 'a2', gid: 'a' }, { id: 'a3', gid: 'a' },
     { id: 'b1', gid: 'b' }, { id: 'b2', gid: 'b' },
   ]);
@@ -321,7 +326,7 @@ test('the list reads as one run of lines, heading by heading', () => {
 
 test('a line moves within its own heading', () => {
   const gs = twoGroups();
-  assert.equal(placeShopItem(gs, 'a3', 0, 'a'), 'a');
+  assert.equal(placeInGroups(gs, 'a3', 0, 'a'), 'a');
   assert.deepEqual(names(gs), [['Eggs', 'Oats', 'Milk'], ['Rice', 'Chicken']]);
 });
 
@@ -329,33 +334,33 @@ test('the top of a heading is reachable, not the heading above it', () => {
   // The whole reason the drop slots exist: index 3 is both the end of
   // Breakfast and the start of Dinner, and the heading decides which.
   const gs = twoGroups();
-  assert.equal(placeShopItem(gs, 'b2', 3, 'b'), 'b');
+  assert.equal(placeInGroups(gs, 'b2', 3, 'b'), 'b');
   assert.deepEqual(names(gs), [['Oats', 'Milk', 'Eggs'], ['Chicken', 'Rice']]);
 
   const gs2 = twoGroups();
-  assert.equal(placeShopItem(gs2, 'b2', 3, 'a'), 'a');
+  assert.equal(placeInGroups(gs2, 'b2', 3, 'a'), 'a');
   assert.deepEqual(names(gs2), [['Oats', 'Milk', 'Eggs', 'Chicken'], ['Rice']]);
 });
 
 test('a line dragged to another heading is filed under it', () => {
   const gs = twoGroups();
-  assert.equal(placeShopItem(gs, 'a1', 4, 'b'), 'b');
+  assert.equal(placeInGroups(gs, 'a1', 4, 'b'), 'b');
   assert.deepEqual(names(gs), [['Milk', 'Eggs'], ['Rice', 'Chicken', 'Oats']]);
 });
 
 test('a heading that is gone, and a line that is not, are both refused quietly', () => {
   const gs = twoGroups();
   // No such heading: it falls back to the first rather than losing the line.
-  assert.equal(placeShopItem(gs, 'a1', 0, 'nope'), 'a');
-  assert.equal(placeShopItem(gs, 'nope', 0, 'a'), null);
-  assert.equal(shopOrdered(gs).length, 5, 'nothing was lost either way');
-  assert.equal(placeShopItem([], 'a1', 0, 'a'), null);
+  assert.equal(placeInGroups(gs, 'a1', 0, 'nope'), 'a');
+  assert.equal(placeInGroups(gs, 'nope', 0, 'a'), null);
+  assert.equal(groupedOrder(gs).length, 5, 'nothing was lost either way');
+  assert.equal(placeInGroups([], 'a1', 0, 'a'), null);
 });
 
 test('an index past either end lands at the end', () => {
   const gs = twoGroups();
-  assert.equal(placeShopItem(gs, 'a1', 99, 'b'), 'b');
+  assert.equal(placeInGroups(gs, 'a1', 99, 'b'), 'b');
   assert.deepEqual(names(gs), [['Milk', 'Eggs'], ['Rice', 'Chicken', 'Oats']]);
-  assert.equal(placeShopItem(gs, 'b2', -5, 'a'), 'a');
+  assert.equal(placeInGroups(gs, 'b2', -5, 'a'), 'a');
   assert.deepEqual(names(gs), [['Chicken', 'Milk', 'Eggs'], ['Rice', 'Oats']]);
 });

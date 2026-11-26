@@ -13,10 +13,10 @@ import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import { daysUntil, parseISO } from '../../src/domain/dates';
-import { TRIP_CATEGORIES, TRIP_TEMPLATES } from '../../src/domain/catalogue';
+import { TRIP_TEMPLATES } from '../../src/domain/catalogue';
 import {
-  addTripCat, buildTripItems, moveTripCat, packImport, packOffer, placeTripItem, removeTripCat,
-  renameTripCat, tripCats, tripOrdered, uid,
+  AMOUNT_LIMIT, addTripCat, buildTripItems, moveTripCat, packCatchUp, packCounts, packNeeded,
+  packNew, pickPackItem, placeTripItem, removeTripCat, renameTripCat, tripCats, tripOrdered, uid,
 } from '../../src/domain/week';
 import { useListDrag } from '../../src/ui/useListDrag';
 import { NOTE_LIMIT } from '../../src/domain/types';
@@ -40,17 +40,6 @@ export default function AheadScreen() {
   const [addingTrip, setAddingTrip] = useState(false);
   const [addingEvent, setAddingEvent] = useState(false);
   const [past, setPast] = useState(false);
-  /** Which trip is bringing things in from the standing checklist, or none.
-   *
-   *  It used to be a flag read alongside the trip being edited, and the sheet
-   *  it opened was opened from inside the edit sheet — one sheet over another.
-   *  iOS does not always take the first one away again, and what is left is
-   *  invisible and still catching every tap, so the page behind went dead:
-   *  the checklist would not close, nothing on it would open. One sheet at a
-   *  time, each opened from the page itself.
-   */
-  const [importFor, setImportFor] = useState<string | null>(null);
-  const [picked, setPicked] = useState<string[]>([]);
   /** The trip being changed, held as a draft so nothing moves under you while
    *  you are typing a name or picking a date. */
   const [editing, setEditing] = useState<
@@ -64,10 +53,12 @@ export default function AheadScreen() {
     .filter((x) => daysUntil(x.date, today) >= 0)
     .sort((a, b) => a.date.localeCompare(b.date));
 
+  const catchUp = (id: string) =>
+    update((d) => { packCatchUp(d, id); }, 'bringing those in');
+
   // Gone, not deleted. A trip you have taken is a thing you did, and a
   // countdown that has run out is a thing that happened: what you packed,
   // what you forgot, when it was. It stops being news and goes in the back.
-  const offer = importFor ? packOffer(state, importFor) : [];
 
   const been = [
     ...state.trips.filter((x) => daysUntil(x.end, today) < 0)
@@ -127,7 +118,7 @@ export default function AheadScreen() {
 
         <Section>
           <SectionHead title="Trips" right={`${trips.length} upcoming`} />
-          <Button tone="ghost" title="Edit the standard checklist"
+          <Button tone="ghost" title="Edit the standard list"
             onPress={() => router.push('/trip-template')} />
           {trips.length === 0 ? <Empty>No trips booked in.</Empty> : null}
           {trips.map((trip) => (
@@ -139,7 +130,8 @@ export default function AheadScreen() {
               onToggle={() => setOpen(open === trip.id ? null : trip.id)}
               onEdit={() => setEditing({ id: trip.id, name: trip.name, start: trip.start,
                 end: trip.end, tplId: trip.tplId })}
-              onImport={() => { setPicked([]); setImportFor(trip.id); }}
+              newOnList={packNew(state, trip.id)}
+              onCatchUp={() => catchUp(trip.id)}
             />
           ))}
 
@@ -193,79 +185,25 @@ export default function AheadScreen() {
               const id = uid('tr');
               update((d) => {
                 // Its own copy of the headings from the start, so changing
-                // them here can never reach back into another trip.
-                d.trips.push({ id, name: name.trim(), tplId, start, end,
-                  cats: [...TRIP_CATEGORIES], items: buildTripItems(d, tplId) });
+                // them here can never reach back into another trip. Taken
+                // from the standing list rather than the built-in four, which
+                // is where everything on the trip has just come from.
+                const items = buildTripItems(d, tplId);
+                const cats: string[] = [];
+                for (const it of items) if (!cats.includes(it.cat)) cats.push(it.cat);
+                d.trips.push({ id, name: name.trim(), tplId, start, end, cats, items });
               });
               setOpen(id);
               setAddingTrip(false);
               setNewTrip({ name: '', start: '', end: '', tplId: 'weekend' });
             }} />
             <Note>
-              The type picks the starting checklist. A race trip adds number collection, the course
-              map and kit in hand luggage. Everything stays editable per trip.
+              Every trip starts with the whole standard list and nothing chosen, so you tick what
+              this one wants. The type pre-ticks its own bits: a race trip arrives with number
+              collection, the course map and kit in hand luggage already on.
             </Note>
           </Sheet>
         </Section>
-
-        <Sheet
-          open={importFor !== null}
-          title="Bring in from the standard checklist"
-          onClose={() => setImportFor(null)}
-          footer={importFor ? (
-            <>
-              <View style={{ flex: 1 }}>
-                <Button
-                  tone="ghost"
-                  title={picked.length === offer.length ? 'None' : 'All'}
-                  onPress={() => setPicked(picked.length === offer.length
-                    ? [] : offer.map((o) => o.name))}
-                />
-              </View>
-              <Button
-                title={picked.length ? `Add ${picked.length}` : 'Add'}
-                disabled={picked.length === 0}
-                onPress={() => {
-                  update((d) => { packImport(d, importFor, picked); }, 'bringing those in');
-                  setImportFor(null);
-                }}
-              />
-            </>
-          ) : null}
-        >
-          <Note>
-            Only the headings you choose, and only the things missing from them. Nothing
-            already on this trip is touched, ticked or not.
-          </Note>
-          {offer.map((o) => {
-            const on = picked.includes(o.name);
-            const nothing = o.adds === 0;
-            return (
-              <Pressable
-                key={o.name}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: on }}
-                disabled={nothing}
-                onPress={() => setPicked((p) => (on
-                  ? p.filter((n) => n !== o.name) : [...p, o.name]))}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 11,
-                  borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 12,
-                  paddingVertical: 11,
-                  borderColor: on ? t.accent : t.rule,
-                  backgroundColor: on ? t.accentSoft : 'transparent',
-                  opacity: nothing ? 0.4 : 1 }}
-              >
-                <Tick on={on} tone="accent" />
-                <Text style={{ flex: 1, fontSize: 12.5, letterSpacing: 1.1,
-                  textTransform: 'uppercase', fontWeight: on ? '800' : '700',
-                  color: on ? t.accent : t.ink }}>{o.name}</Text>
-                <Mono style={{ fontSize: 11 }}>
-                  {nothing ? 'all here' : `+${o.adds}${o.isNew ? ' · new' : ''}`}
-                </Mono>
-              </Pressable>
-            );
-          })}
-        </Sheet>
 
         {been.length ? (
           <Section>
@@ -295,7 +233,8 @@ export default function AheadScreen() {
                 onToggle={() => setOpen(open === x.trip.id ? null : x.trip.id)}
                 onEdit={() => setEditing({ id: x.trip.id, name: x.trip.name,
                   start: x.trip.start, end: x.trip.end, tplId: x.trip.tplId })}
-                onImport={() => { setPicked([]); setImportFor(x.trip.id); }}
+                newOnList={packNew(state, x.trip.id)}
+                onCatchUp={() => catchUp(x.trip.id)}
               />
             ) : (
               <View key={x.event.id} style={{ flexDirection: 'row', alignItems: 'center',
@@ -475,11 +414,11 @@ export default function AheadScreen() {
   );
 }
 
-function TripCard({ trip, today, expanded, onToggle, onEdit, onImport }: {
+function TripCard({ trip, today, expanded, onToggle, onEdit, newOnList, onCatchUp }: {
   trip: Trip; today: Date; expanded: boolean; onToggle: () => void; onEdit: () => void;
-  /** Bring headings in from the standing checklist. Asked for from the card,
-   *  so the sheet it opens is the only one on the screen. */
-  onImport: () => void;
+  /** How many lines the standing list has that this trip has never seen. */
+  newOnList: number;
+  onCatchUp: () => void;
 }) {
   const t = useTheme();
   const { update } = useStore();
@@ -487,6 +426,12 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, onImport }: {
   /** Which heading has its composer open. Only ever one. */
   const [adding, setAdding] = useState<string | null>(null);
   const [heading, setHeading] = useState(false);
+  /** Choosing what to take, or packing what you chose. Two jobs, done at
+   *  different times and wanting different things on the screen — the same
+   *  split the shopping list makes between deciding and being in the shop. */
+  const [packing, setPacking] = useState(false);
+  /** The line being asked how many, held while the sheet is up. */
+  const [howMany, setHowMany] = useState<{ id: string; text: string; amount: string } | null>(null);
 
   const cats = tripCats(trip);
   const drawn = tripOrdered(trip);
@@ -515,9 +460,17 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, onImport }: {
   const b = daysUntil(trip.end, today);
   const here = a <= 0 && b >= 0;
   const total = b - a + 1;
-  const done = trip.items.filter((x) => x.done).length;
-  const left = trip.items.length - done;
+  // Only what you are taking. The standing list has everything you own on it,
+  // and a bar measured against that would read as nought for ever.
+  const { need, done } = packCounts(trip);
+  const left = need - done;
   const urgent = !here && a <= 7 && left > 0;
+  const chosen = packNeeded(trip);
+
+  const pick = (itemId: string, on: boolean, amount?: string) => update((d) => {
+    const tr = d.trips.find((x) => x.id === trip.id);
+    if (tr) pickPackItem(tr, itemId, on, amount);
+  }, on ? 'choosing that' : 'leaving that behind');
 
   return (
     <View style={{ borderWidth: 1, borderRadius: radius.lg, padding: 13, gap: 10,
@@ -554,14 +507,16 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, onImport }: {
 
       <View style={{ height: 6, borderRadius: 3, backgroundColor: t.sunk, overflow: 'hidden' }}>
         <View style={{ height: '100%', borderRadius: 3, backgroundColor: t.hit,
-          width: `${trip.items.length ? (done / trip.items.length) * 100 : 0}%` }} />
+          width: `${need ? (done / need) * 100 : 0}%` }} />
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Mono style={{ fontSize: 10.5 }}>{`${done} of ${trip.items.length} done`}</Mono>
+        <Mono style={{ fontSize: 10.5 }}>
+          {need ? `${done} of ${need} packed` : 'nothing chosen yet'}
+        </Mono>
         <Mono style={{ fontSize: 10.5, color: urgent ? t.miss : t.ink3,
           fontWeight: urgent ? '700' : '400' }}>
           {urgent ? `${left} left, ${a === 0 ? 'you leave today' : `${a} ${unit(a)} to go`}`
-            : `${trip.items.length ? Math.round((done / trip.items.length) * 100) : 0}%`}
+            : `${need ? Math.round((done / need) * 100) : 0}%`}
         </Mono>
       </View>
 
@@ -570,8 +525,7 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, onImport }: {
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded }}
-        accessibilityLabel={expanded ? `Hide ${trip.name}'s checklist`
-          : `Show ${trip.name}'s checklist`}
+        accessibilityLabel={expanded ? `Hide ${trip.name}'s list` : `Show ${trip.name}'s list`}
         onPress={onToggle}
         hitSlop={10}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4,
@@ -581,19 +535,94 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, onImport }: {
           fallback={expanded ? '▾' : '▸'} size={10} colour={t.accent} />
         <Text style={{ flex: 1, fontSize: 10.5, letterSpacing: 1.2, textTransform: 'uppercase',
           color: t.accent, fontWeight: '600' }}>
-          Checklist
+          {need ? 'Checklist' : 'Choose what to take'}
         </Text>
-        <Mono style={{ fontSize: 10.5, color: t.ink3 }}>{`${left} left`}</Mono>
+        <Mono style={{ fontSize: 10.5, color: t.ink3 }}>
+          {need ? `${left} left` : `${trip.items.length} to pick from`}
+        </Mono>
       </Pressable>
 
-      {expanded ? (
+      {expanded && packing ? (
+        /* Packing: only what you chose, and how much of it. Nothing to drag,
+           nothing to rename, nothing you are not taking — the same stripping
+           back the shopping list does once you are standing in the shop. */
         <View>
+          <Button title="← Back to the whole list" onPress={() => setPacking(false)} />
+          {chosen.length === 0 ? (
+            <Empty>Nothing chosen for this trip yet.</Empty>
+          ) : null}
+          {cats.map((cat) => {
+            const items = chosen.filter((x) => x.cat === cat);
+            if (!items.length) return null;
+            return (
+              <View key={cat}>
+                <Text style={{ fontSize: 11.5, letterSpacing: 1.1, textTransform: 'uppercase',
+                  fontWeight: '700', color: t.ink3, paddingTop: 15, paddingBottom: 5 }}>
+                  {cat}
+                </Text>
+                <View style={{ borderTopWidth: 1, borderTopColor: t.rule }}>
+                  {items.map((it) => (
+                    <Pressable
+                      key={it.id}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: it.done }}
+                      accessibilityLabel={`${it.text}${it.amount ? `, ${it.amount}` : ''}, ${cat}`}
+                      onPress={() => update((d) => {
+                        const x = d.trips.find((y) => y.id === trip.id)
+                          ?.items.find((y) => y.id === it.id);
+                        if (x) x.done = !x.done;
+                      }, it.done ? 'unpacking that' : 'packing that')}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+                        paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: t.rule2 }}
+                    >
+                      <Tick on={it.done} size={22} tone="hit" />
+                      <Text style={{ flex: 1, fontSize: 16, color: it.done ? t.ink3 : t.ink,
+                        textDecorationLine: it.done ? 'line-through' : 'none' }}>{it.text}</Text>
+                      {/* How many, large enough to read with your hands full. */}
+                      {it.amount ? (
+                        <Text style={{ fontSize: 16, fontWeight: '700',
+                          fontVariant: ['tabular-nums'], color: it.done ? t.ink3 : t.accent }}>
+                          {it.amount}
+                        </Text>
+                      ) : null}
+                      {it.note ? (
+                        <View
+                          accessibilityLabel="Has a note"
+                          style={{ width: 5, height: 5, borderRadius: 3,
+                            backgroundColor: it.done ? t.ink3 : t.accent }}
+                        />
+                      ) : null}
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            );
+          })}
+          {need > 0 && done === need ? <Note>That is everything in the bag.</Note> : null}
+        </View>
+      ) : null}
+
+      {expanded && !packing ? (
+        <View>
+          {need ? (
+            <Button
+              title={`Start packing (${need})`}
+              onPress={() => setPacking(true)}
+            />
+          ) : (
+            <Note>
+              Tick what this trip wants from the list below. What you tick is what you see when
+              you come back to pack.
+            </Note>
+          )}
           {cats.map((cat, ci) => {
             const items = drawn.filter((x) => x.cat === cat);
             const line = drag.lineIn(cat);
+            // Something you are adding by hand is something you want: it
+            // comes in chosen, or you would tick it the moment you wrote it.
             const add = (text: string) => update((d) => {
               d.trips.find((x) => x.id === trip.id)?.items
-                .push({ id: uid('c'), cat, text, done: false });
+                .push({ id: uid('c'), cat, text, done: false, need: true });
             }, 'adding that to the list');
             return (
               <View
@@ -606,7 +635,7 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, onImport }: {
                   cat={cat}
                   first={ci === 0}
                   last={ci === cats.length - 1}
-                  done={items.filter((x) => x.done).length}
+                  chosen={items.filter((x) => x.need).length}
                   total={items.length}
                 />
 
@@ -618,6 +647,18 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, onImport }: {
                       item={it}
                       open={openItem === it.id}
                       onOpen={() => setOpenItem(openItem === it.id ? null : it.id)}
+                      onPick={() => {
+                        // A line that asks how many asks it now, on the way
+                        // on. Taking it off asks nothing.
+                        if (it.need) { pick(it.id, false); return; }
+                        if (it.qty) {
+                          setHowMany({ id: it.id, text: it.text, amount: it.amount ?? '' });
+                          return;
+                        }
+                        pick(it.id, true);
+                      }}
+                      onAmount={() => setHowMany({ id: it.id, text: it.text,
+                        amount: it.amount ?? '' })}
                       onMeasure={(y, h) => drag.measureRow(it.id, y, h)}
                       onDragMove={(dy) => drag.onDragMove(it.id, dy)}
                       onDragEnd={(dy) => drag.onDragEnd(it.id, dy)}
@@ -676,21 +717,68 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, onImport }: {
                 <Mono style={{ fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase',
                   color: t.ink3 }}>+ Heading</Mono>
               </Pressable>
-              {/* The standing checklist, a heading at a time, the same way the
-                  shopping list brings in its own. */}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Bring headings into ${trip.name} from the standard checklist`}
-                onPress={onImport}
-                hitSlop={8}
-              >
-                <Mono style={{ fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase',
-                  color: t.accent }}>↓ Standard list</Mono>
-              </Pressable>
+              {/* The whole standing list came in when the trip was made, so
+                  this is only ever what you have added to it since. */}
+              {newOnList ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    `Bring ${newOnList} new line${newOnList === 1 ? '' : 's'} from the `
+                    + `standard list into ${trip.name}`}
+                  onPress={onCatchUp}
+                  hitSlop={8}
+                >
+                  <Mono style={{ fontSize: 10.5, letterSpacing: 1, textTransform: 'uppercase',
+                    color: t.accent }}>{`↓ ${newOnList} new on the standard list`}</Mono>
+                </Pressable>
+              ) : null}
             </View>
           )}
         </View>
       ) : null}
+
+      <Sheet
+        open={howMany !== null}
+        title={howMany ? `How many ${howMany.text.toLowerCase()}?` : 'How many?'}
+        onClose={() => setHowMany(null)}
+        footer={howMany ? (
+          <>
+            <View style={{ flex: 1 }}>
+              <Button
+                tone="ghost"
+                title="Don't take it"
+                onPress={() => { pick(howMany.id, false); setHowMany(null); }}
+              />
+            </View>
+            <Button
+              title="Taking it"
+              onPress={() => { pick(howMany.id, true, howMany.amount); setHowMany(null); }}
+            />
+          </>
+        ) : null}
+      >
+        {howMany ? (
+          <>
+            <Field
+              value={howMany.amount}
+              onChangeText={(v) => setHowMany((p) => (p ? { ...p, amount: v } : p))}
+              placeholder="3, or 2 pairs…"
+              maxLength={AMOUNT_LIMIT}
+              autoFocus
+              returnKeyType="done"
+              accessibilityLabel={`How many ${howMany.text}`}
+              onSubmitEditing={(e) => {
+                pick(howMany.id, true, e.nativeEvent?.text ?? howMany.amount);
+                setHowMany(null);
+              }}
+            />
+            <Note>
+              However you want to count it. It travels with this trip and nothing else, so one
+              trip asking for three and another for six is two answers, not an argument.
+            </Note>
+          </>
+        ) : null}
+      </Sheet>
     </View>
   );
 }
@@ -699,8 +787,10 @@ function TripCard({ trip, today, expanded, onToggle, onEdit, onImport }: {
  *  it, and the two things you can do to it that a day's headings cannot have
  *  done to them — because a day's headings belong to the week's shape, and
  *  these belong to this trip alone. */
-function TripHeading({ trip, cat, first, last, done, total }: {
-  trip: Trip; cat: string; first: boolean; last: boolean; done: number; total: number;
+function TripHeading({ trip, cat, first, last, chosen, total }: {
+  trip: Trip; cat: string; first: boolean; last: boolean;
+  /** How many under this heading you are taking, out of how many there are. */
+  chosen: number; total: number;
 }) {
   const t = useTheme();
   const { update } = useStore();
@@ -767,7 +857,7 @@ function TripHeading({ trip, cat, first, last, done, total }: {
       )}
       {editing ? null : (
         <>
-          <Mono style={{ fontSize: 10 }}>{`${done}/${total}`}</Mono>
+          <Mono style={{ fontSize: 10 }}>{`${chosen}/${total}`}</Mono>
           {arrow(-1, first)}
           {arrow(1, last)}
           <Pressable
@@ -801,8 +891,13 @@ function TripHeading({ trip, cat, first, last, done, total }: {
 /** One thing to do before you go. A task in everything but name, so it behaves
  *  like one: held and dragged by the grip, renamed by its name, and opened for
  *  a note or to be got rid of. */
-function TripRow({ trip, item, open, onOpen, onMeasure, onDragMove, onDragEnd, dragging }: {
+function TripRow({ trip, item, open, onOpen, onPick, onAmount, onMeasure, onDragMove, onDragEnd,
+  dragging }: {
   trip: Trip; item: TripItem; open: boolean; onOpen: () => void;
+  /** Taking it on this trip, or not. */
+  onPick: () => void;
+  /** Change how many, for a line that asks. */
+  onAmount: () => void;
   onMeasure: (y: number, h: number) => void;
   onDragMove: (dy: number) => void;
   onDragEnd: (dy: number) => void;
@@ -878,15 +973,18 @@ function TripRow({ trip, item, open, onOpen, onMeasure, onDragMove, onDragEnd, d
               paddingHorizontal: 3 }}>⠿</Text>
           </View>
         </GestureDetector>
+        {/* The tick here is the decision about this trip, not about the bag:
+            whether you are taking it at all. Whether it is packed is asked
+            when you are packing, where that is the only question. */}
         <Pressable
           accessibilityRole="checkbox"
-          accessibilityState={{ checked: item.done }}
-          accessibilityLabel={item.text}
+          accessibilityState={{ checked: item.need }}
+          accessibilityLabel={item.need ? `Taking ${item.text}. Leave it behind.`
+            : `Take ${item.text}`}
           hitSlop={6}
-          onPress={() => onItem((x) => { x.done = !x.done; },
-            item.done ? 'unticking that' : 'ticking that off')}
+          onPress={onPick}
         >
-          <Tick on={item.done} />
+          <Tick on={item.need} tone="accent" />
         </Pressable>
         {editing ? (
           <Field
@@ -906,17 +1004,39 @@ function TripRow({ trip, item, open, onOpen, onMeasure, onDragMove, onDragEnd, d
             accessibilityLabel={`Rename ${item.text}`}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}
           >
-            <Text style={{ flexShrink: 1, fontSize: 13.5, color: item.done ? t.ink3 : t.ink,
-              textDecorationLine: item.done ? 'line-through' : 'none' }}>{item.text}</Text>
+            <Text style={{ flexShrink: 1, fontSize: 13.5,
+              color: item.need ? t.ink : t.ink3 }}>{item.text}</Text>
             {item.note ? (
               <View
                 accessibilityLabel="Has a note"
                 style={{ width: 5, height: 5, borderRadius: 3,
-                  backgroundColor: item.done ? t.ink3 : t.accent }}
+                  backgroundColor: item.need ? t.accent : t.ink3 }}
               />
             ) : null}
           </Pressable>
         )}
+        {/* How many, where it is set and where it is changed. A line that asks
+            and has not been answered says so rather than sitting there blank
+            with the number living somewhere else. */}
+        {!editing && item.qty ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={item.amount
+              ? `${item.amount} ${item.text}. Change how many.`
+              : `Say how many ${item.text}`}
+            hitSlop={6}
+            onPress={onAmount}
+            style={{ borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 8,
+              paddingVertical: 2, minWidth: 34, alignItems: 'center',
+              borderColor: item.amount ? t.accent : t.rule,
+              backgroundColor: item.amount ? t.accentSoft : 'transparent' }}
+          >
+            <Mono style={{ fontSize: 11, fontWeight: '700',
+              color: item.amount ? t.accent : t.ink3 }}>
+              {item.amount || '#'}
+            </Mono>
+          </Pressable>
+        ) : null}
         {editing ? null : (
           <Pressable onPress={onOpen} hitSlop={8} accessibilityRole="button"
             accessibilityLabel={open ? `Close options for ${item.text}` : `Options for ${item.text}`}

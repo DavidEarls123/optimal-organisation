@@ -1,7 +1,7 @@
 import { DEFAULT_PREFS, NOTE_LIMIT, TEXT_SIZES } from './types';
 import type { AppState, WatchItem, ShopGroup } from './types';
 import { DEFAULT_HABITS, DEFAULT_SECTIONS, DEFAULT_TRACKABLES, TEMPLATES, TEMPLATE_ORDER, TRIP_CATEGORIES } from './catalogue';
-import { createWeek } from './week';
+import { createWeek, uid } from './week';
 import { isoOf, isoWeekId, mondayOf, mondayOfWeekId } from './dates';
 
 export const STATE_VERSION = 1;
@@ -94,6 +94,31 @@ export function migrate(loaded: Partial<AppState> | null): AppState | null {
       ? s.hiddenEvents.filter((x) => typeof x === 'string' && x) : [];
   }
 
+  // The standing packing list used to be headings mapped to plain strings, so
+  // a heading could not be renamed without moving everything under it and a
+  // line could not ask how many. Carried over as it stands, then the old shape
+  // goes: nothing but this reads it.
+  if (!Array.isArray(s.packList) || !s.packList.length) {
+    const old = loaded.tripTemplate;
+    const carried = old && typeof old === 'object' && !Array.isArray(old)
+      ? Object.entries(old).map(([name, items]) => ({
+        id: uid('pg'),
+        name,
+        items: (Array.isArray(items) ? items : [])
+          .filter((x): x is string => typeof x === 'string' && Boolean(x.trim()))
+          .map((text) => ({ id: uid('pi'), text })),
+      }))
+      : [];
+    // Nothing stored and nothing to carry stays nothing: the defaults answer
+    // for it until something is written, the way the shopping list's do.
+    if (carried.length) s.packList = carried; else delete s.packList;
+  }
+  for (const g of s.packList ?? []) {
+    if (!Array.isArray(g.items)) g.items = [];
+    for (const it of g.items) if (!it.qty) delete it.qty;
+  }
+  delete s.tripTemplate;
+
   // A trip's checklist is as editable as a day now: its own headings, and a
   // note on anything that needs one. Both are repaired rather than trusted.
   for (const trip of s.trips) {
@@ -106,6 +131,15 @@ export function migrate(loaded: Partial<AppState> | null): AppState | null {
     for (const it of trip.items) {
       if (typeof it.cat !== 'string' || !it.cat) it.cat = (trip.cats ?? TRIP_CATEGORIES)[0];
       it.done = Boolean(it.done);
+      // Before there was a choice, everything on a trip's list was on the
+      // trip. So it still is: a list that came back with nothing chosen would
+      // read as a trip you had not packed for.
+      it.need = it.need ?? true;
+      if (!it.qty) delete it.qty;
+      if (it.amount !== undefined) {
+        const amount = typeof it.amount === 'string' ? it.amount.trim().slice(0, 12) : '';
+        if (amount && it.need) it.amount = amount; else delete it.amount;
+      }
       if (it.note !== undefined) {
         const note = typeof it.note === 'string' ? it.note.slice(0, NOTE_LIMIT).trim() : '';
         if (note) it.note = note; else delete it.note;

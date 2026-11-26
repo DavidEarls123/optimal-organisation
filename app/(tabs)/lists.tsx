@@ -14,8 +14,8 @@ import { useStore } from '../../src/store/store';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { radius } from '../../src/theme/tokens';
 import {
-  mergeTemplateInto, missingRegulars, mostBought, placeShopItem, shopCounts, shopListFor,
-  shopOrdered, shopTemplateOf, shoppingList, templateOffer, uid,
+  mergeTemplateInto, missingRegulars, mostBought, placeInGroups, shopCounts, shopListFor,
+  groupedOrder, shopTemplateOf, shoppingList, templateOffer, uid,
 } from '../../src/domain/week';
 import { useListDrag } from '../../src/ui/useListDrag';
 import { watchCount } from '../../src/domain/scoring';
@@ -204,14 +204,14 @@ function Shopping() {
   // Held before the ways out below, because a hook that is sometimes called is
   // not a hook: the drag has to be set up on every single render.
   const groups = built ? week.shop as ShopGroup[] : [];
-  const drawn = shopOrdered(groups);
+  const drawn = groupedOrder(groups);
   const drag = useListDrag({
     order: drawn.map((x) => ({ id: x.id, sec: x.gid })),
     sections: groups.map((g) => g.id),
     // The same geometry the day's tasks use, because it is the same gesture.
     onDrop: (id, at, gid) => update((d) => {
       const list = d.weeks[weekId]?.shop;
-      if (list) placeShopItem(list, id, at, gid);
+      if (list) placeInGroups(list, id, at, gid);
     }, 'moving that'),
   });
 

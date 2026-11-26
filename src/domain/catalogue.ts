@@ -194,6 +194,38 @@ export const TRIP_BASE: Record<string, string[]> = {
   Activities: ['Book somewhere to eat', 'Plan runs or gym'],
 };
 
+/** The packing half of the standing list, as something to edit rather than
+ *  something to invent from nothing. Each line is what it is called and
+ *  whether it asks how many: a shirt without a number is no use to you, and
+ *  "Passport × 2" is nobody's packing list.
+ *
+ *  It is a starting point and nothing depends on it. Clear the lot and write
+ *  your own — a trip only ever reads your copy. */
+export const PACK_BASE: Record<string, [string, boolean][]> = {
+  Clothes: [
+    ['T-shirts', true], ['Shirts', true], ['Trousers', true], ['Shorts', true],
+    ['Underwear', true], ['Socks', true], ['Jumper or fleece', true], ['Jacket', false],
+    ['Shoes', true], ['Something smart', false], ['Swim shorts', false], ['Pyjamas', false],
+  ],
+  Training: [
+    ['Running shoes', false], ['Running kit', true], ['Gym kit', true],
+    ['Watch and charger', false], ['Headphones', false],
+  ],
+  Washbag: [
+    ['Toothbrush and paste', false], ['Shower gel', false], ['Shampoo', false],
+    ['Deodorant', false], ['Razor', false], ['Suncream', false], ['Painkillers', false],
+    ['Medication', true],
+  ],
+  Tech: [
+    ['Phone charger', false], ['Plug adapter', true], ['Power bank', false],
+    ['Laptop and charger', false], ['Cables', false],
+  ],
+  Documents: [
+    ['Passport', false], ['Driving licence', false], ['Booking confirmations', false],
+    ['Travel insurance', false], ['Cash', false], ['Cards', false],
+  ],
+};
+
 export const TRIP_TEMPLATES: Record<string, { name: string; extra: Record<string, string[]> }> = {
   weekend: { name: 'Weekend away', extra: {} },
   work: {

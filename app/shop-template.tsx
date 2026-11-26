@@ -11,7 +11,7 @@ import { useStore } from '../src/store/store';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { radius } from '../src/theme/tokens';
 import {
-  defaultShopList, placeShopItem, resetShopFromTemplate, shopOrdered, shopTemplateOf, uid,
+  defaultShopList, placeInGroups, resetShopFromTemplate, groupedOrder, shopTemplateOf, uid,
 } from '../src/domain/week';
 import { useListDrag } from '../src/ui/useListDrag';
 import type { ShopItem } from '../src/domain/types';
@@ -45,11 +45,11 @@ export default function ShopTemplateScreen() {
   }, 'adding that');
 
   // The same geometry the week's own list uses, because it is the same gesture.
-  const drawn = shopOrdered(groups);
+  const drawn = groupedOrder(groups);
   const drag = useListDrag({
     order: drawn.map((x) => ({ id: x.id, sec: x.gid })),
     sections: groups.map((g) => g.id),
-    onDrop: (id, at, gid) => onList((list) => { placeShopItem(list, id, at, gid); }, 'moving that'),
+    onDrop: (id, at, gid) => onList((list) => { placeInGroups(list, id, at, gid); }, 'moving that'),
   });
 
   return (

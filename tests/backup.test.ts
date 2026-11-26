@@ -35,7 +35,11 @@ function lived() {
     { id: 'w2', title: 'The Bear', kind: 'tv', done: false },
   ];
   s.trips = [{ id: 'tr1', name: 'Lisbon', tplId: 'holiday', start: '2026-10-23', end: '2026-10-27',
-    items: [{ id: 'c1', cat: 'Flights', text: 'Book outbound', done: true }] }];
+    items: [
+      { id: 'c1', cat: 'Flights', text: 'Book outbound', done: true, need: true },
+      { id: 'c2', cat: 'Clothes', text: 'Socks', done: false, need: true, qty: true, amount: '5' },
+      { id: 'c3', cat: 'Clothes', text: 'Something smart', done: false, need: false },
+    ] }];
   s.events = [{ id: 'e1', name: 'Manchester Half', date: '2026-10-11', source: 'calendar' }];
   ensureWeek(s, '2026-09-21');
   moveTask(s, WEEK38, 1, 't1', '2026-09-24');

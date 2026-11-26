@@ -74,6 +74,17 @@ export interface ShopGroup { id: string; name: string; items: ShopItem[] }
  *  buy often enough to be worth having written down already. */
 export interface ShopTemplate { groups: ShopGroup[] }
 
+/** One line on the standing packing list: everything you might take or
+ *  arrange, under a heading, whether or not any one trip wants it. */
+export interface PackItem {
+  id: string;
+  text: string;
+  /** No good without a number — socks, T-shirts, days of medication. Choosing
+   *  it for a trip asks how many, and the answer travels with the trip. */
+  qty?: boolean;
+}
+export interface PackGroup { id: string; name: string; items: PackItem[] }
+
 export interface WatchItem {
   id: string;
   title: string;
@@ -111,11 +122,26 @@ export interface Week {
   shopCopiedFrom?: string | null;
 }
 
+/** One line on a trip's own copy of the list.
+ *
+ *  Two ticks, like the shopping list, and for the same reason: `need` is the
+ *  decision about this trip and `done` is what is in the bag. Something you
+ *  are not taking to Lisbon is not something you failed to pack. */
 export interface TripItem {
   id: string;
   cat: string;
   text: string;
+  /** Packed, or arranged. Only ever asked about a line you are taking. */
   done: boolean;
+  /** Taking it on this trip. Everything on the standing list reaches every
+   *  trip; this is which of it you actually want this time. */
+  need: boolean;
+  /** The standing list says this one is no good without a number. Copied onto
+   *  the trip, so changing the standing list later cannot leave a trip holding
+   *  an amount for something that has stopped asking for one. */
+  qty?: boolean;
+  /** How many, as you wrote it: "3" and "2 pairs" are both answers. */
+  amount?: string;
   /** Anything that did not fit in the name. Marked on the row with a dot. */
   note?: string;
 }
@@ -164,7 +190,12 @@ export interface AppState {
   hiddenEvents?: string[];
   /** The standing shopping list new weeks are built from. */
   shopTemplate?: ShopGroup[];
-  /** The standing checklist new trips are built from, by category. */
+  /** The standing packing list every trip starts from: headings, and
+   *  everything you might take or arrange under them. */
+  packList?: PackGroup[];
+  /** What that list was before its headings had ids and its lines could ask
+   *  for a number. Read once by the migration and then deleted; nothing else
+   *  may touch it. */
   tripTemplate?: Record<string, string[]>;
   version: number;
 }
